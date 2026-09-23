@@ -4,6 +4,8 @@ coverage/
 .env
 .env.*
 !.env.example
+# Public Firebase web config, needed by deploys from any machine
+!apps/web/.env.production
 *.log
 .firebase/
 .DS_Store
@@ -11,4 +13,3 @@ coverage/
 *-key.json
 service-account*.json
 .df-credentials.json
-infra/config.sh

@@ -1,6 +1,6 @@
 # Dataform (BigQuery → Dataform) builds staging and marts from the raw_*
-# datasets the connectors write. Set defaultProject to your GCP project ID.
-defaultProject: REPLACE_WITH_PROJECT_ID
+# datasets the connectors write.
+defaultProject: calleva-dashboard
 defaultLocation: US
 defaultDataset: staging
 defaultAssertionDataset: dataform_assertions

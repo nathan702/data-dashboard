@@ -11,20 +11,24 @@ Everything here is one-time. It takes about 30 minutes.
    Google Cloud console → Billing → Budgets & alerts → $50/month.
 3. **Authentication** → Get started → **Google** provider → Enable.
    Under Settings → Authorized domains, the `web.app` domain is already listed.
-4. **Project settings → Your apps → Web app (`</>`)**. Register it (no need to
-   set up Hosting in the wizard). Copy the config values into
-   `apps/web/.env.production` using `apps/web/.env.example` as the template.
+4. ~~Register a web app~~ Done: the web config for `calleva-dashboard` is in
+   `apps/web/.env.production`. (If the project is ever recreated: Project
+   settings → Your apps → `</>` → copy the `firebaseConfig` values into that file.)
 
 ## 2. Run the setup script
 
-From a machine with the [gcloud CLI](https://cloud.google.com/sdk/docs/install)
-(or Google Cloud Shell, which has everything installed):
+The easiest place to run this is **Google Cloud Shell**, which has every tool
+installed: open <https://console.cloud.google.com/?project=calleva-dashboard>
+and click the **>_** (Activate Cloud Shell) icon at the top right. Then:
 
 ```bash
-gcloud auth login
-cp infra/config.example.sh infra/config.sh   # fill in PROJECT_ID etc.
+git clone https://github.com/nathan702/data-dashboard.git
+cd data-dashboard
+git checkout claude/ecstatic-maxwell-hh3yl3
 bash infra/setup.sh
 ```
+
+Project settings (project ID, region, domain) are in `infra/config.sh`.
 
 This enables APIs, creates the BigQuery datasets, least-privilege service
 accounts, Secret Manager entries, and a random pseudonymization key.
@@ -44,7 +48,7 @@ BigQuery console → **Dataform** → Create repository (`dashboard`, region
 `us-east1`) → connect it to this GitHub repo, subdirectory `dataform/`.
 Then create a **workflow configuration** that runs all actions every 15 minutes.
 Re-run `bash infra/setup.sh` afterwards so the Dataform service agent gets its
-BigQuery permissions. Set `defaultProject` in `dataform/workflow_settings.yaml`.
+BigQuery permissions.
 
 ## 5. Deploy
 

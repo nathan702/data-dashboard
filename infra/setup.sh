@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time (and safe to re-run) Google Cloud setup for the dashboard.
 # Prerequisites: gcloud CLI signed in as a project owner, billing enabled.
-#   cp infra/config.example.sh infra/config.sh && edit it
+#   (settings live in infra/config.sh)
 #   bash infra/setup.sh
 set -euo pipefail
 cd "$(dirname "$0")"
