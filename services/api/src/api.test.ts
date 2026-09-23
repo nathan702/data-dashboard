@@ -6,7 +6,8 @@ import { loadConfig } from "./config.js";
 import { DemoFreshness, DemoWarehouse, demoRow } from "./warehouse/demo.js";
 import { periodBucket, summarizeRows } from "./warehouse/summarize.js";
 
-const org = { email: "pat@calleva.org", email_verified: true, hd: "calleva.org", name: "Pat" };
+// Shaped like a real Firebase ID token from Google sign-in (no "hd" claim).
+const org = { email: "pat@calleva.org", email_verified: true, name: "Pat", firebase: { sign_in_provider: "google.com" } };
 
 describe("access decisions", () => {
   const open = { allowedEmails: [], admins: ["pat@calleva.org"] };
@@ -16,10 +17,11 @@ describe("access decisions", () => {
       viewer: { email: "pat@calleva.org", name: "Pat", isAdmin: true },
     });
   });
-  it("rejects personal accounts and missing hosted-domain claims", () => {
-    expect(decideAccess({ ...org, email: "pat@gmail.com", hd: undefined }, open, ["calleva.org"]).ok).toBe(false);
-    expect(decideAccess({ ...org, hd: undefined }, open, ["calleva.org"]).ok).toBe(false);
+  it("rejects personal accounts, unverified emails and non-Google sign-in", () => {
+    expect(decideAccess({ ...org, email: "pat@gmail.com" }, open, ["calleva.org"]).ok).toBe(false);
     expect(decideAccess({ ...org, email_verified: false }, open, ["calleva.org"]).ok).toBe(false);
+    expect(decideAccess({ ...org, firebase: { sign_in_provider: "password" } }, open, ["calleva.org"]).ok).toBe(false);
+    expect(decideAccess({ ...org, firebase: undefined }, open, ["calleva.org"]).ok).toBe(false);
   });
   it("enforces the allow-list when one is set", () => {
     const list = { allowedEmails: ["someone@calleva.org"], admins: [] };

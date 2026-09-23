@@ -10,8 +10,7 @@ export interface VerifiedToken {
   email?: string;
   email_verified?: boolean;
   name?: string;
-  /** Hosted domain claim Google includes for Workspace accounts. */
-  hd?: string;
+  firebase?: { sign_in_provider?: string };
 }
 
 export interface AccessList {
@@ -32,10 +31,14 @@ export type AccessDecision = { ok: true; viewer: Viewer } | { ok: false; reason:
 export function decideAccess(token: VerifiedToken, access: AccessList, allowedDomains: string[]): AccessDecision {
   const email = token.email?.toLowerCase();
   if (!email || token.email_verified !== true) return { ok: false, reason: "A verified Google account is required" };
+  // Only Google sign-in counts: Google has verified the address, and an
+  // @<workspace domain> Google account can only be issued by that Workspace.
+  // (Firebase ID tokens don't carry Google's "hd" claim, so it can't be checked here.)
+  if (token.firebase?.sign_in_provider !== "google.com") {
+    return { ok: false, reason: "Sign in with Google" };
+  }
   const domain = email.split("@")[1] ?? "";
-  // Require both the email domain and Google's hosted-domain claim, so a
-  // personal Gmail account can't pass by using a lookalike address.
-  if (!allowedDomains.includes(domain) || (token.hd ?? "").toLowerCase() !== domain) {
+  if (!allowedDomains.includes(domain)) {
     return { ok: false, reason: "Sign in with your organization Google account" };
   }
   const allowed = access.allowedEmails.map((e) => e.toLowerCase());
