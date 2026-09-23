@@ -1,0 +1,55 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Daily revenue per business line and date basis. Powers the Overview page. Sources are listed in includes/revenue_sources.js.",
+  bigquery: {
+    partitionBy: "revenue_date",
+    clusterBy: ["business_line", "date_basis"]
+  },
+  assertions: {
+    nonNull: ["business_line", "revenue_date", "date_basis"],
+    rowConditions: [
+      "date_basis IN ('booked', 'collected', 'service')",
+      "gross >= 0 AND discounts >= 0 AND refunds >= 0 AND fees >= 0"
+    ]
+  }
+}
+
+js {
+  const { revenueSources } = require("includes/revenue_sources");
+}
+
+WITH unioned AS (
+  ${revenueSources.length
+    ? revenueSources.map((s) => `
+      SELECT business_line, revenue_date, date_basis, location, channel,
+             CAST(gross AS NUMERIC) AS gross, CAST(discounts AS NUMERIC) AS discounts,
+             CAST(refunds AS NUMERIC) AS refunds, CAST(fees AS NUMERIC) AS fees,
+             CAST(transactions AS INT64) AS transactions
+      FROM ${ref(s)}`).join("\n      UNION ALL")
+    : `
+      -- No sources connected yet: an empty table with the final schema.
+      SELECT CAST(NULL AS STRING) AS business_line, CAST(NULL AS DATE) AS revenue_date,
+             CAST(NULL AS STRING) AS date_basis, CAST(NULL AS STRING) AS location,
+             CAST(NULL AS STRING) AS channel, CAST(0 AS NUMERIC) AS gross,
+             CAST(0 AS NUMERIC) AS discounts, CAST(0 AS NUMERIC) AS refunds,
+             CAST(0 AS NUMERIC) AS fees, CAST(0 AS INT64) AS transactions
+      FROM UNNEST([1])
+      WHERE FALSE`}
+)
+SELECT
+  u.business_line,
+  u.revenue_date,
+  u.date_basis,
+  u.location,
+  u.channel,
+  d.season,
+  d.season_start_date,
+  SUM(u.gross) AS gross,
+  SUM(u.discounts) AS discounts,
+  SUM(u.refunds) AS refunds,
+  SUM(u.fees) AS fees,
+  SUM(u.transactions) AS transactions
+FROM unioned AS u
+JOIN ${ref("dim_date")} AS d ON d.date = u.revenue_date
+GROUP BY 1, 2, 3, 4, 5, 6, 7

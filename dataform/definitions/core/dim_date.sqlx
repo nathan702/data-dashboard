@@ -1,0 +1,36 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "One row per calendar date with week, month, fiscal and Campminder season attributes.",
+  assertions: { uniqueKey: ["date"], nonNull: ["date", "season"] }
+}
+
+WITH days AS (
+  SELECT d AS date
+  FROM UNNEST(GENERATE_DATE_ARRAY(DATE "2000-01-01", DATE "2040-12-31")) AS d
+),
+seasons AS (
+  SELECT
+    date,
+    -- Season Y runs from the cutover date in Y-1 through the day before the cutover in Y.
+    IF(
+      date >= DATE(EXTRACT(YEAR FROM date), ${dataform.projectConfig.vars.season_start_month}, ${dataform.projectConfig.vars.season_start_day}),
+      EXTRACT(YEAR FROM date) + 1,
+      EXTRACT(YEAR FROM date)
+    ) AS season
+  FROM days
+)
+SELECT
+  date,
+  EXTRACT(YEAR FROM date) AS year,
+  EXTRACT(QUARTER FROM date) AS quarter,
+  EXTRACT(MONTH FROM date) AS month,
+  FORMAT_DATE("%b %Y", date) AS month_label,
+  DATE_TRUNC(date, WEEK(MONDAY)) AS week_start,
+  EXTRACT(DAYOFWEEK FROM date) AS day_of_week,
+  EXTRACT(DAYOFWEEK FROM date) IN (1, 7) AS is_weekend,
+  season,
+  DATE(season - 1, ${dataform.projectConfig.vars.season_start_month}, ${dataform.projectConfig.vars.season_start_day}) AS season_start_date,
+  DATE_SUB(DATE(season, ${dataform.projectConfig.vars.season_start_month}, ${dataform.projectConfig.vars.season_start_day}), INTERVAL 1 DAY) AS season_end_date,
+  DATE_DIFF(date, DATE(season - 1, ${dataform.projectConfig.vars.season_start_month}, ${dataform.projectConfig.vars.season_start_day}), DAY) + 1 AS day_of_season
+FROM seasons

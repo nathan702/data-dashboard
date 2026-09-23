@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# One-time (and safe to re-run) Google Cloud setup for the dashboard.
+# Prerequisites: gcloud CLI signed in as a project owner, billing enabled.
+#   cp infra/config.example.sh infra/config.sh && edit it
+#   bash infra/setup.sh
+set -euo pipefail
+cd "$(dirname "$0")"
+source ./config.sh
+
+gcloud config set project "$PROJECT_ID" >/dev/null
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+
+echo "==> Enabling APIs"
+gcloud services enable \
+  run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
+  bigquery.googleapis.com dataform.googleapis.com firestore.googleapis.com \
+  cloudscheduler.googleapis.com secretmanager.googleapis.com \
+  identitytoolkit.googleapis.com gmail.googleapis.com storage.googleapis.com
+
+echo "==> Firestore (native mode)"
+gcloud firestore databases describe --database='(default)' >/dev/null 2>&1 \
+  || gcloud firestore databases create --location=nam5 --type=firestore-native
+
+echo "==> BigQuery datasets"
+for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square staging marts ops dataform_assertions; do
+  bq --location="$BQ_LOCATION" show "$PROJECT_ID:$ds" >/dev/null 2>&1 \
+    || bq --location="$BQ_LOCATION" mk --dataset "$PROJECT_ID:$ds"
+done
+bq show "$PROJECT_ID:ops.sync_runs" >/dev/null 2>&1 || bq mk --table \
+  --time_partitioning_field started_at --time_partitioning_type DAY \
+  "$PROJECT_ID:ops.sync_runs" \
+  run_id:STRING,source:STRING,mode:STRING,started_at:TIMESTAMP,finished_at:TIMESTAMP,status:STRING,rows_written:INT64,error:STRING
+
+echo "==> Service accounts (least privilege)"
+make_sa() { gcloud iam service-accounts describe "$1@$PROJECT_ID.iam.gserviceaccount.com" >/dev/null 2>&1 \
+  || gcloud iam service-accounts create "$1" --display-name="$2"; }
+make_sa dashboard-api "Dashboard API (reads marts)"
+make_sa dashboard-connectors "Dashboard connectors (writes raw)"
+make_sa dashboard-scheduler "Cloud Scheduler invoker"
+API_SA="dashboard-api@$PROJECT_ID.iam.gserviceaccount.com"
+CONN_SA="dashboard-connectors@$PROJECT_ID.iam.gserviceaccount.com"
+SCHED_SA="dashboard-scheduler@$PROJECT_ID.iam.gserviceaccount.com"
+
+bind() { gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$1" --role="$2" --condition=None >/dev/null; }
+# API: run queries, read marts only, read Firestore sync state/access list, verify sign-ins.
+bind "$API_SA" roles/bigquery.jobUser
+bind "$API_SA" roles/datastore.viewer
+bind "$API_SA" roles/firebaseauth.viewer
+bq add-iam-policy-binding --member="serviceAccount:$API_SA" --role=roles/bigquery.dataViewer "$PROJECT_ID:marts" >/dev/null
+# Connectors: write raw_* and ops, keep sync state, read their secrets.
+bind "$CONN_SA" roles/bigquery.jobUser
+bind "$CONN_SA" roles/datastore.user
+for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square ops; do
+  bq add-iam-policy-binding --member="serviceAccount:$CONN_SA" --role=roles/bigquery.dataEditor "$PROJECT_ID:$ds" >/dev/null
+done
+bind "$CONN_SA" roles/secretmanager.secretAccessor
+# Dataform's own service agent needs to read raw and write staging/marts.
+DATAFORM_SA="service-$PROJECT_NUMBER@gcp-sa-dataform.iam.gserviceaccount.com"
+bind "$DATAFORM_SA" roles/bigquery.jobUser || echo "   (Dataform agent appears after first repository is created; re-run later)"
+bind "$DATAFORM_SA" roles/bigquery.dataEditor || true
+
+echo "==> Secrets (values are added later with: echo -n VALUE | gcloud secrets versions add NAME --data-file=-)"
+for s in pseudonymization-key shopify-admin-token shopify-webhook-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret; do
+  gcloud secrets describe "$s" >/dev/null 2>&1 || gcloud secrets create "$s" --replication-policy=automatic
+done
+if [ "$(gcloud secrets versions list pseudonymization-key --format='value(name)' | wc -l)" = "0" ]; then
+  openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add pseudonymization-key --data-file=- >/dev/null
+  echo "   generated pseudonymization-key"
+fi
+
+echo "==> Access list in Firestore (config/access)"
+echo "   Add admins/allowed emails in the Firebase console → Firestore → config/access:"
+echo "   { admins: [$ADMIN_EMAILS], allowedEmails: [] }  (empty allowedEmails = whole domain)"
+
+echo "Done. Next: bash infra/deploy.sh"

@@ -1,0 +1,10 @@
+rules_version = '2';
+// The browser never reads Firestore directly: all data goes through the API,
+// which uses the Admin SDK (not subject to these rules). Deny everything.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,8 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "services/api/Dockerfile", "-t", "${_REPO}/api:${_TAG}", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "services/connectors/Dockerfile", "-t", "${_REPO}/connectors:${_TAG}", "."]
+images:
+  - "${_REPO}/api:${_TAG}"
+  - "${_REPO}/connectors:${_TAG}"

@@ -1,0 +1,31 @@
+{
+  "name": "data-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Internal live dashboards across Campminder, FareHarbor, HubSpot, Shopify and Square",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "services/api",
+    "services/connectors",
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:demo": "npm run build -w packages/shared && concurrently -n api,web \"DEMO_DATA=1 AUTH_DISABLED=1 npm run dev -w services/api\" \"VITE_AUTH_DISABLED=1 npm run dev -w apps/web\"",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:api": "npm run dev -w services/api",
+    "dev:connectors": "npm run dev -w services/connectors"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "concurrently": "^9.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

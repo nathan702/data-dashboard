@@ -1,0 +1,28 @@
+{
+  "name": "@dash/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "sync": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@dash/shared": "*",
+    "@google-cloud/bigquery": "^9.1.0",
+    "@google-cloud/firestore": "^9.2.0",
+    "express": "^5.2.1",
+    "google-auth-library": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "supertest": "^7.1.0",
+    "@types/supertest": "^6.0.3",
+    "tsx": "^4.23.15"
+  }
+}

@@ -1,0 +1,12 @@
+# Dataform (BigQuery → Dataform) builds staging and marts from the raw_*
+# datasets the connectors write. Set defaultProject to your GCP project ID.
+defaultProject: REPLACE_WITH_PROJECT_ID
+defaultLocation: US
+defaultDataset: staging
+defaultAssertionDataset: dataform_assertions
+dataformCoreVersion: 3.0.70
+vars:
+  # First day of a new Campminder season (the day after camp ends).
+  # Keep in sync with DEFAULT_SEASON_CONFIG in packages/shared/src/dates.ts.
+  season_start_month: "9"
+  season_start_day: "1"

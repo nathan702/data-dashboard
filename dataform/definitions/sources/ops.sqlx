@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "ops",
+  name: "sync_runs",
+  description: "One row per connector run, written by services/connectors."
+}

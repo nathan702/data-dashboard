@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.firebase/
+.DS_Store
+# Service-account keys must never be committed
+*-key.json
+service-account*.json
+.df-credentials.json
+infra/config.sh
