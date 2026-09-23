@@ -42,13 +42,13 @@ Firebase console → Firestore → create collection `config`, document `access`
 | `admins` | array | your email |
 | `allowedEmails` | array | leave empty to allow everyone in the domain, or list the ~10 people |
 
-## 4. Dataform
+## 4. SQL transforms
 
-BigQuery console → **Dataform** → Create repository (`dashboard`, region
-`us-east1`) → connect it to this GitHub repo, subdirectory `dataform/`.
-Then create a **workflow configuration** that runs all actions every 15 minutes.
-Re-run `bash infra/setup.sh` afterwards so the Dataform service agent gets its
-BigQuery permissions.
+Nothing to do. The SQL models in `dataform/` run as a Cloud Run job
+(`dashboard-transform`) every 15 minutes, created by the deploy script. No
+Dataform repository or GitHub connection is needed. (If one was created in the
+BigQuery → Dataform page, it's unused and can be deleted.) Run history is in
+Cloud Run → Jobs → dashboard-transform.
 
 ## 5. Deploy
 

@@ -15,6 +15,7 @@ place. Google Workspace sign-in; data in BigQuery; runs on Firebase + Cloud Run.
 | `services/connectors` | Source connectors (Cloud Run): scheduled syncs, webhooks, raw writes |
 | `packages/shared` | Types, business lines, Eastern-time dates, Campminder seasons, filter validation |
 | `dataform` | SQL models: raw → staging → marts (`dim_date`, `fct_revenue_daily`, …) |
+| `services/transform` | Cloud Run job that runs the `dataform/` models every 15 minutes |
 | `infra` | `setup.sh`, `deploy.sh`, Cloud Build, Firestore rules |
 
 ## Local development

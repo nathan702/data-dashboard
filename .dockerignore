@@ -1,7 +1,7 @@
 **/node_modules
 **/dist
 apps
-dataform
 docs
 .git
 .env*
+dataform/.df-credentials.json

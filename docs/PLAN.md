@@ -11,7 +11,7 @@ page shows them side by side.
 | Users & access | ~10 people, everyone sees everything. Google Workspace sign-in, domain-restricted, optional allow-list in Firestore `config/access`. |
 | Dashboards | Pre-built, custom React app with heavy sorting/filtering, CSV export, shareable filtered URLs. |
 | Hosting | New Firebase / Google Cloud project. Target < $50/month (expected $0–15). |
-| Maintenance | Hands-off: managed services only, failure alerts, status page. |
+| Maintenance | Hands-off: managed services only, failure alerts, status page. SQL transforms run as a scheduled Cloud Run job (no Git connection or tokens to maintain). |
 | Freshness | Per source: seconds (Shopify, Square, HubSpot webhooks), as often as practical for Campminder/FareHarbor. |
 | History | Everything each platform can provide. |
 | Time zone | US Eastern for all reporting dates. |
@@ -32,7 +32,7 @@ page shows them side by side.
  FareHarbor emails ─▶ Gmail ──────────────▶ └──────────┬─────────────────┘
                                                        │ raw JSON rows
                                             BigQuery raw_<source>.*
-                                                       │ Dataform (SQL, scheduled)
+                                                       │ Dataform SQL, run by a Cloud Run job every 15 min
                                             staging.* → marts.*
                                                        │
  Browser (React, Firebase Hosting) ──/api──▶ Cloud Run: API ──▶ BigQuery marts

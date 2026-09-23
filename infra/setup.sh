@@ -13,7 +13,7 @@ PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectN
 echo "==> Enabling APIs"
 gcloud services enable \
   run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
-  bigquery.googleapis.com dataform.googleapis.com firestore.googleapis.com \
+  bigquery.googleapis.com firestore.googleapis.com \
   cloudscheduler.googleapis.com secretmanager.googleapis.com \
   identitytoolkit.googleapis.com gmail.googleapis.com storage.googleapis.com
 
@@ -36,9 +36,11 @@ make_sa() { gcloud iam service-accounts describe "$1@$PROJECT_ID.iam.gserviceacc
   || gcloud iam service-accounts create "$1" --display-name="$2"; }
 make_sa dashboard-api "Dashboard API (reads marts)"
 make_sa dashboard-connectors "Dashboard connectors (writes raw)"
+make_sa dashboard-transform "Dashboard SQL transforms (raw → marts)"
 make_sa dashboard-scheduler "Cloud Scheduler invoker"
 API_SA="dashboard-api@$PROJECT_ID.iam.gserviceaccount.com"
 CONN_SA="dashboard-connectors@$PROJECT_ID.iam.gserviceaccount.com"
+XFORM_SA="dashboard-transform@$PROJECT_ID.iam.gserviceaccount.com"
 SCHED_SA="dashboard-scheduler@$PROJECT_ID.iam.gserviceaccount.com"
 
 bind() { gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$1" --role="$2" --condition=None >/dev/null; }
@@ -54,10 +56,14 @@ for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square ops; 
   bq add-iam-policy-binding --member="serviceAccount:$CONN_SA" --role=roles/bigquery.dataEditor "$PROJECT_ID:$ds" >/dev/null
 done
 bind "$CONN_SA" roles/secretmanager.secretAccessor
-# Dataform's own service agent needs to read raw and write staging/marts.
-DATAFORM_SA="service-$PROJECT_NUMBER@gcp-sa-dataform.iam.gserviceaccount.com"
-bind "$DATAFORM_SA" roles/bigquery.jobUser || echo "   (Dataform agent appears after first repository is created; re-run later)"
-bind "$DATAFORM_SA" roles/bigquery.dataEditor || true
+# Transforms: read raw_* and ops, rebuild staging/marts and run assertions.
+bind "$XFORM_SA" roles/bigquery.jobUser
+for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square ops; do
+  bq add-iam-policy-binding --member="serviceAccount:$XFORM_SA" --role=roles/bigquery.dataViewer "$PROJECT_ID:$ds" >/dev/null
+done
+for ds in staging marts dataform_assertions; do
+  bq add-iam-policy-binding --member="serviceAccount:$XFORM_SA" --role=roles/bigquery.dataEditor "$PROJECT_ID:$ds" >/dev/null
+done
 
 echo "==> Secrets (values are added later with: echo -n VALUE | gcloud secrets versions add NAME --data-file=-)"
 for s in pseudonymization-key shopify-admin-token shopify-webhook-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret; do
