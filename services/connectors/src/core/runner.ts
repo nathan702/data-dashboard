@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Connector, RawWriter, RunLog, StateStore, SyncMode, WebhookRequest } from "./types.js";
 import { logger } from "./logger.js";
+import { NotConfiguredError } from "./secrets.js";
 
 export interface Deps {
   writer: RawWriter;
@@ -17,7 +18,13 @@ export function newRunId(): string {
  * the freshness badges) and BigQuery ops.sync_runs (for history). Never
  * throws for connector errors; the result says what happened.
  */
-export async function runSync(connector: Connector, deps: Deps, mode: SyncMode) {
+/**
+ * Cloud Scheduler waits at most 30 minutes for a response, so each run stops
+ * pulling new pages after 25. Long imports continue on the next run.
+ */
+export const DEFAULT_RUN_BUDGET_MS = 25 * 60_000;
+
+export async function runSync(connector: Connector, deps: Deps, mode: SyncMode, budgetMs = DEFAULT_RUN_BUDGET_MS) {
   if (!connector.sync) throw new Error(`${connector.source} does not support scheduled sync`);
   const runId = newRunId();
   const startedAt = new Date();
@@ -25,7 +32,11 @@ export async function runSync(connector: Connector, deps: Deps, mode: SyncMode) 
   const log = logger.child({ source, runId, mode });
   let rowsWritten = 0;
 
-  await deps.state.markRunStarted(source, runId);
+  // A scheduled run can fire while a long history import is still going.
+  if (!(await deps.state.tryStartRun(source, runId, budgetMs + 10 * 60_000))) {
+    log.info("skipped: previous run still in progress");
+    return { runId, status: "ok" as const, rowsWritten: 0, skipped: true };
+  }
   const state = await deps.state.get(source);
   log.info("sync started");
 
@@ -45,8 +56,15 @@ export async function runSync(connector: Connector, deps: Deps, mode: SyncMode) 
       },
       saveCursor: (entity, cursor) => deps.state.setCursor(source, entity, cursor),
       log: (message, fields) => log.info(message, fields),
+      outOfTime: () => Date.now() - startedAt.getTime() > budgetMs,
     });
   } catch (err) {
+    if (err instanceof NotConfiguredError) {
+      // Credentials not added yet: leave the source as "Not connected".
+      await deps.state.releaseRun(source, runId);
+      log.info("skipped: not configured", { reason: err.message });
+      return { runId, status: "ok" as const, rowsWritten: 0, skipped: true, notConfigured: true };
+    }
     status = "error";
     error = err instanceof Error ? err.message : String(err);
     log.error("sync failed", { error, stack: err instanceof Error ? err.stack : undefined });

@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_shopify",
+  name: "inventory_levels",
+  description: "Raw Shopify inventory_levels written by services/connectors (one row per version)."
+}

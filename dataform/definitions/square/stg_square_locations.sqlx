@@ -1,0 +1,9 @@
+config { type: "view", schema: "staging", description: "Square locations (latest version)." }
+js { const { latestRaw } = require("includes/sql"); }
+
+SELECT
+  record_id AS location_id,
+  JSON_VALUE(payload, '$.name') AS location_name,
+  JSON_VALUE(payload, '$.status') AS status,
+  JSON_VALUE(payload, '$.timezone') AS timezone
+FROM (${latestRaw(ref("raw_square", "locations"))})

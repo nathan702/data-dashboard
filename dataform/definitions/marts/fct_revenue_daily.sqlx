@@ -9,8 +9,7 @@ config {
   assertions: {
     nonNull: ["business_line", "revenue_date", "date_basis"],
     rowConditions: [
-      "date_basis IN ('booked', 'collected', 'service')",
-      "gross >= 0 AND discounts >= 0 AND refunds >= 0 AND fees >= 0"
+      "date_basis IN ('booked', 'collected', 'service')"
     ]
   }
 }

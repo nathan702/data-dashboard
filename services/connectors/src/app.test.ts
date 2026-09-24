@@ -47,6 +47,14 @@ describe("scheduled sync", () => {
     expect(deps.runLog.entries[0]?.status).toBe("error");
   });
 
+  it("skips a run while another holds the source", async () => {
+    const { app, deps } = setup(fake);
+    await deps.state.tryStartRun("shopify", "other-run", 60_000);
+    const res = await request(app).post("/run/shopify").expect(200);
+    expect(res.body.skipped).toBe(true);
+    expect(deps.writer.rows).toHaveLength(0);
+  });
+
   it("marks backfill writes with the backfill path", async () => {
     const { app, deps } = setup(fake);
     await request(app).post("/run/shopify?mode=backfill").expect(200);

@@ -65,8 +65,8 @@ basis × location × channel: gross, discounts, refunds, fees, transactions).
 
 | Source | Method | Freshness | History |
 |---|---|---|---|
-| Shopify | Admin API custom-app token; webhooks for orders/refunds/products/inventory + 15-min reconciliation | Seconds | GraphQL bulk export |
-| Square | Access token; webhooks for payments/orders/refunds + 15-min reconciliation; catalog nightly | Seconds | Orders/Payments search |
+| Shopify | Dev Dashboard app (client credentials, 24h tokens); webhooks for orders/refunds/products + 15-min syncs; hourly inventory snapshot | Seconds (raw) / 15 min (dashboards) | Paged GraphQL import, resumable |
+| Square | Personal access token; webhooks for orders/payments/refunds + 15-min syncs (catalog, locations, per-location payments/refunds) | Seconds (raw) / 15 min (dashboards) | Orders/Payments search, resumable |
 | HubSpot | Private-app token; webhooks for deals + 15-min polls of deals, stage history, payments | Seconds–minutes | Full CRM export |
 | Campminder | Existing Cloud automation writes its report to a Cloud Storage bucket; an upload triggers import with PII allow-listing | Each automation run | Depends on past-season exports |
 | FareHarbor | No API. Booking notification emails to a dedicated Workspace mailbox, read via the Gmail API (push via Pub/Sub). One-time CSV export for history. | ~1 minute | Manual export |
@@ -80,11 +80,29 @@ entered per item or a periodic dashboard export. Decide in Phase 5.
 1. **Foundation** ✅ project scaffold, connector framework, API with Google
    sign-in, dashboard shell (Overview, per-line pages, Status), `dim_date` with
    seasons, `fct_revenue_daily` contract, deploy scripts, CI.
-2. **Shopify + Square**: webhooks, reconciliation, backfill, staging/marts, dashboards.
+2. **Shopify + Square** ✅ (code complete; waiting on credentials) connectors with
+   automatic webhook registration, 15-minute syncs that resume long history
+   imports, staging models, `fct_retail_orders` / `fct_retail_line_items`,
+   inventory snapshots, and Shopify/Square pages (order KPIs; breakdowns by
+   item, variant, category, location, channel; inventory).
 3. **HubSpot**: deals, stage history, payments, pipeline dashboards.
 4. **Campminder**: hook up the existing automation, PII allow-list, season dashboards.
 5. **FareHarbor**: Gmail ingestion, email parser, historical import, dashboards.
 6. **Summary & extras**: digests and alerts (Slack + email), polish.
+
+## Notes from Phase 2
+
+- **Retail date bases:** Shopify and Square are paid at purchase, so "booked",
+  "collected" and "activity" dates are all the sale date. Refunds count on the
+  day they're issued; fees on the day of the payment.
+- **Freshness:** webhooks land raw data within seconds; the SQL transforms that
+  feed the dashboards run every 15 minutes (a balance with BigQuery cost).
+  Can be tightened later if needed.
+- **Shopify limits:** full order history needs Shopify to approve
+  `read_all_orders` (otherwise 60 days). Customer IDs are protected customer
+  data, so Shopify's customer count isn't shown for now.
+- **Refund amounts** are the total refunded (including any tax/shipping), so net
+  sales can be very slightly understated on refunded orders.
 
 ## Open items
 

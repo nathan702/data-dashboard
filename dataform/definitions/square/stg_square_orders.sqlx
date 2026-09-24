@@ -1,0 +1,26 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Completed Square orders, one row per order. Sale date is when the order was closed (Eastern).",
+  assertions: { uniqueKey: ["order_id"], nonNull: ["sale_date"] }
+}
+js { const { latestRaw, squareMoney, easternDate, ts } = require("includes/sql"); }
+
+SELECT
+  record_id AS order_id,
+  JSON_VALUE(payload, '$.location_id') AS location_id,
+  l.location_name,
+  JSON_VALUE(payload, '$.source.name') AS source_name,
+  JSON_VALUE(payload, '$.customer_id') AS customer_id,
+  ${ts("payload", "$.created_at")} AS created_at,
+  ${ts("payload", "$.closed_at")} AS closed_at,
+  ${easternDate(`COALESCE(${ts("payload", "$.closed_at")}, ${ts("payload", "$.created_at")})`)} AS sale_date,
+  ${squareMoney("payload", "$.total_money")} AS total,
+  ${squareMoney("payload", "$.total_tax_money")} AS tax,
+  ${squareMoney("payload", "$.total_discount_money")} AS discounts,
+  ${squareMoney("payload", "$.total_tip_money")} AS tips,
+  ${squareMoney("payload", "$.total_service_charge_money")} AS service_charges,
+  payload
+FROM (${latestRaw(ref("raw_square", "orders"))}) AS o
+LEFT JOIN ${ref("stg_square_locations")} AS l ON l.location_id = JSON_VALUE(o.payload, '$.location_id')
+WHERE JSON_VALUE(payload, '$.state') = 'COMPLETED'

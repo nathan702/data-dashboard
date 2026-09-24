@@ -1,0 +1,17 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Shopify refunds, dated when issued (Eastern). Amount is the total refunded, including any tax and shipping.",
+  assertions: { uniqueKey: ["refund_id"] }
+}
+js { const { shopMoney, easternDate, ts } = require("includes/sql"); }
+
+SELECT
+  JSON_VALUE(r, '$.id') AS refund_id,
+  o.order_id,
+  o.channel,
+  o.location_name,
+  ${easternDate(ts("r", "$.createdAt"))} AS refund_date,
+  ${shopMoney("r", "$.totalRefundedSet")} AS amount
+FROM ${ref("stg_shopify_orders")} AS o,
+  UNNEST(JSON_QUERY_ARRAY(o.payload, '$.refunds')) AS r

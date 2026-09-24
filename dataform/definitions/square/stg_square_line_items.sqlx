@@ -1,0 +1,26 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Line items of completed Square orders with catalog item, variation and category.",
+  assertions: { nonNull: ["order_id", "sale_date"] }
+}
+js { const { squareMoney } = require("includes/sql"); }
+
+SELECT
+  o.order_id,
+  o.sale_date,
+  o.location_name,
+  o.source_name,
+  JSON_VALUE(li, '$.uid') AS line_uid,
+  JSON_VALUE(li, '$.catalog_object_id') AS variation_id,
+  COALESCE(v.item_name, JSON_VALUE(li, '$.name'), 'Custom amount') AS item_name,
+  COALESCE(JSON_VALUE(li, '$.variation_name'), v.variation_name) AS variation_name,
+  v.sku,
+  v.category_name,
+  SAFE_CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC) AS quantity,
+  ${squareMoney("li", "$.gross_sales_money")} AS gross,
+  ${squareMoney("li", "$.total_discount_money")} AS discounts,
+  ${squareMoney("li", "$.total_money")} AS total
+FROM ${ref("stg_square_orders")} AS o,
+  UNNEST(JSON_QUERY_ARRAY(o.payload, '$.line_items')) AS li
+LEFT JOIN ${ref("stg_square_catalog_variations")} AS v ON v.variation_id = JSON_VALUE(li, '$.catalog_object_id')

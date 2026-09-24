@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_shopify",
+  name: "orders",
+  description: "Raw Shopify orders written by services/connectors (one row per version)."
+}

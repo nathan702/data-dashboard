@@ -1,7 +1,22 @@
-import type { BusinessLine, IsoDate, RevenueQuery, RevenueSummaryResponse, SourceFreshness } from "@dash/shared";
+import type {
+  BusinessLine,
+  InventoryResponse,
+  IsoDate,
+  RetailBreakdownQuery,
+  RetailBreakdownResponse,
+  RetailKpiQuery,
+  RetailKpiResponse,
+  RetailLine,
+  RevenueQuery,
+  RevenueSummaryResponse,
+  SourceFreshness,
+} from "@dash/shared";
 
 export interface Warehouse {
   revenueSummary(q: RevenueQuery): Promise<RevenueSummaryResponse>;
+  retailKpis(line: RetailLine, q: RetailKpiQuery): Promise<RetailKpiResponse>;
+  retailBreakdown(line: RetailLine, q: RetailBreakdownQuery): Promise<RetailBreakdownResponse>;
+  shopifyInventory(): Promise<InventoryResponse>;
 }
 
 export interface FreshnessSource {

@@ -1,0 +1,24 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Shopify order line items. Gross = original price × quantity; discounts are those allocated to the line.",
+  assertions: { nonNull: ["order_id", "sale_date"] }
+}
+js { const { shopMoney } = require("includes/sql"); }
+
+SELECT
+  o.order_id,
+  o.sale_date,
+  o.channel,
+  o.location_name,
+  JSON_VALUE(li, '$.id') AS line_id,
+  COALESCE(JSON_VALUE(li, '$.product.title'), JSON_VALUE(li, '$.name')) AS item_name,
+  JSON_VALUE(li, '$.variant.title') AS variant_name,
+  JSON_VALUE(li, '$.sku') AS sku,
+  NULLIF(JSON_VALUE(li, '$.product.productType'), '') AS category,
+  JSON_VALUE(li, '$.vendor') AS vendor,
+  SAFE_CAST(JSON_VALUE(li, '$.quantity') AS NUMERIC) AS quantity,
+  ${shopMoney("li", "$.originalTotalSet")} AS gross,
+  ${shopMoney("li", "$.totalDiscountSet")} AS discounts
+FROM ${ref("stg_shopify_orders")} AS o,
+  UNNEST(JSON_QUERY_ARRAY(o.payload, '$.lineItems.nodes')) AS li

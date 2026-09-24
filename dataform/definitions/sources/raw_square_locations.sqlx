@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_square",
+  name: "locations",
+  description: "Raw Square locations written by services/connectors (one row per version)."
+}

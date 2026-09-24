@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_shopify",
+  name: "products",
+  description: "Raw Shopify products written by services/connectors (one row per version)."
+}

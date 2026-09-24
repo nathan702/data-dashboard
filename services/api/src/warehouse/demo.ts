@@ -5,10 +5,14 @@ import {
   seasonForDate,
   seasonRange,
   type BusinessLine,
+  type RetailBreakdownQuery,
+  type RetailKpiQuery,
+  type RetailLine,
   type RevenueBasis,
   type RevenueQuery,
   type SourceFreshness,
 } from "@dash/shared";
+import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
 import type { DailyRevenueRow, FreshnessSource, Warehouse } from "./types.js";
 
@@ -16,7 +20,7 @@ import type { DailyRevenueRow, FreshnessSource, Warehouse } from "./types.js";
  * Deterministic made-up numbers so the dashboard can be developed and
  * demoed before any real source is connected. Never used in production.
  */
-function noise(seed: string): number {
+export function noise(seed: string): number {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
   return ((h >>> 0) % 10_000) / 10_000;
@@ -73,6 +77,15 @@ export function demoRow(line: BusinessLine, date: string, basis: RevenueBasis): 
 }
 
 export class DemoWarehouse implements Warehouse {
+  async retailKpis(line: RetailLine, q: RetailKpiQuery) {
+    return demoRetailKpis(line, q);
+  }
+  async retailBreakdown(line: RetailLine, q: RetailBreakdownQuery) {
+    return demoRetailBreakdown(line, q);
+  }
+  async shopifyInventory() {
+    return demoShopifyInventory();
+  }
   async revenueSummary(q: RevenueQuery) {
     const lines = q.businessLines?.length ? q.businessLines : [...BUSINESS_LINES];
     const ranges = [{ start: q.start, end: q.end }];

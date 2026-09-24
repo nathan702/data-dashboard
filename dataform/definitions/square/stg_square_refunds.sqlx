@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Completed Square refunds, dated when issued.",
+  assertions: { uniqueKey: ["refund_id"] }
+}
+js { const { latestRaw, squareMoney, easternDate, ts } = require("includes/sql"); }
+
+SELECT
+  record_id AS refund_id,
+  JSON_VALUE(payload, '$.order_id') AS order_id,
+  JSON_VALUE(payload, '$.location_id') AS location_id,
+  ${easternDate(ts("payload", "$.created_at"))} AS refund_date,
+  ${squareMoney("payload", "$.amount_money")} AS amount
+FROM (${latestRaw(ref("raw_square", "refunds"))})
+WHERE JSON_VALUE(payload, '$.status') = 'COMPLETED'

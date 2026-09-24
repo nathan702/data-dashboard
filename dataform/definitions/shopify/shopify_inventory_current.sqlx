@@ -1,0 +1,22 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Current Shopify stock per variant and location, from the most recent complete hourly snapshot."
+}
+js { const { latestRaw, ts } = require("includes/sql"); }
+
+WITH latest AS (
+  SELECT payload, source_updated_at FROM (${latestRaw(ref("raw_shopify", "inventory_levels"))})
+),
+newest AS (SELECT MAX(source_updated_at) AS at FROM latest)
+SELECT
+  JSON_VALUE(payload, '$.productTitle') AS product,
+  NULLIF(JSON_VALUE(payload, '$.variantTitle'), 'Default Title') AS variant,
+  JSON_VALUE(payload, '$.sku') AS sku,
+  JSON_VALUE(payload, '$.locationName') AS location,
+  SAFE_CAST(JSON_VALUE(payload, '$.available') AS INT64) AS available,
+  SAFE_CAST(JSON_VALUE(payload, '$.onHand') AS INT64) AS on_hand,
+  ${ts("payload", "$.snapshotAt")} AS snapshot_at
+FROM latest, newest
+-- Rows missing from recent snapshots belong to deleted items or locations.
+WHERE latest.source_updated_at >= TIMESTAMP_SUB(newest.at, INTERVAL 2 HOUR)

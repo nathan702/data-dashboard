@@ -1,0 +1,22 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Completed Square payments with processing fees and tips.",
+  assertions: { uniqueKey: ["payment_id"] }
+}
+js { const { latestRaw, squareMoney, easternDate, ts } = require("includes/sql"); }
+
+SELECT
+  record_id AS payment_id,
+  JSON_VALUE(payload, '$.order_id') AS order_id,
+  JSON_VALUE(payload, '$.location_id') AS location_id,
+  ${ts("payload", "$.created_at")} AS created_at,
+  ${easternDate(ts("payload", "$.created_at"))} AS payment_date,
+  ${squareMoney("payload", "$.amount_money")} AS amount,
+  ${squareMoney("payload", "$.tip_money")} AS tip,
+  (
+    SELECT COALESCE(SUM(${squareMoney("f", "$.amount_money")}), 0)
+    FROM UNNEST(JSON_QUERY_ARRAY(payload, '$.processing_fee')) AS f
+  ) AS fees
+FROM (${latestRaw(ref("raw_square", "payments"))})
+WHERE JSON_VALUE(payload, '$.status') = 'COMPLETED'

@@ -1,0 +1,39 @@
+config {
+  type: "view",
+  schema: "staging",
+  description: "Shopify revenue per day, channel and location in the fct_revenue_daily contract. Retail is paid at purchase, so booked, collected and service dates are the same."
+}
+
+WITH parts AS (
+  SELECT sale_date AS d, location_name AS location, channel,
+         SUM(gross) AS gross, SUM(discounts) AS discounts, 0 AS refunds, 0 AS fees, 0 AS transactions
+  FROM ${ref("stg_shopify_order_lines")}
+  GROUP BY 1, 2, 3
+  UNION ALL
+  SELECT sale_date, location_name, channel, 0, 0, 0, 0, COUNT(*)
+  FROM ${ref("stg_shopify_orders")}
+  GROUP BY 1, 2, 3
+  UNION ALL
+  SELECT refund_date, location_name, channel, 0, 0, SUM(amount), 0, 0
+  FROM ${ref("stg_shopify_refunds")}
+  GROUP BY 1, 2, 3
+  UNION ALL
+  SELECT fee_date, location_name, channel, 0, 0, 0, SUM(fees), 0
+  FROM ${ref("stg_shopify_fees")}
+  GROUP BY 1, 2, 3
+)
+SELECT
+  'shopify' AS business_line,
+  d AS revenue_date,
+  basis AS date_basis,
+  location,
+  channel,
+  SUM(gross) AS gross,
+  SUM(discounts) AS discounts,
+  SUM(refunds) AS refunds,
+  SUM(fees) AS fees,
+  SUM(transactions) AS transactions
+FROM parts
+CROSS JOIN UNNEST(['booked', 'collected', 'service']) AS basis
+WHERE d IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5

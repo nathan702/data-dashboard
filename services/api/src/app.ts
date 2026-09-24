@@ -1,6 +1,13 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { LRUCache } from "lru-cache";
-import { isBusinessLine, revenueQuerySchema, type MeResponse } from "@dash/shared";
+import {
+  isBusinessLine,
+  isRetailLine,
+  retailBreakdownQuerySchema,
+  retailKpiQuerySchema,
+  revenueQuerySchema,
+  type MeResponse,
+} from "@dash/shared";
 import { requireViewer, type AuthDeps } from "./auth.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
 
@@ -75,6 +82,46 @@ export function createApi(opts: ApiOptions) {
       cache.set(key, body);
     }
     res.json(body);
+  });
+
+  const cached = async <T extends object>(key: string, load: () => Promise<T>): Promise<T> => {
+    const hit = cache.get(key) as T | undefined;
+    if (hit) return hit;
+    const value = await load();
+    cache.set(key, value);
+    return value;
+  };
+
+  api.get("/retail/:line/kpis", async (req, res) => {
+    const line = String(req.params.line);
+    if (!isRetailLine(line)) {
+      res.status(404).json({ error: "Unknown retail line" });
+      return;
+    }
+    const parsed = retailKpiQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    res.json(await cached(`kpis:${line}:${JSON.stringify(parsed.data)}`, () => opts.warehouse.retailKpis(line, parsed.data)));
+  });
+
+  api.get("/retail/:line/breakdown", async (req, res) => {
+    const line = String(req.params.line);
+    if (!isRetailLine(line)) {
+      res.status(404).json({ error: "Unknown retail line" });
+      return;
+    }
+    const parsed = retailBreakdownQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    res.json(await cached(`breakdown:${line}:${JSON.stringify(parsed.data)}`, () => opts.warehouse.retailBreakdown(line, parsed.data)));
+  });
+
+  api.get("/shopify/inventory", async (_req, res) => {
+    res.json(await cached("inventory:shopify", () => opts.warehouse.shopifyInventory()));
   });
 
   app.use("/api", api);

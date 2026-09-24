@@ -31,6 +31,16 @@ bq show "$PROJECT_ID:ops.sync_runs" >/dev/null 2>&1 || bq mk --table \
   "$PROJECT_ID:ops.sync_runs" \
   run_id:STRING,source:STRING,mode:STRING,started_at:TIMESTAMP,finished_at:TIMESTAMP,status:STRING,rows_written:INT64,error:STRING
 
+echo "==> Raw tables (created empty so the SQL transforms run before a source is connected)"
+# Must match RAW_TABLE_SCHEMA in services/connectors/src/core/bigquery.ts
+RAW_TABLES="raw_shopify.orders raw_shopify.products raw_shopify.inventory_levels
+  raw_square.locations raw_square.catalog_objects raw_square.orders raw_square.payments raw_square.refunds"
+for t in $RAW_TABLES; do
+  bq show "$PROJECT_ID:$t" >/dev/null 2>&1 || bq mk --table \
+    --time_partitioning_field ingested_at --time_partitioning_type DAY --clustering_fields record_id \
+    "$PROJECT_ID:$t" ./raw_table_schema.json >/dev/null
+done
+
 echo "==> Service accounts (least privilege)"
 make_sa() { gcloud iam service-accounts describe "$1@$PROJECT_ID.iam.gserviceaccount.com" >/dev/null 2>&1 \
   || gcloud iam service-accounts create "$1" --display-name="$2"; }
@@ -66,13 +76,17 @@ for ds in staging marts dataform_assertions; do
 done
 
 echo "==> Secrets (values are added later with: echo -n VALUE | gcloud secrets versions add NAME --data-file=-)"
-for s in pseudonymization-key shopify-admin-token shopify-webhook-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret; do
+for s in pseudonymization-key shopify-shop shopify-client-id shopify-client-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret; do
   gcloud secrets describe "$s" >/dev/null 2>&1 || gcloud secrets create "$s" --replication-policy=automatic
 done
 if [ "$(gcloud secrets versions list pseudonymization-key --format='value(name)' | wc -l)" = "0" ]; then
   openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add pseudonymization-key --data-file=- >/dev/null
   echo "   generated pseudonymization-key"
 fi
+
+# Connectors save the Square webhook signing key themselves when they create the subscription.
+gcloud secrets add-iam-policy-binding square-webhook-signature-key \
+  --member="serviceAccount:$CONN_SA" --role=roles/secretmanager.secretVersionAdder >/dev/null
 
 echo "==> Access list in Firestore (config/access)"
 echo "   Add admins/allowed emails in the Firebase console → Firestore → config/access:"

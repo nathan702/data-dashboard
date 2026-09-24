@@ -1,0 +1,20 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Shopify Payments processing fees per successful transaction (other gateways report no fees)."
+}
+js { const { easternDate, ts } = require("includes/sql"); }
+
+SELECT
+  o.order_id,
+  o.channel,
+  o.location_name,
+  JSON_VALUE(t, '$.id') AS transaction_id,
+  ${easternDate(ts("t", "$.processedAt"))} AS fee_date,
+  (
+    SELECT COALESCE(SUM(SAFE_CAST(JSON_VALUE(f, '$.amount.amount') AS NUMERIC)), 0)
+    FROM UNNEST(JSON_QUERY_ARRAY(t, '$.fees')) AS f
+  ) AS fees
+FROM ${ref("stg_shopify_orders")} AS o,
+  UNNEST(JSON_QUERY_ARRAY(o.payload, '$.transactions')) AS t
+WHERE JSON_VALUE(t, '$.status') = 'SUCCESS'

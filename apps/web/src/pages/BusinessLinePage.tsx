@@ -1,5 +1,6 @@
 import { Navigate, useParams } from "react-router-dom";
-import { BUSINESS_LINE_INFO, isBusinessLine } from "@dash/shared";
+import { BUSINESS_LINE_INFO, isBusinessLine, isRetailLine } from "@dash/shared";
+import { RetailDetail } from "../components/RetailDetail";
 import { RevenueView } from "../components/RevenueView";
 
 export function BusinessLinePage() {
@@ -9,9 +10,13 @@ export function BusinessLinePage() {
   return (
     <>
       <RevenueView key={line} lines={[line]} title={info.label} />
-      <p className="phase-note">
-        Detailed {info.label} dashboards arrive in phase {info.phase}. See the Status page for connection progress.
-      </p>
+      {isRetailLine(line) ? (
+        <RetailDetail key={`${line}-detail`} line={line} />
+      ) : (
+        <p className="phase-note">
+          Detailed {info.label} dashboards arrive in phase {info.phase}. See the Status page for connection progress.
+        </p>
+      )}
     </>
   );
 }

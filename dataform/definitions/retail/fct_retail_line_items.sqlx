@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "One row per Shopify or Square line item with item, variant, category, location and channel. Powers the sales breakdowns.",
+  bigquery: { partitionBy: "sale_date", clusterBy: ["business_line", "item_name"] },
+  assertions: { nonNull: ["business_line", "sale_date", "order_id"] }
+}
+
+SELECT
+  'shopify' AS business_line, sale_date, order_id, location_name AS location, channel,
+  category, item_name, variant_name, sku, quantity, gross, discounts
+FROM ${ref("stg_shopify_order_lines")}
+
+UNION ALL
+
+SELECT
+  'square', sale_date, order_id, location_name, source_name,
+  category_name, item_name, variation_name, sku, quantity, gross, discounts
+FROM ${ref("stg_square_line_items")}

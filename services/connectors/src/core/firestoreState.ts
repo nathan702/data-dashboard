@@ -29,15 +29,22 @@ export class FirestoreStateStore implements StateStore {
     await this.doc(source).set({ cursors: { [entity]: cursor } }, { merge: true });
   }
 
-  async markRunStarted(source: BusinessLine, runId: string) {
-    await this.doc(source).set(
-      { lastRunStatus: "running", currentRunId: runId, lastRunStartedAt: new Date().toISOString() },
-      { merge: true },
-    );
+  async tryStartRun(source: BusinessLine, runId: string, staleAfterMs: number) {
+    const ref = this.doc(source);
+    return this.db.runTransaction(async (tx) => {
+      const d = (await tx.get(ref)).data() ?? {};
+      const startedAt = d.lastRunStartedAt ? Date.parse(d.lastRunStartedAt as string) : 0;
+      if (d.currentRunId && Date.now() - startedAt < staleAfterMs) return false;
+      tx.set(ref, { lastRunStatus: "running", currentRunId: runId, lastRunStartedAt: new Date().toISOString() }, { merge: true });
+      return true;
+    });
   }
 
   async markRunFinished(source: BusinessLine, runId: string, result: RunResult) {
     const now = new Date().toISOString();
+    // Only the run holding the claim may release it.
+    const current = (await this.doc(source).get()).data()?.currentRunId;
+    if (current && current !== runId) return;
     await this.doc(source).set(
       {
         lastRunStatus: result.status,
@@ -48,6 +55,16 @@ export class FirestoreStateStore implements StateStore {
           ? { lastSuccessAt: now, lastError: null }
           : { lastError: result.error ?? "Unknown error", lastErrorAt: now }),
       },
+      { merge: true },
+    );
+  }
+
+  async releaseRun(source: BusinessLine, runId: string) {
+    const d = (await this.doc(source).get()).data() ?? {};
+    if (d.currentRunId !== runId) return;
+    // Restore the status the source had before this run claimed it.
+    await this.doc(source).set(
+      { currentRunId: FieldValue.delete(), lastRunStatus: d.lastRunFinishedAt ? (d.lastError ? "error" : "ok") : FieldValue.delete() },
       { merge: true },
     );
   }

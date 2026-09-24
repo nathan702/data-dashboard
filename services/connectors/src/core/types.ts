@@ -32,8 +32,14 @@ export interface SourceState {
 export interface StateStore {
   get(source: BusinessLine): Promise<SourceState>;
   setCursor(source: BusinessLine, entity: string, cursor: string): Promise<void>;
-  markRunStarted(source: BusinessLine, runId: string): Promise<void>;
+  /**
+   * Atomically claim the source for a run. Returns false if another run holds
+   * it and started less than `staleAfterMs` ago (a crashed run's claim expires).
+   */
+  tryStartRun(source: BusinessLine, runId: string, staleAfterMs: number): Promise<boolean>;
   markRunFinished(source: BusinessLine, runId: string, result: RunResult): Promise<void>;
+  /** Drop the run claim without recording a result. */
+  releaseRun(source: BusinessLine, runId: string): Promise<void>;
   markDataReceived(source: BusinessLine, at?: Date): Promise<void>;
 }
 
@@ -70,6 +76,12 @@ export interface SyncContext {
   /** Persist a cursor as soon as the data before it is safely written. */
   saveCursor(entity: string, cursor: string): Promise<void>;
   log(message: string, fields?: Record<string, unknown>): void;
+  /**
+   * True once the run is close to its time limit. Long imports (full history)
+   * check this between pages, save their cursor and stop; the next scheduled
+   * run picks up where this one left off.
+   */
+  outOfTime(): boolean;
 }
 
 export interface WebhookRequest {

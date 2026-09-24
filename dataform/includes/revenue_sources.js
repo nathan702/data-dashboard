@@ -7,9 +7,10 @@
  *   date_basis    STRING   -- 'booked' | 'collected' | 'service'
  *   location      STRING   -- store / Square location / NULL
  *   channel       STRING   -- e.g. 'online', 'pos', pipeline name / NULL
- *   gross, discounts, refunds, fees  NUMERIC  -- positive amounts, USD
+ *   gross, discounts, refunds, fees  NUMERIC  -- USD; normally positive (refunds and
+ *                                     discounts are amounts subtracted, not negatives)
  *   transactions  INT64
  */
-const revenueSources = [];
+const revenueSources = ["stg_shopify_revenue_daily", "stg_square_revenue_daily"];
 
 module.exports = { revenueSources };

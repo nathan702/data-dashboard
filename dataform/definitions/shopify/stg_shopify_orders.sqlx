@@ -1,0 +1,36 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Shopify orders (test orders excluded), one row per order. Sale date is processedAt in Eastern time.",
+  assertions: { uniqueKey: ["order_id"], nonNull: ["sale_date"] }
+}
+js { const { latestRaw, shopMoney, easternDate, ts } = require("includes/sql"); }
+
+SELECT
+  record_id AS order_id,
+  JSON_VALUE(payload, '$.name') AS order_name,
+  ${ts("payload", "$.createdAt")} AS created_at,
+  ${ts("payload", "$.processedAt")} AS processed_at,
+  ${ts("payload", "$.cancelledAt")} AS cancelled_at,
+  ${easternDate(`COALESCE(${ts("payload", "$.processedAt")}, ${ts("payload", "$.createdAt")})`)} AS sale_date,
+  COALESCE(
+    JSON_VALUE(payload, '$.channelInformation.channelDefinition.channelName'),
+    CASE JSON_VALUE(payload, '$.sourceName')
+      WHEN 'web' THEN 'Online Store'
+      WHEN 'pos' THEN 'Point of Sale'
+      WHEN 'shopify_draft_order' THEN 'Draft Orders'
+      ELSE JSON_VALUE(payload, '$.sourceName')
+    END
+  ) AS channel,
+  JSON_VALUE(payload, '$.retailLocation.name') AS location_name,
+  JSON_VALUE(payload, '$.displayFinancialStatus') AS financial_status,
+  ${shopMoney("payload", "$.subtotalPriceSet")} AS subtotal,
+  ${shopMoney("payload", "$.totalDiscountsSet")} AS order_discounts,
+  ${shopMoney("payload", "$.totalTaxSet")} AS tax,
+  ${shopMoney("payload", "$.totalShippingPriceSet")} AS shipping,
+  ${shopMoney("payload", "$.totalPriceSet")} AS total,
+  ${shopMoney("payload", "$.totalRefundedSet")} AS refunded,
+  ${shopMoney("payload", "$.totalTipReceivedSet")} AS tips,
+  payload
+FROM (${latestRaw(ref("raw_shopify", "orders"))})
+WHERE COALESCE(JSON_VALUE(payload, '$.test'), 'false') != 'true'

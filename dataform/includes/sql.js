@@ -4,7 +4,7 @@ function easternDate(ts) {
 }
 
 /** Latest version of each record in a raw table, excluding deletions. */
-function latestRaw(rawTable) {
+function latestRaw(rawTable, { includeDeleted = false } = {}) {
   return `
     SELECT * EXCEPT (rn) FROM (
       SELECT *, ROW_NUMBER() OVER (
@@ -12,7 +12,21 @@ function latestRaw(rawTable) {
       ) AS rn
       FROM ${rawTable}
     )
-    WHERE rn = 1 AND NOT is_deleted`;
+    WHERE rn = 1${includeDeleted ? "" : " AND NOT is_deleted"}`;
 }
 
-module.exports = { easternDate, latestRaw };
+/** Square money object (integer cents) at a JSON path → dollars, 0 when missing. */
+function squareMoney(json, path) {
+  return `COALESCE(SAFE_CAST(JSON_VALUE(${json}, '${path}.amount') AS NUMERIC), 0) / 100`;
+}
+
+/** Shopify MoneyBag (shop currency) at a JSON path → NUMERIC, 0 when missing. */
+function shopMoney(json, path) {
+  return `COALESCE(SAFE_CAST(JSON_VALUE(${json}, '${path}.shopMoney.amount') AS NUMERIC), 0)`;
+}
+
+function ts(json, path) {
+  return `SAFE_CAST(JSON_VALUE(${json}, '${path}') AS TIMESTAMP)`;
+}
+
+module.exports = { easternDate, latestRaw, squareMoney, shopMoney, ts };

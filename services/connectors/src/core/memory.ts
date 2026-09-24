@@ -29,10 +29,16 @@ export class MemoryStateStore implements StateStore {
   async setCursor(source: BusinessLine, entity: string, cursor: string) {
     this.s(source).cursors[entity] = cursor;
   }
-  async markRunStarted(source: BusinessLine) {
+  readonly running = new Map<BusinessLine, { runId: string; at: number }>();
+  async tryStartRun(source: BusinessLine, runId: string, staleAfterMs: number) {
+    const cur = this.running.get(source);
+    if (cur && Date.now() - cur.at < staleAfterMs) return false;
+    this.running.set(source, { runId, at: Date.now() });
     this.s(source).lastRunStatus = "running";
+    return true;
   }
-  async markRunFinished(source: BusinessLine, _runId: string, result: RunResult) {
+  async markRunFinished(source: BusinessLine, runId: string, result: RunResult) {
+    if (this.running.get(source)?.runId === runId) this.running.delete(source);
     const st = this.s(source);
     st.lastRunStatus = result.status;
     if (result.status === "ok") {
@@ -44,6 +50,11 @@ export class MemoryStateStore implements StateStore {
   }
   async markDataReceived(source: BusinessLine, at: Date = new Date()) {
     this.s(source).lastDataAt = at.toISOString();
+  }
+  async releaseRun(source: BusinessLine, runId: string) {
+    if (this.running.get(source)?.runId === runId) this.running.delete(source);
+    const st = this.s(source);
+    st.lastRunStatus = st.lastSuccessAt ? "ok" : st.lastError ? "error" : null;
   }
 }
 

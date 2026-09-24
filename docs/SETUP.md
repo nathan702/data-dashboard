@@ -58,15 +58,54 @@ bash infra/deploy.sh
 
 The app is then at `https://<project-id>.web.app`.
 
-## Source credentials (added phase by phase)
+## Connecting sources
 
-Each is stored with:
-`echo -n "VALUE" | gcloud secrets versions add SECRET_NAME --data-file=-`
+Credentials are stored in Secret Manager and read by the connectors on every
+run, so **adding them needs no redeploy**: the next scheduled sync (every 15
+minutes) picks them up. Until then a source shows "Not connected" on the
+Status page.
 
-| Phase | Secret | Where to get it |
-|---|---|---|
-| 2 | `shopify-admin-token`, `shopify-webhook-secret` | Shopify admin → Settings → Apps → Develop apps → Create app (read-only scopes listed in the Phase 2 notes) |
-| 2 | `square-access-token`, `square-webhook-signature-key` | developer.squareup.com → your app → Production credentials / Webhooks |
-| 3 | `hubspot-private-app-token`, `hubspot-client-secret` | HubSpot → Settings → Integrations → Private apps |
-| 4 | — | Campminder automation gets write access to the ingest bucket |
-| 5 | — | Gmail API access to the FareHarbor notifications mailbox |
+To store a value, run this in Cloud Shell, paste the value, press **Enter**,
+then **Ctrl+D**. (Pasting this way keeps it out of your shell history.)
+
+```bash
+gcloud secrets versions add SECRET_NAME --data-file=-
+```
+
+### Shopify
+
+1. Shopify admin → **Settings → Apps → Develop apps → Build apps in Dev Dashboard**.
+2. **Create app** → *Start from Dev Dashboard* → name it `Business dashboard` → **Create**.
+3. **Versions** tab → create a version:
+   - **App URL:** `https://calleva-dashboard.web.app`
+   - **Webhooks API version:** `2026-07`
+   - **Access scopes:** `read_orders`, `read_all_orders`, `read_products`, `read_inventory`, `read_locations`
+   - **Release** the version.
+4. App **Home** → **Install app** → choose your store → **Install**.
+5. App **Settings** → copy the **Client ID** and **Client secret**.
+6. Store three secrets:
+   - `shopify-shop` — your store's `.myshopify.com` address (e.g. `calleva.myshopify.com`,
+     shown in Shopify admin → Settings → Domains)
+   - `shopify-client-id`
+   - `shopify-client-secret`
+
+Shopify only lets apps read the **last 60 days** of orders unless it approves
+`read_all_orders`. If the dashboard's Shopify history stops at 60 days, that
+approval is what's missing.
+
+Real-time order updates (webhooks) are registered automatically on the first sync.
+
+### Square
+
+1. Go to <https://developer.squareup.com/apps> and sign in with the Square account.
+2. **Create an application**, named `Business dashboard`.
+3. Open it → **Credentials** → switch the toggle to **Production** → **Production Access token** → **Show** → copy it.
+4. Store it as the `square-access-token` secret.
+
+The webhook subscription and its signing key are created automatically on the
+first sync. The token doesn't expire; if it's ever replaced in the Developer
+Console, store the new one the same way.
+
+### HubSpot, Campminder, FareHarbor
+
+Instructions arrive with phases 3–5.

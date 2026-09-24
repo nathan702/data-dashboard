@@ -1,0 +1,38 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Square item variations with their item and category names. Deleted objects are kept so historical sales still resolve.",
+  assertions: { uniqueKey: ["variation_id"] }
+}
+js { const { latestRaw } = require("includes/sql"); }
+
+WITH objects AS (
+  SELECT record_id AS id, JSON_VALUE(payload, '$.type') AS type, payload
+  FROM (${latestRaw(ref("raw_square", "catalog_objects"), { includeDeleted: true })})
+),
+categories AS (
+  SELECT id, JSON_VALUE(payload, '$.category_data.name') AS category_name FROM objects WHERE type = 'CATEGORY'
+),
+items AS (
+  SELECT
+    id,
+    JSON_VALUE(payload, '$.item_data.name') AS item_name,
+    -- Newer catalogs use reporting_category / categories[]; older ones category_id.
+    COALESCE(
+      JSON_VALUE(payload, '$.item_data.reporting_category.id'),
+      JSON_VALUE(payload, '$.item_data.categories[0].id'),
+      JSON_VALUE(payload, '$.item_data.category_id')
+    ) AS category_id
+  FROM objects WHERE type = 'ITEM'
+)
+SELECT
+  v.id AS variation_id,
+  JSON_VALUE(v.payload, '$.item_variation_data.name') AS variation_name,
+  JSON_VALUE(v.payload, '$.item_variation_data.sku') AS sku,
+  i.id AS item_id,
+  i.item_name,
+  c.category_name
+FROM objects AS v
+LEFT JOIN items AS i ON i.id = JSON_VALUE(v.payload, '$.item_variation_data.item_id')
+LEFT JOIN categories AS c ON c.id = i.category_id
+WHERE v.type = 'ITEM_VARIATION'

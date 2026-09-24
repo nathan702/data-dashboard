@@ -1,5 +1,16 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { MeResponse, RevenueQuery, RevenueSummaryResponse, SourceFreshness } from "@dash/shared";
+import type {
+  ComparisonMode,
+  InventoryResponse,
+  MeResponse,
+  RetailBreakdownResponse,
+  RetailDimension,
+  RetailKpiResponse,
+  RetailLine,
+  RevenueQuery,
+  RevenueSummaryResponse,
+  SourceFreshness,
+} from "@dash/shared";
 import { useAuth } from "./auth";
 
 export class ApiError extends Error {
@@ -58,4 +69,20 @@ export function useRevenueSummary(q: RevenueQuery) {
   const qs = revenueParams(q);
   // Re-poll every minute so "live" sources update without a reload.
   return useApi<RevenueSummaryResponse>(["revenue", qs], `/api/revenue/summary?${qs}`, { refetchInterval: 60_000 });
+}
+
+export function useRetailKpis(line: RetailLine, q: { start: string; end: string; compare: ComparisonMode }) {
+  const qs = new URLSearchParams(q).toString();
+  return useApi<RetailKpiResponse>(["retail-kpis", line, qs], `/api/retail/${line}/kpis?${qs}`, { refetchInterval: 60_000 });
+}
+
+export function useRetailBreakdown(line: RetailLine, q: { start: string; end: string; dimension: RetailDimension }) {
+  const qs = new URLSearchParams(q).toString();
+  return useApi<RetailBreakdownResponse>(["retail-breakdown", line, qs], `/api/retail/${line}/breakdown?${qs}`, {
+    refetchInterval: 60_000,
+  });
+}
+
+export function useShopifyInventory() {
+  return useApi<InventoryResponse>(["shopify-inventory"], "/api/shopify/inventory", { refetchInterval: 5 * 60_000 });
 }

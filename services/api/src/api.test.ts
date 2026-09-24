@@ -110,3 +110,44 @@ describe("aggregation", () => {
     expect(demoRow("shopify", "2026-01-05", "booked")).toEqual(demoRow("shopify", "2026-01-05", "booked"));
   });
 });
+
+describe("retail endpoints", () => {
+  it("returns KPIs with comparison and derived net/AOV", async () => {
+    const res = await request(api()).get("/api/retail/square/kpis?start=2026-07-01&end=2026-07-31").expect(200);
+    const k = res.body.current;
+    expect(k.orders).toBeGreaterThan(0);
+    expect(k.net).toBeCloseTo(k.gross - k.discounts - k.refunds, 1);
+    expect(k.averageOrderValue).toBeCloseTo(k.net / k.orders, 1);
+    expect(res.body.comparison).not.toBeNull();
+  });
+
+  it("returns breakdowns sorted by net and honors the limit", async () => {
+    const res = await request(api()).get("/api/retail/shopify/breakdown?start=2026-07-01&end=2026-07-31&dimension=item&limit=3").expect(200);
+    expect(res.body.rows).toHaveLength(3);
+    expect(res.body.truncated).toBe(true);
+    const nets = res.body.rows.map((r: { net: number }) => r.net);
+    expect([...nets].sort((a, b) => b - a)).toEqual(nets);
+  });
+
+  it("rejects unknown lines and dimensions", async () => {
+    await request(api()).get("/api/retail/hubspot/kpis?start=2026-07-01&end=2026-07-31").expect(404);
+    await request(api()).get("/api/retail/shopify/breakdown?start=2026-07-01&end=2026-07-31&dimension=customer").expect(400);
+  });
+
+  it("serves the inventory snapshot", async () => {
+    const res = await request(api()).get("/api/shopify/inventory").expect(200);
+    expect(res.body.rows.length).toBeGreaterThan(0);
+  });
+});
+
+describe("retail SQL", () => {
+  it("only interpolates fixed fragments", async () => {
+    const { breakdownSql, kpiSql } = await import("./warehouse/retailSql.js");
+    for (const d of ["item", "variant", "category", "location", "channel"] as const) {
+      const sql = breakdownSql("marts", d);
+      expect(sql).toContain("@line");
+      expect(sql).toContain("LIMIT @limit_plus_one");
+    }
+    expect(kpiSql("marts")).toContain("fct_retail_orders");
+  });
+});

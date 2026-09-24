@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "One row per Shopify or Square order: units, gross, discounts, tax, tips and fees. Powers the order KPIs.",
+  bigquery: { partitionBy: "sale_date", clusterBy: ["business_line"] },
+  assertions: { nonNull: ["business_line", "sale_date", "order_id"] }
+}
+
+WITH shopify_lines AS (
+  SELECT order_id, SUM(quantity) AS units, SUM(gross) AS gross, SUM(discounts) AS discounts
+  FROM ${ref("stg_shopify_order_lines")} GROUP BY 1
+),
+shopify_fees AS (SELECT order_id, SUM(fees) AS fees FROM ${ref("stg_shopify_fees")} GROUP BY 1),
+square_lines AS (
+  SELECT order_id, SUM(quantity) AS units, SUM(gross) AS gross, SUM(discounts) AS discounts
+  FROM ${ref("stg_square_line_items")} GROUP BY 1
+),
+square_fees AS (SELECT order_id, SUM(fees) AS fees FROM ${ref("stg_square_payments")} GROUP BY 1)
+
+SELECT
+  'shopify' AS business_line, o.sale_date, o.order_id, o.location_name AS location, o.channel,
+  -- Customer identity isn't requested from Shopify (protected customer data).
+  CAST(NULL AS STRING) AS customer_hash,
+  COALESCE(l.units, 0) AS units, COALESCE(l.gross, 0) AS gross, COALESCE(l.discounts, 0) AS discounts,
+  o.tax, o.tips, COALESCE(f.fees, 0) AS fees
+FROM ${ref("stg_shopify_orders")} AS o
+LEFT JOIN shopify_lines AS l USING (order_id)
+LEFT JOIN shopify_fees AS f USING (order_id)
+
+UNION ALL
+
+SELECT
+  'square', o.sale_date, o.order_id, o.location_name, o.source_name,
+  TO_HEX(SHA256(o.customer_id)),
+  COALESCE(l.units, 0), COALESCE(l.gross, 0), COALESCE(l.discounts, 0),
+  o.tax, o.tips, COALESCE(f.fees, 0)
+FROM ${ref("stg_square_orders")} AS o
+LEFT JOIN square_lines AS l USING (order_id)
+LEFT JOIN square_fees AS f USING (order_id)

@@ -4,10 +4,18 @@ import {
   comparisonRange,
   type BusinessLine,
   type Granularity,
+  type InventoryResponse,
+  type RetailBreakdownQuery,
+  type RetailBreakdownResponse,
+  type RetailKpiQuery,
+  type RetailKpiResponse,
+  type RetailLine,
   type RevenueMeasure,
   type RevenueQuery,
   type RevenueSummaryResponse,
 } from "@dash/shared";
+import { toKpis } from "./retail.js";
+import { breakdownSql, inventorySql, kpiSql } from "./retailSql.js";
 import type { Warehouse } from "./types.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
@@ -32,10 +40,73 @@ export class BigQueryWarehouse implements Warehouse {
 
   constructor(
     private readonly bq: BigQuery,
-    martsDataset: string,
+    private readonly martsDataset: string,
   ) {
     if (!DATASET_NAME.test(martsDataset)) throw new Error(`Invalid dataset name: ${martsDataset}`);
     this.table = `\`${martsDataset}.fct_revenue_daily\``;
+  }
+
+  async retailKpis(line: RetailLine, q: RetailKpiQuery): Promise<RetailKpiResponse> {
+    const cmp = comparisonRange({ start: q.start, end: q.end }, q.compare);
+    const [rows] = await this.bq.query({
+      query: kpiSql(this.martsDataset),
+      params: {
+        line,
+        start: q.start,
+        end: q.end,
+        has_cmp: cmp !== null,
+        cmp_start: cmp?.start ?? q.start,
+        cmp_end: cmp?.end ?? q.end,
+      },
+    });
+    const find = (p: string) => (rows as Array<Record<string, number> & { period: string }>).find((r) => r.period === p) ?? {};
+    return {
+      line,
+      range: { start: q.start, end: q.end },
+      comparisonRange: cmp,
+      current: toKpis(find("current")),
+      comparison: cmp ? toKpis(find("comparison")) : null,
+    };
+  }
+
+  async retailBreakdown(line: RetailLine, q: RetailBreakdownQuery): Promise<RetailBreakdownResponse> {
+    const [rows] = await this.bq.query({
+      query: breakdownSql(this.martsDataset, q.dimension),
+      params: { line, start: q.start, end: q.end, limit_plus_one: q.limit + 1 },
+    });
+    const typed = rows as Array<{ key: string; detail: string | null; orders: number; units: number; gross: number; discounts: number; net: number }>;
+    return {
+      line,
+      dimension: q.dimension,
+      range: { start: q.start, end: q.end },
+      truncated: typed.length > q.limit,
+      rows: typed.slice(0, q.limit).map((r) => ({
+        key: r.key,
+        detail: r.detail,
+        orders: Number(r.orders),
+        units: round2(Number(r.units)),
+        gross: round2(Number(r.gross)),
+        discounts: round2(Number(r.discounts)),
+        net: round2(Number(r.net)),
+      })),
+    };
+  }
+
+  async shopifyInventory(): Promise<InventoryResponse> {
+    const [rows] = await this.bq.query({ query: inventorySql(this.martsDataset) });
+    const typed = rows as Array<{ product: string; variant: string | null; sku: string | null; location: string; available: number; on_hand: number; snapshot_at: { value: string } | string | null }>;
+    const at = typed[0]?.snapshot_at;
+    return {
+      snapshotAt: at ? (typeof at === "string" ? at : at.value) : null,
+      rows: typed.map((r) => ({
+        product: r.product,
+        variant: r.variant,
+        sku: r.sku,
+        location: r.location,
+        available: Number(r.available),
+        onHand: Number(r.on_hand),
+      })),
+    };
   }
 
   async revenueSummary(q: RevenueQuery): Promise<RevenueSummaryResponse> {

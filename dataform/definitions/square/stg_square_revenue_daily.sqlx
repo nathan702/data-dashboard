@@ -1,0 +1,40 @@
+config {
+  type: "view",
+  schema: "staging",
+  description: "Square revenue per day and location in the fct_revenue_daily contract. Retail is paid at purchase, so booked, collected and service dates are the same."
+}
+
+WITH sales AS (
+  SELECT sale_date AS d, location_name AS location, source_name AS channel,
+         SUM(gross) AS gross, SUM(discounts) AS discounts, 0 AS refunds, 0 AS fees, 0 AS transactions
+  FROM ${ref("stg_square_line_items")}
+  GROUP BY 1, 2, 3
+  UNION ALL
+  SELECT sale_date, location_name, source_name, 0, 0, 0, 0, COUNT(*)
+  FROM ${ref("stg_square_orders")}
+  GROUP BY 1, 2, 3
+  UNION ALL
+  SELECT r.refund_date, l.location_name, CAST(NULL AS STRING), 0, 0, SUM(r.amount), 0, 0
+  FROM ${ref("stg_square_refunds")} AS r
+  LEFT JOIN ${ref("stg_square_locations")} AS l USING (location_id)
+  GROUP BY 1, 2, 3
+  UNION ALL
+  SELECT p.payment_date, l.location_name, CAST(NULL AS STRING), 0, 0, 0, SUM(p.fees), 0
+  FROM ${ref("stg_square_payments")} AS p
+  LEFT JOIN ${ref("stg_square_locations")} AS l USING (location_id)
+  GROUP BY 1, 2, 3
+)
+SELECT
+  'square' AS business_line,
+  d AS revenue_date,
+  basis AS date_basis,
+  location,
+  channel,
+  SUM(gross) AS gross,
+  SUM(discounts) AS discounts,
+  SUM(refunds) AS refunds,
+  SUM(fees) AS fees,
+  SUM(transactions) AS transactions
+FROM sales
+CROSS JOIN UNNEST(['booked', 'collected', 'service']) AS basis
+GROUP BY 1, 2, 3, 4, 5
