@@ -6,6 +6,10 @@ export interface ApiConfig {
   /** Skip sign-in checks. Local development only; refused on Cloud Run. */
   authDisabled: boolean;
   martsDataset: string;
+  configDataset: string;
+  bqLocation: string;
+  /** Cloud Run job that rebuilds the marts; started after Settings changes. */
+  transformJob: string | undefined;
   projectId: string | undefined;
   /** Origins allowed to call the API from a browser (the Firebase Hosting URLs). */
   corsOrigins: string[];
@@ -29,6 +33,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     demoData: env.DEMO_DATA === "1",
     authDisabled,
     martsDataset: env.BQ_MARTS_DATASET ?? "marts",
+    configDataset: env.BQ_CONFIG_DATASET ?? "config",
+    bqLocation: env.BQ_LOCATION ?? "US",
+    transformJob: env.TRANSFORM_JOB,
     projectId: env.GCP_PROJECT_ID,
     corsOrigins: list(env.CORS_ORIGINS),
     cacheTtlSeconds: Number(env.CACHE_TTL_SECONDS ?? 60),

@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "config",
+  name: "business_line_map",
+  description: "Assignments saved on the dashboard's Settings page (one row per change; latest wins). Written by services/api."
+}

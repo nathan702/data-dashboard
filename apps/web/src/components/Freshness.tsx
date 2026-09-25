@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { BUSINESS_LINE_INFO, type BusinessLine, type SourceFreshness } from "@dash/shared";
+import { SOURCE_INFO, type Source, type SourceFreshness } from "@dash/shared";
 import { useFreshness } from "../lib/api";
 import { timeAgo } from "../lib/format";
 
 /** How long before a source counts as stale, by how it syncs. */
-const STALE_AFTER_MINUTES: Record<BusinessLine, number> = {
+const STALE_AFTER_MINUTES: Record<Source, number> = {
   shopify: 30,
   square: 30,
   hubspot: 30,
@@ -44,13 +44,13 @@ function useNow(intervalMs = 10_000) {
 }
 
 /** "Updated 12s ago" for one source (or the stalest of several). */
-export function FreshnessNote({ sources }: { sources: BusinessLine[] }) {
+export function FreshnessNote({ sources }: { sources: Source[] }) {
   const { data } = useFreshness();
   const now = useNow();
   if (!data) return null;
   const relevant = data.sources.filter((s) => sources.includes(s.source));
   if (relevant.length === 0) return null;
-  const parts = relevant.map((s) => `${BUSINESS_LINE_INFO[s.source].label} ${timeAgo(s.lastDataAt, now)}`);
+  const parts = relevant.map((s) => `${SOURCE_INFO[s.source].label} ${timeAgo(s.lastDataAt, now)}`);
   return <p className="freshness-note">Data updated: {parts.join(" · ")}</p>;
 }
 

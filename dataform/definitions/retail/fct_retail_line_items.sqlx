@@ -1,19 +1,25 @@
 config {
   type: "table",
   schema: "marts",
-  description: "One row per Shopify or Square line item with item, variant, category, location and channel. Powers the sales breakdowns.",
-  bigquery: { partitionBy: "sale_date", clusterBy: ["business_line", "item_name"] },
-  assertions: { nonNull: ["business_line", "sale_date", "order_id"] }
+  description: "One row per Shopify or Square line item with business line, item, variant, category, location and channel. Powers the sales breakdowns.",
+  bigquery: { partitionBy: "sale_date", clusterBy: ["source", "business_line", "item_name"] },
+  assertions: { nonNull: ["source", "business_line", "sale_date", "order_id"] }
 }
 
-SELECT
-  'shopify' AS business_line, sale_date, order_id, location_name AS location, channel,
-  category, item_name, variant_name, sku, quantity, gross, discounts
-FROM ${ref("stg_shopify_order_lines")}
+WITH lines AS (
+  SELECT
+    'shopify' AS source, 'store' AS assign_key, sale_date, order_id, location_name AS location, channel,
+    category, item_name, variant_name, sku, quantity, gross, discounts
+  FROM ${ref("stg_shopify_order_lines")}
 
-UNION ALL
+  UNION ALL
 
-SELECT
-  'square', sale_date, order_id, location_name, source_name,
-  category_name, item_name, variation_name, sku, quantity, gross, discounts
-FROM ${ref("stg_square_line_items")}
+  SELECT
+    'square', location_id, sale_date, order_id, location_name, source_name,
+    category_name, item_name, variation_name, sku, quantity, gross, discounts
+  FROM ${ref("stg_square_line_items")}
+)
+SELECT COALESCE(a.business_line, 'unassigned') AS business_line, l.*
+FROM lines AS l
+LEFT JOIN ${ref("business_line_assignments")} AS a
+  ON a.source = l.source AND a.assign_key = l.assign_key

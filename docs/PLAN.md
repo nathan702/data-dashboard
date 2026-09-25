@@ -22,6 +22,31 @@ page shows them side by side.
 | Budgets/targets | Later, via a Google Sheet read directly by BigQuery. |
 | Future sources | Connector framework makes each new source one module (e.g. QuickBooks, Google Analytics, payroll, Ramp). |
 
+## Business lines
+
+Reporting is organized by **business line**, not by platform. Each platform's
+transactions are split across lines by assignment rules set on the dashboard's
+**Settings** page (admins); anything unmatched is "Unassigned" and flagged.
+
+| Business line | Platforms | Split by |
+|---|---|---|
+| Camp | Campminder | Session |
+| River School | FareHarbor | FareHarbor dashboard (company) |
+| Events | FareHarbor bookings + Square on-site F&B | Dashboard; Square locations "Events", "Pizza Nights" |
+| Haunted Forest | FareHarbor bookings + Square on-site F&B | Dashboard; Square location "MHF" |
+| CHAPs | Campminder individual programs + HubSpot group bookings/parties | Session; pipeline |
+| Education Programs | HubSpot | Pipeline |
+| School Year Programs | Campminder | Session |
+| River Store | Shopify | Whole store |
+| Farm Store | Square | Location "Farm Store" |
+
+- Assignments live in `config.business_line_map` (append-only; latest wins),
+  combined with built-in defaults in `dataform/includes/business_lines.js`, and
+  resolved in `marts.business_line_assignments`. Every mart row carries
+  `business_line` and `source`. Saving on the Settings page starts a refresh.
+- Each person can choose and order their tabs (stored in Firestore `users/{email}`).
+- The per-platform pages, data status and Settings live under **Advanced** (admins).
+
 ## Architecture
 
 ```

@@ -1,5 +1,5 @@
 import { BigQuery, type Table } from "@google-cloud/bigquery";
-import type { BusinessLine } from "@dash/shared";
+import type { Source } from "@dash/shared";
 import type { IngestPath, RawRecord, RawWriter, RunLog, RunLogEntry } from "./types.js";
 
 /** Every raw table has the same shape; the platform payload is kept as JSON. */
@@ -26,7 +26,7 @@ export const SYNC_RUNS_SCHEMA = [
 
 const INSERT_BATCH = 500;
 
-export function rawDataset(source: BusinessLine): string {
+export function rawDataset(source: Source): string {
   return `raw_${source}`;
 }
 
@@ -57,7 +57,7 @@ export class BigQueryRawWriter implements RawWriter {
     private readonly location = "US",
   ) {}
 
-  async write(source: BusinessLine, path: IngestPath, runId: string, records: RawRecord[]): Promise<number> {
+  async write(source: Source, path: IngestPath, runId: string, records: RawRecord[]): Promise<number> {
     const now = new Date();
     const byEntity = new Map<string, RawRecord[]>();
     for (const r of records) {

@@ -4,6 +4,8 @@ export interface Viewer {
   email: string;
   name: string | null;
   isAdmin: boolean;
+  /** True when no admin list is configured yet (so everyone is an admin). */
+  adminsUnconfigured?: boolean;
 }
 
 export interface VerifiedToken {
@@ -16,6 +18,7 @@ export interface VerifiedToken {
 export interface AccessList {
   /** When non-empty, only these emails may sign in (on top of the domain check). */
   allowedEmails: string[];
+  /** Who may change Settings. While empty, everyone who can sign in is an admin. */
   admins: string[];
 }
 
@@ -50,7 +53,8 @@ export function decideAccess(token: VerifiedToken, access: AccessList, allowedDo
     viewer: {
       email,
       name: token.name ?? null,
-      isAdmin: access.admins.map((e) => e.toLowerCase()).includes(email),
+      adminsUnconfigured: access.admins.length === 0,
+      isAdmin: access.admins.length === 0 || access.admins.map((e) => e.toLowerCase()).includes(email),
     },
   };
 }
@@ -89,4 +93,12 @@ export function requireViewer(deps: AuthDeps | null) {
     req.viewer = decision.viewer;
     next();
   };
+}
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.viewer?.isAdmin) {
+    res.status(403).json({ error: "Only dashboard admins can change this" });
+    return;
+  }
+  next();
 }

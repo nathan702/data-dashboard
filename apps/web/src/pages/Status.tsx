@@ -1,4 +1,4 @@
-import { BUSINESS_LINE_INFO, type SourceFreshness } from "@dash/shared";
+import { SOURCE_INFO, type SourceFreshness } from "@dash/shared";
 import { DataTable } from "../components/DataTable";
 import { health, HealthBadge, useNow } from "../components/Freshness";
 import { useFreshness } from "../lib/api";
@@ -21,9 +21,9 @@ export function Status() {
           exportName="data_status"
           searchable={false}
           columns={[
-            { key: "source", label: "Source", value: (r) => BUSINESS_LINE_INFO[r.source].label },
+            { key: "source", label: "Source", value: (r) => SOURCE_INFO[r.source].label },
             { key: "health", label: "Health", value: (r) => health(r, now), render: (r) => <HealthBadge h={health(r, now)} /> },
-            { key: "method", label: "How it syncs", value: (r) => BUSINESS_LINE_INFO[r.source].ingestion },
+            { key: "method", label: "How it syncs", value: (r) => SOURCE_INFO[r.source].ingestion },
             { key: "lastData", label: "Last new data", value: (r) => r.lastDataAt, render: (r) => timeAgo(r.lastDataAt, now) },
             { key: "lastSuccess", label: "Last full sync", value: (r) => r.lastSuccessAt, render: (r) => timeAgo(r.lastSuccessAt, now) },
             { key: "error", label: "Last error", value: (r) => r.lastError, render: (r) => r.lastError ?? "–" },

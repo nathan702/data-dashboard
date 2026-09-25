@@ -39,8 +39,11 @@ Firebase console → Firestore → create collection `config`, document `access`
 
 | field | type | value |
 |---|---|---|
-| `admins` | array | your email |
+| `admins` | array | your email, plus anyone else who should change Settings and see the Advanced menu |
 | `allowedEmails` | array | leave empty to allow everyone in the domain, or list the ~10 people |
+
+Until `admins` has at least one email, everyone who can sign in is treated as
+an admin (the Settings page shows a reminder).
 
 ## 4. SQL transforms
 

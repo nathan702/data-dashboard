@@ -9,6 +9,7 @@ js { const { squareMoney } = require("includes/sql"); }
 SELECT
   o.order_id,
   o.sale_date,
+  o.location_id,
   o.location_name,
   o.source_name,
   JSON_VALUE(li, '$.uid') AS line_uid,

@@ -1,12 +1,16 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  AssignmentsResponse,
+  AssignmentUpdate,
+  BusinessLineOrUnassigned,
   ComparisonMode,
   InventoryResponse,
   MeResponse,
+  Preferences,
   RetailBreakdownResponse,
   RetailDimension,
   RetailKpiResponse,
-  RetailLine,
+  RetailSource,
   RevenueQuery,
   RevenueSummaryResponse,
   SourceFreshness,
@@ -22,8 +26,15 @@ export class ApiError extends Error {
   }
 }
 
-async function getJson<T>(path: string, token: string | null): Promise<T> {
-  const res = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+async function call<T>(path: string, token: string | null, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  const res = await fetch(path, {
+    method: init.method ?? "GET",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new ApiError(res.status, body.error ?? `Request failed (${res.status})`);
@@ -35,7 +46,7 @@ function useApi<T>(key: unknown[], path: string, opts: { refetchInterval?: numbe
   const { getToken, status } = useAuth();
   return useQuery({
     queryKey: key,
-    queryFn: async () => getJson<T>(path, await getToken()),
+    queryFn: async () => call<T>(path, await getToken()),
     enabled: status === "signed_in",
     // Keep showing the previous numbers while new ones load (no flashing).
     placeholderData: keepPreviousData,
@@ -44,8 +55,25 @@ function useApi<T>(key: unknown[], path: string, opts: { refetchInterval?: numbe
   });
 }
 
+function useApiMutation<TBody, TResult>(path: string, invalidate: unknown[][]) {
+  const { getToken } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: TBody) => call<TResult>(path, await getToken(), { method: "PUT", body }),
+    onSuccess: () => Promise.all(invalidate.map((key) => qc.invalidateQueries({ queryKey: key }))),
+  });
+}
+
 export function useMe() {
   return useApi<MeResponse>(["me"], "/api/me");
+}
+
+export function usePreferences() {
+  return useApi<Preferences>(["preferences"], "/api/me/preferences");
+}
+
+export function useSavePreferences() {
+  return useApiMutation<Preferences, Preferences>("/api/me/preferences", [["preferences"]]);
 }
 
 export function useFreshness() {
@@ -60,8 +88,10 @@ export function revenueParams(q: RevenueQuery): string {
     measure: q.measure,
     granularity: q.granularity,
     compare: q.compare,
+    groupBy: q.groupBy,
   });
   if (q.businessLines?.length) p.set("businessLines", q.businessLines.join(","));
+  if (q.sources?.length) p.set("sources", q.sources.join(","));
   return p.toString();
 }
 
@@ -71,18 +101,34 @@ export function useRevenueSummary(q: RevenueQuery) {
   return useApi<RevenueSummaryResponse>(["revenue", qs], `/api/revenue/summary?${qs}`, { refetchInterval: 60_000 });
 }
 
-export function useRetailKpis(line: RetailLine, q: { start: string; end: string; compare: ComparisonMode }) {
-  const qs = new URLSearchParams(q).toString();
-  return useApi<RetailKpiResponse>(["retail-kpis", line, qs], `/api/retail/${line}/kpis?${qs}`, { refetchInterval: 60_000 });
+type RetailScope = { start: string; end: string; businessLine?: BusinessLineOrUnassigned };
+
+function retailQs(q: Record<string, string | undefined>) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
+  return p.toString();
 }
 
-export function useRetailBreakdown(line: RetailLine, q: { start: string; end: string; dimension: RetailDimension }) {
-  const qs = new URLSearchParams(q).toString();
-  return useApi<RetailBreakdownResponse>(["retail-breakdown", line, qs], `/api/retail/${line}/breakdown?${qs}`, {
+export function useRetailKpis(source: RetailSource, q: RetailScope & { compare: ComparisonMode }) {
+  const qs = retailQs(q);
+  return useApi<RetailKpiResponse>(["retail-kpis", source, qs], `/api/retail/${source}/kpis?${qs}`, { refetchInterval: 60_000 });
+}
+
+export function useRetailBreakdown(source: RetailSource, q: RetailScope & { dimension: RetailDimension }) {
+  const qs = retailQs(q);
+  return useApi<RetailBreakdownResponse>(["retail-breakdown", source, qs], `/api/retail/${source}/breakdown?${qs}`, {
     refetchInterval: 60_000,
   });
 }
 
 export function useShopifyInventory() {
   return useApi<InventoryResponse>(["shopify-inventory"], "/api/shopify/inventory", { refetchInterval: 5 * 60_000 });
+}
+
+export function useAssignments() {
+  return useApi<AssignmentsResponse>(["assignments"], "/api/assignments", { refetchInterval: 60_000 });
+}
+
+export function useSaveAssignments() {
+  return useApiMutation<AssignmentUpdate, { ok: true; saved: number }>("/api/assignments", [["assignments"], ["revenue"], ["retail-kpis"], ["retail-breakdown"]]);
 }

@@ -1,23 +1,26 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import {
-  BUSINESS_LINES,
   comparisonRange,
   daysBetweenInclusive,
   DEFAULT_SEASON_CONFIG,
-  type BusinessLine,
+  type AssignmentRow,
+  type AssignmentUpdate,
+  type BusinessLineOrUnassigned,
   type Granularity,
   type InventoryResponse,
   type RetailBreakdownQuery,
   type RetailBreakdownResponse,
   type RetailKpiQuery,
   type RetailKpiResponse,
-  type RetailLine,
+  type RetailSource,
   type RevenueMeasure,
   type RevenueQuery,
   type RevenueSummaryResponse,
+  type Source,
 } from "@dash/shared";
 import { toKpis } from "./retail.js";
-import { breakdownSql, inventorySql, kpiSql } from "./retailSql.js";
+import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, inventorySql, kpiSql, saveAssignmentsSql } from "./retailSql.js";
+import { groupKeys } from "./summarize.js";
 import type { Warehouse } from "./types.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
@@ -45,7 +48,10 @@ const MEASURE_SQL: Record<RevenueMeasure, string> = {
   net_after_fees: "SUM(gross - discounts - refunds - fees)",
 };
 
+const GROUP_COLUMN = { business_line: "business_line", source: "source" } as const;
+
 const DATASET_NAME = /^[A-Za-z0-9_]+$/;
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export class BigQueryWarehouse implements Warehouse {
   private readonly table: string;
@@ -53,27 +59,107 @@ export class BigQueryWarehouse implements Warehouse {
   constructor(
     private readonly bq: BigQuery,
     private readonly martsDataset: string,
+    private readonly configDataset = "config",
+    private readonly location = "US",
   ) {
-    if (!DATASET_NAME.test(martsDataset)) throw new Error(`Invalid dataset name: ${martsDataset}`);
+    for (const d of [martsDataset, configDataset]) if (!DATASET_NAME.test(d)) throw new Error(`Invalid dataset name: ${d}`);
     this.table = `\`${martsDataset}.fct_revenue_daily\``;
   }
 
-  async retailKpis(line: RetailLine, q: RetailKpiQuery): Promise<RetailKpiResponse> {
+  async revenueSummary(q: RevenueQuery): Promise<RevenueSummaryResponse> {
     const cmp = comparisonRange({ start: q.start, end: q.end }, q.compare);
+    const group = GROUP_COLUMN[q.groupBy];
+    const params = {
+      basis: q.basis,
+      business_lines: q.businessLines ?? [],
+      sources: q.sources ?? [],
+      start: q.start,
+      end: q.end,
+      has_cmp: cmp !== null,
+      cmp_start: cmp?.start ?? q.start,
+      cmp_end: cmp?.end ?? q.end,
+      shift_days: daysBetweenInclusive(q.start, q.end),
+    };
+    const types = { business_lines: ["STRING"], sources: ["STRING"] };
+    const filters = `
+        date_basis = @basis
+        AND (ARRAY_LENGTH(@business_lines) = 0 OR business_line IN UNNEST(@business_lines))
+        AND (ARRAY_LENGTH(@sources) = 0 OR source IN UNNEST(@sources))`;
+    // Comparison rows moved onto the current period (see alignToCurrent in @dash/shared).
+    const aligned =
+      q.compare === "previous_year" ? "DATE_ADD(revenue_date, INTERVAL 1 YEAR)" : "DATE_ADD(revenue_date, INTERVAL @shift_days DAY)";
+
+    const totalsSql = `
+      SELECT
+        ${group} AS grp,
+        IF(revenue_date BETWEEN @start AND @end, 'current', 'comparison') AS period,
+        SUM(gross) AS gross, SUM(discounts) AS discounts, SUM(refunds) AS refunds,
+        SUM(fees) AS fees, SUM(transactions) AS transactions
+      FROM ${this.table}
+      WHERE ${filters}
+        AND (revenue_date BETWEEN @start AND @end
+             OR (@has_cmp AND revenue_date BETWEEN @cmp_start AND @cmp_end))
+      GROUP BY 1, 2`;
+
+    const seriesSql = (dateExpr: string, from: string, to: string) => `
+      SELECT CAST(${bucketSql(q.granularity, dateExpr)} AS STRING) AS period, ${group} AS grp, ${MEASURE_SQL[q.measure]} AS value
+      FROM ${this.table}
+      WHERE ${filters} AND revenue_date BETWEEN ${from} AND ${to}
+      GROUP BY 1, 2
+      ORDER BY 1, 2`;
+
+    const run = (query: string) => this.bq.query({ query, params, types, location: this.location }).then(([rows]) => rows);
+    const [totalRows, seriesRows, cmpRows] = await Promise.all([
+      run(totalsSql),
+      run(seriesSql("revenue_date", "@start", "@end")),
+      cmp ? run(seriesSql(aligned, "@cmp_start", "@cmp_end")) : Promise.resolve([]),
+    ]);
+
+    const find = (key: string, period: string) => (totalRows as TotalsRow[]).find((r) => r.grp === key && r.period === period);
+    const toPoints = (rows: SeriesRow[]) => rows.map((r) => ({ period: r.period, key: r.grp, value: round2(Number(r.value)) }));
+
+    return {
+      range: { start: q.start, end: q.end },
+      comparisonRange: cmp,
+      groupBy: q.groupBy,
+      groups: groupKeys(q).map((key) => ({
+        key,
+        current: toTotals(find(key, "current")),
+        comparison: cmp ? toTotals(find(key, "comparison")) : null,
+      })),
+      series: toPoints(seriesRows as SeriesRow[]),
+      comparisonSeries: toPoints(cmpRows as SeriesRow[]),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private retailParams(source: RetailSource, businessLine: BusinessLineOrUnassigned | undefined) {
+    return {
+      params: { source, business_line: businessLine ?? null },
+      types: { business_line: "STRING" },
+    };
+  }
+
+  async retailKpis(source: RetailSource, q: RetailKpiQuery): Promise<RetailKpiResponse> {
+    const cmp = comparisonRange({ start: q.start, end: q.end }, q.compare);
+    const base = this.retailParams(source, q.businessLine);
     const [rows] = await this.bq.query({
       query: kpiSql(this.martsDataset),
       params: {
-        line,
+        ...base.params,
         start: q.start,
         end: q.end,
         has_cmp: cmp !== null,
         cmp_start: cmp?.start ?? q.start,
         cmp_end: cmp?.end ?? q.end,
       },
+      types: base.types,
+      location: this.location,
     });
     const find = (p: string) => (rows as Array<Record<string, number> & { period: string }>).find((r) => r.period === p) ?? {};
     return {
-      line,
+      source,
+      businessLine: q.businessLine ?? null,
       range: { start: q.start, end: q.end },
       comparisonRange: cmp,
       current: toKpis(find("current")),
@@ -81,14 +167,18 @@ export class BigQueryWarehouse implements Warehouse {
     };
   }
 
-  async retailBreakdown(line: RetailLine, q: RetailBreakdownQuery): Promise<RetailBreakdownResponse> {
+  async retailBreakdown(source: RetailSource, q: RetailBreakdownQuery): Promise<RetailBreakdownResponse> {
+    const base = this.retailParams(source, q.businessLine);
     const [rows] = await this.bq.query({
       query: breakdownSql(this.martsDataset, q.dimension),
-      params: { line, start: q.start, end: q.end, limit_plus_one: q.limit + 1 },
+      params: { ...base.params, start: q.start, end: q.end, limit_plus_one: q.limit + 1 },
+      types: base.types,
+      location: this.location,
     });
     const typed = rows as Array<{ key: string; detail: string | null; orders: number; units: number; gross: number; discounts: number; net: number }>;
     return {
-      line,
+      source,
+      businessLine: q.businessLine ?? null,
       dimension: q.dimension,
       range: { start: q.start, end: q.end },
       truncated: typed.length > q.limit,
@@ -105,7 +195,7 @@ export class BigQueryWarehouse implements Warehouse {
   }
 
   async shopifyInventory(): Promise<InventoryResponse> {
-    const [rows] = await this.bq.query({ query: inventorySql(this.martsDataset) });
+    const [rows] = await this.bq.query({ query: inventorySql(this.martsDataset), location: this.location });
     const typed = rows as Array<{ product: string; variant: string | null; sku: string | null; location: string; available: number; on_hand: number; snapshot_at: { value: string } | string | null }>;
     const at = typed[0]?.snapshot_at;
     return {
@@ -121,89 +211,63 @@ export class BigQueryWarehouse implements Warehouse {
     };
   }
 
-  async revenueSummary(q: RevenueQuery): Promise<RevenueSummaryResponse> {
-    const lines: BusinessLine[] = q.businessLines?.length ? q.businessLines : [...BUSINESS_LINES];
-    const cmp = comparisonRange({ start: q.start, end: q.end }, q.compare);
-    const params = {
-      basis: q.basis,
-      lines,
-      start: q.start,
-      end: q.end,
-      has_cmp: cmp !== null,
-      cmp_start: cmp?.start ?? q.start,
-      cmp_end: cmp?.end ?? q.end,
-      shift_days: daysBetweenInclusive(q.start, q.end),
-    };
-    const types = { lines: ["STRING"] };
-    // Comparison rows moved onto the current period (see alignToCurrent in @dash/shared).
-    const aligned =
-      q.compare === "previous_year" ? "DATE_ADD(revenue_date, INTERVAL 1 YEAR)" : "DATE_ADD(revenue_date, INTERVAL @shift_days DAY)";
-
-    const totalsSql = `
-      SELECT
-        business_line,
-        IF(revenue_date BETWEEN @start AND @end, 'current', 'comparison') AS period,
-        SUM(gross) AS gross, SUM(discounts) AS discounts, SUM(refunds) AS refunds,
-        SUM(fees) AS fees, SUM(transactions) AS transactions
-      FROM ${this.table}
-      WHERE date_basis = @basis
-        AND business_line IN UNNEST(@lines)
-        AND (revenue_date BETWEEN @start AND @end
-             OR (@has_cmp AND revenue_date BETWEEN @cmp_start AND @cmp_end))
-      GROUP BY 1, 2`;
-
-    const seriesSql = `
-      SELECT
-        CAST(${bucketSql(q.granularity, "revenue_date")} AS STRING) AS period,
-        business_line,
-        ${MEASURE_SQL[q.measure]} AS value
-      FROM ${this.table}
-      WHERE date_basis = @basis
-        AND business_line IN UNNEST(@lines)
-        AND revenue_date BETWEEN @start AND @end
-      GROUP BY 1, 2
-      ORDER BY 1, 2`;
-
-    const comparisonSeriesSql = `
-      SELECT
-        CAST(${bucketSql(q.granularity, aligned)} AS STRING) AS period,
-        business_line,
-        ${MEASURE_SQL[q.measure]} AS value
-      FROM ${this.table}
-      WHERE date_basis = @basis
-        AND business_line IN UNNEST(@lines)
-        AND revenue_date BETWEEN @cmp_start AND @cmp_end
-      GROUP BY 1, 2
-      ORDER BY 1, 2`;
-
-    const [[totalRows], [seriesRows], cmpResult] = await Promise.all([
-      this.bq.query({ query: totalsSql, params, types }),
-      this.bq.query({ query: seriesSql, params, types }),
-      cmp ? this.bq.query({ query: comparisonSeriesSql, params, types }) : Promise.resolve([[]]),
+  async assignments(): Promise<{ rows: AssignmentRow[]; pendingRefresh: boolean }> {
+    const [[rows], [built]] = await Promise.all([
+      this.bq.query({ query: assignmentsSql(this.martsDataset, this.configDataset), location: this.location }),
+      this.bq.query({ query: assignmentsBuiltAtSql(this.martsDataset), location: this.location }),
     ]);
-    const toPoints = (rows: SeriesRow[]) =>
-      rows.map((r) => ({ period: r.period, businessLine: r.business_line as BusinessLine, value: round2(Number(r.value)) }));
+    const builtAt = tsValue((built as Array<{ built_at: unknown }>)[0]?.built_at);
+    const typed = rows as Array<{
+      source: Source;
+      kind: string;
+      assign_key: string;
+      label: string;
+      business_line: BusinessLineOrUnassigned;
+      origin: AssignmentRow["origin"];
+      last_activity: string | null;
+      net_12m: number | string;
+      saved_at: unknown;
+    }>;
+    let pendingRefresh = false;
+    const out = typed.map((r) => {
+      const savedAt = tsValue(r.saved_at);
+      if (savedAt && (!builtAt || savedAt > builtAt)) pendingRefresh = true;
+      return {
+        source: r.source,
+        kind: r.kind,
+        key: r.assign_key,
+        label: r.label,
+        businessLine: r.business_line,
+        origin: r.origin,
+        lastActivity: r.last_activity,
+        netLast12Months: round2(Number(r.net_12m)),
+      };
+    });
+    return { rows: out, pendingRefresh };
+  }
 
-    const find = (line: string, period: string) =>
-      (totalRows as TotalsRow[]).find((r) => r.business_line === line && r.period === period);
-
-    return {
-      range: { start: q.start, end: q.end },
-      comparisonRange: cmp,
-      byLine: lines.map((l) => ({
-        businessLine: l,
-        current: toTotals(find(l, "current")),
-        comparison: cmp ? toTotals(find(l, "comparison")) : null,
-      })),
-      series: toPoints(seriesRows as SeriesRow[]),
-      comparisonSeries: toPoints(cmpResult[0] as SeriesRow[]),
-      generatedAt: new Date().toISOString(),
-    };
+  async saveAssignments(changes: AssignmentUpdate["changes"], by: string): Promise<void> {
+    await this.bq.query({
+      query: saveAssignmentsSql(this.configDataset),
+      params: {
+        by,
+        changes: changes.map((c) => ({ source: c.source, kind: c.kind, assign_key: c.key, business_line: c.businessLine })),
+      },
+      types: { changes: [{ source: "STRING", kind: "STRING", assign_key: "STRING", business_line: "STRING" }] },
+      location: this.location,
+    });
   }
 }
 
+function tsValue(v: unknown): number | null {
+  if (!v) return null;
+  const s = typeof v === "string" ? v : (v as { value?: string }).value;
+  const t = s ? Date.parse(s) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
 interface TotalsRow {
-  business_line: string;
+  grp: string;
   period: string;
   gross: number;
   discounts: number;
@@ -214,11 +278,9 @@ interface TotalsRow {
 
 interface SeriesRow {
   period: string;
-  business_line: string;
+  grp: string;
   value: number;
 }
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function toTotals(r: TotalsRow | undefined) {
   const gross = Number(r?.gross ?? 0);

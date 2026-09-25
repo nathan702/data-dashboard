@@ -1,11 +1,11 @@
-import type { BusinessLine } from "./businessLines.js";
 import type { IsoDate } from "./dates.js";
+import type { Source } from "./sources.js";
 
 export type SyncStatus = "ok" | "running" | "error" | "never_run";
 
 /** Per-source sync state, stored in Firestore at sync_state/{source}. */
 export interface SourceFreshness {
-  source: BusinessLine;
+  source: Source;
   status: SyncStatus;
   /** Most recent time new data landed, from any path (webhook, poll, file). */
   lastDataAt: string | null;
@@ -24,22 +24,24 @@ export interface RevenueTotals {
   transactions: number;
 }
 
-export interface RevenueByLine {
-  businessLine: BusinessLine;
+/** Totals for one group: a business line id (or "unassigned") or a source id, per the query's groupBy. */
+export interface RevenueGroup {
+  key: string;
   current: RevenueTotals;
   comparison: RevenueTotals | null;
 }
 
 export interface RevenueSeriesPoint {
   period: IsoDate;
-  businessLine: BusinessLine;
+  key: string;
   value: number;
 }
 
 export interface RevenueSummaryResponse {
   range: { start: IsoDate; end: IsoDate };
   comparisonRange: { start: IsoDate; end: IsoDate } | null;
-  byLine: RevenueByLine[];
+  groupBy: "business_line" | "source";
+  groups: RevenueGroup[];
   series: RevenueSeriesPoint[];
   /**
    * The comparison period's values, moved onto the current period's buckets
@@ -54,4 +56,6 @@ export interface MeResponse {
   email: string;
   name: string | null;
   isAdmin: boolean;
+  /** No admin list set in Firestore config/access yet, so everyone is an admin. */
+  adminsUnconfigured: boolean;
 }

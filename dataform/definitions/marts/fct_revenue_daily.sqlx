@@ -1,13 +1,13 @@
 config {
   type: "table",
   schema: "marts",
-  description: "Daily revenue per business line and date basis. Powers the Overview page. Sources are listed in includes/revenue_sources.js.",
+  description: "Daily revenue per business line, platform and date basis. Business line comes from marts.business_line_assignments ('unassigned' when no rule matches). Sources are listed in includes/revenue_sources.js.",
   bigquery: {
     partitionBy: "revenue_date",
-    clusterBy: ["business_line", "date_basis"]
+    clusterBy: ["business_line", "source", "date_basis"]
   },
   assertions: {
-    nonNull: ["business_line", "revenue_date", "date_basis"],
+    nonNull: ["business_line", "source", "revenue_date", "date_basis"],
     rowConditions: [
       "date_basis IN ('booked', 'collected', 'service')"
     ]
@@ -21,14 +21,14 @@ js {
 WITH unioned AS (
   ${revenueSources.length
     ? revenueSources.map((s) => `
-      SELECT business_line, revenue_date, date_basis, location, channel,
+      SELECT source, assign_key, revenue_date, date_basis, location, channel,
              CAST(gross AS NUMERIC) AS gross, CAST(discounts AS NUMERIC) AS discounts,
              CAST(refunds AS NUMERIC) AS refunds, CAST(fees AS NUMERIC) AS fees,
              CAST(transactions AS INT64) AS transactions
       FROM ${ref(s)}`).join("\n      UNION ALL")
     : `
       -- No sources connected yet: an empty table with the final schema.
-      SELECT CAST(NULL AS STRING) AS business_line, CAST(NULL AS DATE) AS revenue_date,
+      SELECT CAST(NULL AS STRING) AS source, CAST(NULL AS STRING) AS assign_key, CAST(NULL AS DATE) AS revenue_date,
              CAST(NULL AS STRING) AS date_basis, CAST(NULL AS STRING) AS location,
              CAST(NULL AS STRING) AS channel, CAST(0 AS NUMERIC) AS gross,
              CAST(0 AS NUMERIC) AS discounts, CAST(0 AS NUMERIC) AS refunds,
@@ -37,7 +37,8 @@ WITH unioned AS (
       WHERE FALSE`}
 )
 SELECT
-  u.business_line,
+  COALESCE(a.business_line, 'unassigned') AS business_line,
+  u.source,
   u.revenue_date,
   u.date_basis,
   u.location,
@@ -51,4 +52,6 @@ SELECT
   SUM(u.transactions) AS transactions
 FROM unioned AS u
 JOIN ${ref("dim_date")} AS d ON d.date = u.revenue_date
-GROUP BY 1, 2, 3, 4, 5, 6, 7
+LEFT JOIN ${ref("business_line_assignments")} AS a
+  ON a.source = u.source AND a.assign_key = u.assign_key
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8

@@ -1,5 +1,5 @@
 import express, { type Request, type Response } from "express";
-import { isBusinessLine, type BusinessLine } from "@dash/shared";
+import { isSource, type Source } from "@dash/shared";
 import { handleWebhook, runSync, type Deps } from "./core/runner.js";
 import { WebhookAuthError, type Connector } from "./core/types.js";
 import { logger } from "./core/logger.js";
@@ -15,7 +15,7 @@ export type Role = "jobs" | "webhooks" | "all";
 export interface AppOptions {
   role: Role;
   deps: Deps;
-  connectors: Map<BusinessLine, Connector>;
+  connectors: Map<Source, Connector>;
   /** Public base URL of the webhooks service, used when signatures cover the URL. */
   publicBaseUrl?: string;
 }
@@ -32,7 +32,7 @@ export function createApp({ role, deps, connectors, publicBaseUrl }: AppOptions)
 
   const lookup = (req: Request, res: Response): Connector | null => {
     const source = String(req.params.source);
-    if (!isBusinessLine(source)) {
+    if (!isSource(source)) {
       res.status(404).json({ error: "Unknown source" });
       return null;
     }

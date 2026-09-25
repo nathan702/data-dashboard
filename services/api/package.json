@@ -16,7 +16,8 @@
     "@google-cloud/bigquery": "^9.1.0",
     "express": "^5.2.1",
     "firebase-admin": "^14.4.0",
-    "lru-cache": "^11.5.3"
+    "lru-cache": "^11.5.3",
+    "google-auth-library": "^10.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

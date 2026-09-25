@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
-import type { BusinessLine } from "@dash/shared";
+import type { Source } from "@dash/shared";
 import { createApp } from "./app.js";
 import { MemoryRawWriter, MemoryRunLog, MemoryStateStore } from "./core/memory.js";
 import { WebhookAuthError, type Connector } from "./core/types.js";
@@ -9,7 +9,7 @@ import { pickAllowed, pseudonymize } from "./core/privacy.js";
 
 function setup(connector: Connector, role: "jobs" | "webhooks" | "all" = "all") {
   const deps = { writer: new MemoryRawWriter(), state: new MemoryStateStore(), runLog: new MemoryRunLog() };
-  const connectors = new Map<BusinessLine, Connector>([[connector.source, connector]]);
+  const connectors = new Map<Source, Connector>([[connector.source, connector]]);
   return { deps, app: createApp({ role, deps, connectors }) };
 }
 

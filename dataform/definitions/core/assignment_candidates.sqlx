@@ -1,0 +1,33 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Every value that can be assigned to a business line (e.g. each Square location), with recent activity to help prioritize.",
+  assertions: { uniqueKey: ["source", "kind", "assign_key"] }
+}
+
+WITH square AS (
+  SELECT
+    l.location_id AS assign_key,
+    COALESCE(l.location_name, l.location_id) AS label,
+    MAX(o.sale_date) AS last_activity,
+    COALESCE(SUM(IF(o.sale_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), o.gross - o.discounts, 0)), 0) AS net_12m
+  FROM ${ref("stg_square_locations")} AS l
+  LEFT JOIN (
+    SELECT o.location_id, o.sale_date, SUM(li.gross) AS gross, SUM(li.discounts) AS discounts
+    FROM ${ref("stg_square_orders")} AS o
+    JOIN ${ref("stg_square_line_items")} AS li USING (order_id)
+    GROUP BY 1, 2
+  ) AS o USING (location_id)
+  GROUP BY 1, 2
+),
+shopify AS (
+  SELECT
+    'store' AS assign_key,
+    'Shopify store' AS label,
+    MAX(sale_date) AS last_activity,
+    COALESCE(SUM(IF(sale_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), gross - discounts, 0)), 0) AS net_12m
+  FROM ${ref("stg_shopify_order_lines")}
+)
+SELECT 'square' AS source, 'location' AS kind, * FROM square
+UNION ALL
+SELECT 'shopify', 'store', * FROM shopify

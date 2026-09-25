@@ -1,15 +1,16 @@
 import { useState } from "react";
 import {
   RETAIL_DIMENSION_LABEL,
-  RETAIL_LINE_DIMENSIONS,
+  RETAIL_SOURCE_DIMENSIONS,
+  type BusinessLineOrUnassigned,
   type InventoryRow,
   type RetailBreakdownRow,
   type RetailDimension,
   type RetailKpis,
-  type RetailLine,
+  type RetailSource,
 } from "@dash/shared";
 import { useRetailBreakdown, useRetailKpis, useShopifyInventory } from "../lib/api";
-import { LINE_COLOR_VAR } from "../lib/colors";
+import { ACCENT_VAR } from "../lib/colors";
 import { useFilters } from "../lib/filters";
 import { formatInt, formatPercent, formatUsd, percentChange, timeAgo } from "../lib/format";
 import { DataTable, type Column } from "./DataTable";
@@ -17,7 +18,7 @@ import { TopBarChart } from "./TopBarChart";
 
 type KpiKey = keyof RetailKpis;
 
-const KPI_TILES: Record<RetailLine, Array<{ key: KpiKey; label: string; money: boolean; upIsGood?: boolean }>> = {
+const KPI_TILES: Record<RetailSource, Array<{ key: KpiKey; label: string; money: boolean; upIsGood?: boolean }>> = {
   shopify: [
     { key: "orders", label: "Orders", money: false },
     { key: "units", label: "Units sold", money: false },
@@ -63,13 +64,26 @@ function KpiTile({ label, value, previous, money, upIsGood = true, cmpLabel }: {
   );
 }
 
-/** Order-level KPIs and item/category/location/channel breakdowns for Shopify and Square. */
-export function RetailDetail({ line }: { line: RetailLine }) {
+/**
+ * Order-level KPIs and item/category/location/channel breakdowns for Shopify
+ * or Square, optionally limited to one business line's share.
+ */
+export function RetailDetail({
+  source,
+  businessLine,
+  title = "Sales detail",
+  showInventory = source === "shopify",
+}: {
+  source: RetailSource;
+  businessLine?: BusinessLineOrUnassigned;
+  title?: string;
+  showInventory?: boolean;
+}) {
   const [filters] = useFilters();
-  const dims = RETAIL_LINE_DIMENSIONS[line];
+  const dims = RETAIL_SOURCE_DIMENSIONS[source];
   const [dimension, setDimension] = useState<RetailDimension>(dims[0]!);
-  const kpis = useRetailKpis(line, { start: filters.start, end: filters.end, compare: filters.compare });
-  const breakdown = useRetailBreakdown(line, { start: filters.start, end: filters.end, dimension });
+  const kpis = useRetailKpis(source, { start: filters.start, end: filters.end, compare: filters.compare, businessLine });
+  const breakdown = useRetailBreakdown(source, { start: filters.start, end: filters.end, dimension, businessLine });
   const cmpLabel = filters.compare === "none" ? null : filters.compare === "previous_year" ? "last year" : "previous period";
 
   const columns: Column<RetailBreakdownRow>[] = [
@@ -95,12 +109,12 @@ export function RetailDetail({ line }: { line: RetailLine }) {
   });
 
   return (
-    <section className="page-section" aria-label="Sales detail">
-      <h2 className="section-title">Sales detail</h2>
+    <section className="page-section" aria-label={title}>
+      <h2 className="section-title">{title}</h2>
       {kpis.error && <div className="error-banner">Couldn't load order stats: {kpis.error.message}</div>}
       {kpis.data && (
         <div className={`tiles${kpis.isPlaceholderData ? " refetching" : ""}`}>
-          {KPI_TILES[line].map((t) => (
+          {KPI_TILES[source].map((t) => (
             <KpiTile
               key={t.key}
               label={t.label}
@@ -128,7 +142,7 @@ export function RetailDetail({ line }: { line: RetailLine }) {
         {breakdown.error && <div className="error-banner">Couldn't load breakdown: {breakdown.error.message}</div>}
         {breakdown.data && (
           <div className={breakdown.isPlaceholderData ? "refetching" : undefined}>
-            <TopBarChartSection rows={breakdown.data.rows} color={LINE_COLOR_VAR[line]} />
+            <TopBarChartSection rows={breakdown.data.rows} color={ACCENT_VAR} />
           </div>
         )}
       </div>
@@ -139,11 +153,11 @@ export function RetailDetail({ line }: { line: RetailLine }) {
           rows={breakdown.data.rows}
           columns={columns}
           rowKey={(r) => r.key}
-          exportName={`${line}_${dimension}_${filters.start}_${filters.end}`}
+          exportName={`${source}${businessLine ? `_${businessLine}` : ""}_${dimension}_${filters.start}_${filters.end}`}
         />
       )}
 
-      {line === "shopify" && <InventoryTable />}
+      {showInventory && source === "shopify" && <InventoryTable />}
     </section>
   );
 }

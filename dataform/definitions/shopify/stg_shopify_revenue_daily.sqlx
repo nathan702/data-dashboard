@@ -23,7 +23,9 @@ WITH parts AS (
   GROUP BY 1, 2, 3
 )
 SELECT
-  'shopify' AS business_line,
+  'shopify' AS source,
+  -- The whole store is one assignable value.
+  'store' AS assign_key,
   d AS revenue_date,
   basis AS date_basis,
   location,
@@ -36,4 +38,4 @@ SELECT
 FROM parts
 CROSS JOIN UNNEST(['booked', 'collected', 'service']) AS basis
 WHERE d IS NOT NULL
-GROUP BY 1, 2, 3, 4, 5
+GROUP BY 1, 2, 3, 4, 5, 6

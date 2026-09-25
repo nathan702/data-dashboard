@@ -1,5 +1,5 @@
 import { FieldValue, type Firestore } from "@google-cloud/firestore";
-import type { BusinessLine } from "@dash/shared";
+import type { Source } from "@dash/shared";
 import type { RunResult, SourceState, StateStore } from "./types.js";
 
 /**
@@ -9,11 +9,11 @@ import type { RunResult, SourceState, StateStore } from "./types.js";
 export class FirestoreStateStore implements StateStore {
   constructor(private readonly db: Firestore) {}
 
-  private doc(source: BusinessLine) {
+  private doc(source: Source) {
     return this.db.collection("sync_state").doc(source);
   }
 
-  async get(source: BusinessLine): Promise<SourceState> {
+  async get(source: Source): Promise<SourceState> {
     const snap = await this.doc(source).get();
     const d = snap.data() ?? {};
     return {
@@ -25,11 +25,11 @@ export class FirestoreStateStore implements StateStore {
     };
   }
 
-  async setCursor(source: BusinessLine, entity: string, cursor: string) {
+  async setCursor(source: Source, entity: string, cursor: string) {
     await this.doc(source).set({ cursors: { [entity]: cursor } }, { merge: true });
   }
 
-  async tryStartRun(source: BusinessLine, runId: string, staleAfterMs: number) {
+  async tryStartRun(source: Source, runId: string, staleAfterMs: number) {
     const ref = this.doc(source);
     return this.db.runTransaction(async (tx) => {
       const d = (await tx.get(ref)).data() ?? {};
@@ -40,7 +40,7 @@ export class FirestoreStateStore implements StateStore {
     });
   }
 
-  async markRunFinished(source: BusinessLine, runId: string, result: RunResult) {
+  async markRunFinished(source: Source, runId: string, result: RunResult) {
     const now = new Date().toISOString();
     // Only the run holding the claim may release it.
     const current = (await this.doc(source).get()).data()?.currentRunId;
@@ -59,7 +59,7 @@ export class FirestoreStateStore implements StateStore {
     );
   }
 
-  async releaseRun(source: BusinessLine, runId: string) {
+  async releaseRun(source: Source, runId: string) {
     const d = (await this.doc(source).get()).data() ?? {};
     if (d.currentRunId !== runId) return;
     // Restore the status the source had before this run claimed it.
@@ -69,7 +69,7 @@ export class FirestoreStateStore implements StateStore {
     );
   }
 
-  async markDataReceived(source: BusinessLine, at: Date = new Date()) {
+  async markDataReceived(source: Source, at: Date = new Date()) {
     await this.doc(source).set({ lastDataAt: at.toISOString() }, { merge: true });
   }
 }

@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Effective business line for every assignable value: the latest Settings-page choice, else the built-in default, else 'unassigned'.",
+  assertions: {
+    uniqueKey: ["source", "kind", "assign_key"],
+    rowConditions: ["origin IN ('explicit', 'default', 'none')"]
+  }
+}
+js { const { defaultAssignmentSql } = require("includes/business_lines"); }
+
+WITH explicit AS (
+  SELECT source, kind, assign_key, business_line
+  FROM ${ref("config", "business_line_map")}
+  WHERE TRUE
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY source, kind, assign_key ORDER BY updated_at DESC) = 1
+),
+candidates AS (
+  SELECT c.*, ${defaultAssignmentSql("c.source", "c.kind", "c.label")} AS default_business_line
+  FROM ${ref("assignment_candidates")} AS c
+)
+SELECT
+  c.source,
+  c.kind,
+  c.assign_key,
+  c.label,
+  c.last_activity,
+  c.net_12m,
+  COALESCE(e.business_line, c.default_business_line, 'unassigned') AS business_line,
+  CASE WHEN e.business_line IS NOT NULL THEN 'explicit' WHEN c.default_business_line IS NOT NULL THEN 'default' ELSE 'none' END AS origin
+FROM candidates AS c
+LEFT JOIN explicit AS e USING (source, kind, assign_key)

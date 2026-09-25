@@ -1,4 +1,4 @@
-import type { BusinessLine } from "@dash/shared";
+import type { Source } from "@dash/shared";
 
 /** How a record reached us. Kept on every raw row for debugging. */
 export type IngestPath = "webhook" | "poll" | "backfill" | "file" | "email";
@@ -17,7 +17,7 @@ export interface RawRecord {
 }
 
 export interface RawWriter {
-  write(source: BusinessLine, path: IngestPath, runId: string, records: RawRecord[]): Promise<number>;
+  write(source: Source, path: IngestPath, runId: string, records: RawRecord[]): Promise<number>;
 }
 
 export interface SourceState {
@@ -30,17 +30,17 @@ export interface SourceState {
 }
 
 export interface StateStore {
-  get(source: BusinessLine): Promise<SourceState>;
-  setCursor(source: BusinessLine, entity: string, cursor: string): Promise<void>;
+  get(source: Source): Promise<SourceState>;
+  setCursor(source: Source, entity: string, cursor: string): Promise<void>;
   /**
    * Atomically claim the source for a run. Returns false if another run holds
    * it and started less than `staleAfterMs` ago (a crashed run's claim expires).
    */
-  tryStartRun(source: BusinessLine, runId: string, staleAfterMs: number): Promise<boolean>;
-  markRunFinished(source: BusinessLine, runId: string, result: RunResult): Promise<void>;
+  tryStartRun(source: Source, runId: string, staleAfterMs: number): Promise<boolean>;
+  markRunFinished(source: Source, runId: string, result: RunResult): Promise<void>;
   /** Drop the run claim without recording a result. */
-  releaseRun(source: BusinessLine, runId: string): Promise<void>;
-  markDataReceived(source: BusinessLine, at?: Date): Promise<void>;
+  releaseRun(source: Source, runId: string): Promise<void>;
+  markDataReceived(source: Source, at?: Date): Promise<void>;
 }
 
 export interface RunResult {
@@ -55,7 +55,7 @@ export interface RunLog {
 
 export interface RunLogEntry {
   runId: string;
-  source: BusinessLine;
+  source: Source;
   mode: SyncMode;
   startedAt: Date;
   finishedAt: Date;
@@ -93,7 +93,7 @@ export interface WebhookRequest {
 }
 
 export interface Connector {
-  source: BusinessLine;
+  source: Source;
   /** Pull from the source. Called by Cloud Scheduler and for backfills. */
   sync?(ctx: SyncContext): Promise<void>;
   /**

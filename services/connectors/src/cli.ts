@@ -4,7 +4,7 @@
  *   npm run sync -w services/connectors -- shopify --backfill # all history
  *   npm run sync -w services/connectors -- shopify --dry-run  # don't write to GCP
  */
-import { isBusinessLine } from "@dash/shared";
+import { isSource } from "@dash/shared";
 import { createDeps } from "./deps.js";
 import { runSync } from "./core/runner.js";
 import { loadConnectors } from "./sources/index.js";
@@ -12,7 +12,7 @@ import type { MemoryRawWriter } from "./core/memory.js";
 
 const args = process.argv.slice(2);
 const source = args.find((a) => !a.startsWith("--"));
-if (!source || !isBusinessLine(source)) {
+if (!source || !isSource(source)) {
   console.error("Usage: sync <campminder|fareharbor|hubspot|shopify|square> [--backfill] [--dry-run]");
   process.exit(2);
 }

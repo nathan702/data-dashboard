@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { BUSINESS_LINES } from "./businessLines.js";
+import { BUSINESS_LINES_WITH_UNASSIGNED } from "./businessLines.js";
+import { SOURCES } from "./sources.js";
 import { daysBetweenInclusive, isIsoDate } from "./dates.js";
 
 /**
@@ -35,7 +36,10 @@ export const revenueQuerySchema = z
     measure: z.enum(REVENUE_MEASURES).default("net"),
     granularity: z.enum(GRANULARITIES).default("day"),
     compare: z.enum(["none", "previous_period", "previous_year"]).default("previous_year"),
-    businessLines: z.array(z.enum(BUSINESS_LINES)).optional(),
+    /** Group totals and series by business line (default) or by platform. */
+    groupBy: z.enum(["business_line", "source"]).default("business_line"),
+    businessLines: z.array(z.enum(BUSINESS_LINES_WITH_UNASSIGNED)).optional(),
+    sources: z.array(z.enum(SOURCES)).optional(),
   })
   .refine((q) => q.start <= q.end, { message: "start must be on or before end", path: ["start"] })
   .refine((q) => daysBetweenInclusive(q.start, q.end) <= MAX_RANGE_DAYS, {

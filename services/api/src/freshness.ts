@@ -1,5 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
-import { BUSINESS_LINES, type SourceFreshness, type SyncStatus } from "@dash/shared";
+import { SOURCES, type SourceFreshness, type SyncStatus } from "@dash/shared";
 import type { FreshnessSource } from "./warehouse/types.js";
 
 /** Reads the sync_state documents the connectors maintain. */
@@ -7,10 +7,10 @@ export class FirestoreFreshness implements FreshnessSource {
   constructor(private readonly db: Firestore) {}
 
   async freshness(): Promise<SourceFreshness[]> {
-    const snaps = await this.db.getAll(...BUSINESS_LINES.map((s) => this.db.collection("sync_state").doc(s)));
+    const snaps = await this.db.getAll(...SOURCES.map((s) => this.db.collection("sync_state").doc(s)));
     return snaps.map((snap, i) => {
       const d = snap.data();
-      const source = BUSINESS_LINES[i]!;
+      const source = SOURCES[i]!;
       if (!d) return { source, status: "never_run", lastDataAt: null, lastSuccessAt: null, lastError: null };
       return {
         source,

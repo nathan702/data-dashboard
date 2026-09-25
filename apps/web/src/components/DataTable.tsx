@@ -17,10 +17,12 @@ interface Props<T> {
   exportName: string;
   searchable?: boolean;
   caption?: string;
+  /** Extra buttons in the toolbar, before Export CSV. */
+  actions?: ReactNode;
 }
 
 /** Sortable, filterable table with CSV export. Used for every tabular view. */
-export function DataTable<T>({ rows, columns, rowKey, exportName, searchable = true, caption }: Props<T>) {
+export function DataTable<T>({ rows, columns, rowKey, exportName, searchable = true, caption, actions }: Props<T>) {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [query, setQuery] = useState("");
 
@@ -67,6 +69,7 @@ export function DataTable<T>({ rows, columns, rowKey, exportName, searchable = t
               aria-label="Filter rows"
             />
           )}
+          {actions}
           <button type="button" className="button" onClick={exportCsv}>
             Export CSV
           </button>
