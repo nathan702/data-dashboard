@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "marts",
   description: "One row per Shopify or Square line item with business line, item, variant, category, location and channel. Powers the sales breakdowns.",
-  bigquery: { partitionBy: "sale_date", clusterBy: ["source", "business_line", "item_name"] },
+  bigquery: { partitionBy: "sale_date", clusterBy: ["business_line", "item_name"] },
   assertions: { nonNull: ["source", "business_line", "sale_date", "order_id"] }
 }
 

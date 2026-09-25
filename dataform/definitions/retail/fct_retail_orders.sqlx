@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "marts",
   description: "One row per Shopify or Square order with its business line: units, gross, discounts, tax, tips and fees. Powers the order KPIs.",
-  bigquery: { partitionBy: "sale_date", clusterBy: ["source", "business_line"] },
+  bigquery: { partitionBy: "sale_date", clusterBy: ["business_line"] },
   assertions: { nonNull: ["source", "business_line", "sale_date", "order_id"] }
 }
 

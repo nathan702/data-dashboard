@@ -4,7 +4,9 @@ config {
   description: "Daily revenue per business line, platform and date basis. Business line comes from marts.business_line_assignments ('unassigned' when no rule matches). Sources are listed in includes/revenue_sources.js.",
   bigquery: {
     partitionBy: "revenue_date",
-    clusterBy: ["business_line", "source", "date_basis"]
+    // Partitioning and clustering can't change on an existing table (BigQuery
+    // refuses to replace it); changing these needs the table dropped first.
+    clusterBy: ["business_line", "date_basis"]
   },
   assertions: {
     nonNull: ["business_line", "source", "revenue_date", "date_basis"],
