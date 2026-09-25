@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Build and deploy the API, connectors and web app.  bash infra/deploy.sh
+# Build and deploy the API, connectors, transform job and web app.
+# Runs automatically from GitHub Actions on pushes to the deploy branches
+# (see .github/workflows/ci.yml); can also be run by hand:  bash infra/deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source infra/config.sh
@@ -11,12 +13,18 @@ XFORM_SA="dashboard-transform@$PROJECT_ID.iam.gserviceaccount.com"
 SCHED_SA="dashboard-scheduler@$PROJECT_ID.iam.gserviceaccount.com"
 REPO="$REGION-docker.pkg.dev/$PROJECT_ID/dashboard"
 
-gcloud artifacts repositories describe dashboard --location="$REGION" >/dev/null 2>&1 \
-  || gcloud artifacts repositories create dashboard --repository-format=docker --location="$REGION"
-
 TAG=$(git rev-parse --short HEAD)
 echo "==> Building images ($TAG)"
-gcloud builds submit --config=infra/cloudbuild.yaml --substitutions=_REPO="$REPO",_TAG="$TAG" .
+if [ "${DEPLOY_BUILDER:-cloudbuild}" = "docker" ]; then
+  # GitHub Actions builds locally and pushes to Artifact Registry.
+  gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+  for img in api connectors transform; do
+    docker build -q -f "services/$img/Dockerfile" -t "$REPO/$img:$TAG" .
+    docker push -q "$REPO/$img:$TAG"
+  done
+else
+  gcloud builds submit --config=infra/cloudbuild.yaml --substitutions=_REPO="$REPO",_TAG="$TAG" .
+fi
 
 echo "==> API"
 # Firebase Hosting's /api rewrite calls Cloud Run without credentials, so the
@@ -28,7 +36,6 @@ gcloud run deploy dashboard-api --image="$REPO/api:$TAG" --region="$REGION" \
   --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,ALLOWED_DOMAINS=$WORKSPACE_DOMAIN,BQ_MARTS_DATASET=marts"
 
 echo "==> Connectors: webhooks (public, signature-checked) and scheduled jobs (private)"
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 # Cloud Run's deterministic URL, known before the first deploy; it's part of Square's signatures.
 WEBHOOK_BASE_URL="https://dashboard-connectors-webhooks-$PROJECT_NUMBER.$REGION.run.app"
 COMMON_ENV="GCP_PROJECT_ID=$PROJECT_ID,BQ_LOCATION=$BQ_LOCATION,PUBLIC_WEBHOOK_BASE_URL=$WEBHOOK_BASE_URL"

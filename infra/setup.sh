@@ -9,14 +9,14 @@ cd "$(dirname "$0")"
 source ./config.sh
 
 gcloud config set project "$PROJECT_ID" >/dev/null
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 
 echo "==> Enabling APIs"
 gcloud services enable \
   run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
   bigquery.googleapis.com firestore.googleapis.com \
   cloudscheduler.googleapis.com secretmanager.googleapis.com \
-  identitytoolkit.googleapis.com gmail.googleapis.com storage.googleapis.com
+  identitytoolkit.googleapis.com gmail.googleapis.com storage.googleapis.com \
+  iamcredentials.googleapis.com sts.googleapis.com firebasehosting.googleapis.com firebaserules.googleapis.com
 
 echo "==> Firestore (native mode)"
 gcloud firestore databases describe --database='(default)' >/dev/null 2>&1 \
@@ -93,6 +93,44 @@ done
 # Connectors save the Square webhook signing key themselves when they create the subscription.
 gcloud secrets add-iam-policy-binding square-webhook-signature-key \
   --member="serviceAccount:$CONN_SA" --role=roles/secretmanager.secretVersionAdder >/dev/null
+
+echo "==> Container registry"
+gcloud artifacts repositories describe dashboard --location="$REGION" >/dev/null 2>&1 \
+  || gcloud artifacts repositories create dashboard --repository-format=docker --location="$REGION"
+
+echo "==> Automatic deploys from GitHub ($GITHUB_REPO)"
+# GitHub signs in with its own short-lived identity token (workload identity
+# federation), so no key is ever stored in GitHub. Only this repository's
+# deploy branches are trusted, and only to act as the deployer account.
+make_sa dashboard-deployer "GitHub Actions deployer"
+DEPLOY_SA="dashboard-deployer@$PROJECT_ID.iam.gserviceaccount.com"
+gcloud iam workload-identity-pools describe github --location=global >/dev/null 2>&1 \
+  || gcloud iam workload-identity-pools create github --location=global --display-name="GitHub Actions"
+REFS=$(for b in $DEPLOY_BRANCHES; do printf "'refs/heads/%s'," "$b"; done); REFS="[${REFS%,}]"
+CONDITION="assertion.repository == '$GITHUB_REPO' && assertion.ref in $REFS"
+if gcloud iam workload-identity-pools providers describe github-repo --location=global --workload-identity-pool=github >/dev/null 2>&1; then
+  gcloud iam workload-identity-pools providers update-oidc github-repo --location=global --workload-identity-pool=github \
+    --attribute-condition="$CONDITION" >/dev/null
+else
+  gcloud iam workload-identity-pools providers create-oidc github-repo --location=global --workload-identity-pool=github \
+    --display-name="$GITHUB_REPO" --issuer-uri="https://token.actions.githubusercontent.com" \
+    --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
+    --attribute-condition="$CONDITION" >/dev/null
+fi
+gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/$GITHUB_REPO" >/dev/null
+# What the deployer may do: publish Cloud Run services/jobs, schedules and the
+# website, and run services as their own accounts. No access to data or secrets.
+for role in roles/run.admin roles/cloudscheduler.admin roles/firebasehosting.admin roles/firebaserules.admin \
+            roles/firebase.viewer roles/serviceusage.serviceUsageConsumer; do
+  bind "$DEPLOY_SA" "$role"
+done
+gcloud artifacts repositories add-iam-policy-binding dashboard --location="$REGION" \
+  --member="serviceAccount:$DEPLOY_SA" --role=roles/artifactregistry.writer >/dev/null
+for sa in "$API_SA" "$CONN_SA" "$XFORM_SA" "$SCHED_SA"; do
+  gcloud iam service-accounts add-iam-policy-binding "$sa" --member="serviceAccount:$DEPLOY_SA" \
+    --role=roles/iam.serviceAccountUser >/dev/null
+done
 
 echo "==> Access list in Firestore (config/access)"
 echo "   Add admins/allowed emails in the Firebase console → Firestore → config/access:"

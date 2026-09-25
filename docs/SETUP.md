@@ -52,11 +52,19 @@ Cloud Run → Jobs → dashboard-transform.
 
 ## 5. Deploy
 
+**Automatic:** every push to `main` (or the current development branch) that
+passes the checks is deployed by GitHub Actions (`.github/workflows/ci.yml`).
+Progress and history: GitHub → the repository → **Actions** tab. GitHub signs
+in to Google Cloud as `dashboard-deployer` through workload identity
+federation (no stored keys); `infra/setup.sh` sets this up.
+
+**By hand** (e.g. the very first deploy, or if Actions is unavailable):
+
 ```bash
 bash infra/deploy.sh
 ```
 
-The app is then at `https://<project-id>.web.app`.
+The app is at `https://calleva-dashboard.web.app`.
 
 ## Connecting sources
 

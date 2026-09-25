@@ -2,6 +2,8 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -19,3 +21,37 @@ jobs:
       - name: Compile Dataform
         working-directory: dataform
         run: npx -y @dataform/cli@3.0.70 compile
+
+  # Deploys every push to a deploy branch once the checks pass. Keep the
+  # branch list in sync with DEPLOY_BRANCHES in infra/config.sh: Google
+  # only accepts GitHub sign-ins from those branches.
+  deploy:
+    needs: check
+    # "false &&" keeps this off until infra/setup.sh has created the GitHub
+    # sign-in; remove it to switch automatic deploys on.
+    if: >-
+      false &&
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/ecstatic-maxwell-hh3yl3')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # lets GitHub prove its identity to Google; no stored keys
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/679066930064/locations/global/workloadIdentityPools/github/providers/github-repo
+          service_account: dashboard-deployer@calleva-dashboard.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy
+        env:
+          DEPLOY_BUILDER: docker
+        run: bash infra/deploy.sh
