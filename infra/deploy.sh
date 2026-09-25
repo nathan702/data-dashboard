@@ -33,7 +33,7 @@ echo "==> API"
 gcloud run deploy dashboard-api --image="$REPO/api:$TAG" --region="$REGION" \
   --service-account="$API_SA" --allow-unauthenticated \
   --min-instances=0 --max-instances=3 --memory=512Mi \
-  --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,ALLOWED_DOMAINS=$WORKSPACE_DOMAIN,BQ_MARTS_DATASET=marts"
+  --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,ALLOWED_DOMAINS=$WORKSPACE_DOMAIN,BQ_MARTS_DATASET=marts,BQ_LOCATION=$BQ_LOCATION,TRANSFORM_JOB=projects/$PROJECT_ID/locations/$REGION/jobs/dashboard-transform"
 
 echo "==> Connectors: webhooks (public, signature-checked) and scheduled jobs (private)"
 # Cloud Run's deterministic URL, known before the first deploy; it's part of Square's signatures.
@@ -66,6 +66,9 @@ gcloud run jobs deploy dashboard-transform --image="$REPO/transform:$TAG" --regi
   --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,BQ_LOCATION=$BQ_LOCATION"
 gcloud run jobs add-iam-policy-binding dashboard-transform --region="$REGION" \
   --member="serviceAccount:$SCHED_SA" --role=roles/run.invoker >/dev/null
+# Saving assignments on the Settings page starts a refresh right away.
+gcloud run jobs add-iam-policy-binding dashboard-transform --region="$REGION" \
+  --member="serviceAccount:$API_SA" --role=roles/run.invoker >/dev/null
 JOB_URI="https://run.googleapis.com/v2/projects/$PROJECT_ID/locations/$REGION/jobs/dashboard-transform:run"
 if gcloud scheduler jobs describe dashboard-transform --location="$REGION" >/dev/null 2>&1; then SCHED_CMD=update; else SCHED_CMD=create; fi
 gcloud scheduler jobs "$SCHED_CMD" http dashboard-transform --location="$REGION" \

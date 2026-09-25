@@ -23,7 +23,7 @@ gcloud firestore databases describe --database='(default)' >/dev/null 2>&1 \
   || gcloud firestore databases create --location=nam5 --type=firestore-native
 
 echo "==> BigQuery datasets"
-for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square staging marts ops dataform_assertions; do
+for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square staging marts ops config dataform_assertions; do
   bq --location="$BQ_LOCATION" show "$PROJECT_ID:$ds" >/dev/null 2>&1 \
     || bq --location="$BQ_LOCATION" mk --dataset "$PROJECT_ID:$ds"
 done
@@ -31,6 +31,10 @@ bq show "$PROJECT_ID:ops.sync_runs" >/dev/null 2>&1 || bq mk --table \
   --time_partitioning_field started_at --time_partitioning_type DAY \
   "$PROJECT_ID:ops.sync_runs" \
   run_id:STRING,source:STRING,mode:STRING,started_at:TIMESTAMP,finished_at:TIMESTAMP,status:STRING,rows_written:INT64,error:STRING
+
+bq show "$PROJECT_ID:config.business_line_map" >/dev/null 2>&1 || bq mk --table \
+  "$PROJECT_ID:config.business_line_map" \
+  source:STRING,kind:STRING,assign_key:STRING,business_line:STRING,updated_by:STRING,updated_at:TIMESTAMP >/dev/null
 
 echo "==> Raw tables (created empty so the SQL transforms run before a source is connected)"
 # Must match RAW_TABLE_SCHEMA in services/connectors/src/core/bigquery.ts
@@ -69,11 +73,13 @@ grant_dataset() {
     "GRANT \`$2\` ON SCHEMA \`$PROJECT_ID.$3\` TO \"serviceAccount:$1\""
 }
 bind() { gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$1" --role="$2" --condition=None >/dev/null; }
-# API: run queries, read marts only, read Firestore sync state/access list, verify sign-ins.
+# API: run queries, read marts, save Settings-page assignments (config), read sync
+# state and keep per-person tab preferences in Firestore, verify sign-ins.
 bind "$API_SA" roles/bigquery.jobUser
-bind "$API_SA" roles/datastore.viewer
+bind "$API_SA" roles/datastore.user
 bind "$API_SA" roles/firebaseauth.viewer
 grant_dataset "$API_SA" roles/bigquery.dataViewer marts
+grant_dataset "$API_SA" roles/bigquery.dataEditor config
 # Connectors: write raw_* and ops, keep sync state, read their secrets.
 bind "$CONN_SA" roles/bigquery.jobUser
 bind "$CONN_SA" roles/datastore.user
@@ -83,7 +89,7 @@ done
 bind "$CONN_SA" roles/secretmanager.secretAccessor
 # Transforms: read raw_* and ops, rebuild staging/marts and run assertions.
 bind "$XFORM_SA" roles/bigquery.jobUser
-for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square ops; do
+for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square ops config; do
   grant_dataset "$XFORM_SA" roles/bigquery.dataViewer "$ds"
 done
 for ds in staging marts dataform_assertions; do
