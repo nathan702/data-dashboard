@@ -1,7 +1,7 @@
 config {
   type: "table",
   schema: "staging",
-  description: "Line items of completed Square orders with catalog item, variation and category.",
+  description: "Line items of counted (paid or completed) Square orders with catalog item, variation and category.",
   assertions: { nonNull: ["order_id", "sale_date"] }
 }
 js { const { squareMoney } = require("includes/sql"); }

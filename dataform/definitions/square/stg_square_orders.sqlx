@@ -1,26 +1,39 @@
 config {
   type: "table",
   schema: "staging",
-  description: "Completed Square orders, one row per order. Sale date is when the order was closed (Eastern).",
+  description: "Square sales, one row per order, counted the way Square's Sales Summary does: an order counts once it's paid (even if it's still OPEN, as Kiosk and Payment Link orders often are) or completed. Canceled orders are excluded. Sale date is when it was first paid (Eastern), falling back to when it was closed.",
   assertions: { uniqueKey: ["order_id"], nonNull: ["sale_date"] }
 }
 js { const { latestRaw, squareMoney, easternDate, ts } = require("includes/sql"); }
 
+WITH orders AS (
+  SELECT * FROM (${latestRaw(ref("raw_square", "orders"))})
+),
+paid AS (
+  SELECT order_id, MIN(created_at) AS first_paid_at
+  FROM ${ref("stg_square_payments")}
+  WHERE order_id IS NOT NULL
+  GROUP BY 1
+)
 SELECT
-  record_id AS order_id,
-  JSON_VALUE(payload, '$.location_id') AS location_id,
+  o.record_id AS order_id,
+  JSON_VALUE(o.payload, '$.state') AS state,
+  JSON_VALUE(o.payload, '$.location_id') AS location_id,
   l.location_name,
-  JSON_VALUE(payload, '$.source.name') AS source_name,
-  JSON_VALUE(payload, '$.customer_id') AS customer_id,
-  ${ts("payload", "$.created_at")} AS created_at,
-  ${ts("payload", "$.closed_at")} AS closed_at,
-  ${easternDate(`COALESCE(${ts("payload", "$.closed_at")}, ${ts("payload", "$.created_at")})`)} AS sale_date,
-  ${squareMoney("payload", "$.total_money")} AS total,
-  ${squareMoney("payload", "$.total_tax_money")} AS tax,
-  ${squareMoney("payload", "$.total_discount_money")} AS discounts,
-  ${squareMoney("payload", "$.total_tip_money")} AS tips,
-  ${squareMoney("payload", "$.total_service_charge_money")} AS service_charges,
-  payload
-FROM (${latestRaw(ref("raw_square", "orders"))}) AS o
+  JSON_VALUE(o.payload, '$.source.name') AS source_name,
+  JSON_VALUE(o.payload, '$.customer_id') AS customer_id,
+  ${ts("o.payload", "$.created_at")} AS created_at,
+  ${ts("o.payload", "$.closed_at")} AS closed_at,
+  p.first_paid_at,
+  ${easternDate(`COALESCE(p.first_paid_at, ${ts("o.payload", "$.closed_at")}, ${ts("o.payload", "$.created_at")})`)} AS sale_date,
+  ${squareMoney("o.payload", "$.total_money")} AS total,
+  ${squareMoney("o.payload", "$.total_tax_money")} AS tax,
+  ${squareMoney("o.payload", "$.total_discount_money")} AS discounts,
+  ${squareMoney("o.payload", "$.total_tip_money")} AS tips,
+  ${squareMoney("o.payload", "$.total_service_charge_money")} AS service_charges,
+  o.payload
+FROM orders AS o
+LEFT JOIN paid AS p ON p.order_id = o.record_id
 LEFT JOIN ${ref("stg_square_locations")} AS l ON l.location_id = JSON_VALUE(o.payload, '$.location_id')
-WHERE JSON_VALUE(payload, '$.state') = 'COMPLETED'
+WHERE JSON_VALUE(o.payload, '$.state') = 'COMPLETED'
+   OR (JSON_VALUE(o.payload, '$.state') = 'OPEN' AND p.order_id IS NOT NULL)
