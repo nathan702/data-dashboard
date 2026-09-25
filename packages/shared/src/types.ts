@@ -41,6 +41,12 @@ export interface RevenueSummaryResponse {
   comparisonRange: { start: IsoDate; end: IsoDate } | null;
   byLine: RevenueByLine[];
   series: RevenueSeriesPoint[];
+  /**
+   * The comparison period's values, moved onto the current period's buckets
+   * (e.g. last year's week of Jun 2 is reported as this year's week of Jun 2)
+   * so both can be drawn on the same chart. Empty when there's no comparison.
+   */
+  comparisonSeries: RevenueSeriesPoint[];
   generatedAt: string;
 }
 

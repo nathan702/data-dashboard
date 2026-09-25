@@ -142,3 +142,18 @@ export function presetRange(
       return seasonRange(seasonForDate(today, config) - 1, config);
   }
 }
+
+/**
+ * Move a comparison-period date forward onto the current period, so the two
+ * can be charted together. Inverse of comparisonRange().
+ */
+export function alignToCurrent(date: IsoDate, range: DateRange, mode: ComparisonMode): IsoDate {
+  switch (mode) {
+    case "none":
+      return date;
+    case "previous_period":
+      return addDays(date, daysBetweenInclusive(range.start, range.end));
+    case "previous_year":
+      return addYears(date, 1);
+  }
+}

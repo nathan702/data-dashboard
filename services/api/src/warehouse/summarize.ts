@@ -1,5 +1,8 @@
 import {
+  alignToCurrent,
   comparisonRange,
+  seasonForDate,
+  seasonRange,
   type BusinessLine,
   type Granularity,
   type RevenueMeasure,
@@ -67,6 +70,7 @@ export function summarizeRows(rows: DailyRevenueRow[], q: RevenueQuery, lines: B
   const current = new Map<BusinessLine, RevenueTotals>(lines.map((l) => [l, emptyTotals()]));
   const comparison = new Map<BusinessLine, RevenueTotals>(lines.map((l) => [l, emptyTotals()]));
   const series = new Map<string, RevenueTotals>();
+  const cmpSeries = new Map<string, RevenueTotals>();
 
   for (const r of rows) {
     if (!lines.includes(r.businessLine)) continue;
@@ -78,6 +82,11 @@ export function summarizeRows(rows: DailyRevenueRow[], q: RevenueQuery, lines: B
       series.set(key, t);
     } else if (cmp && r.date >= cmp.start && r.date <= cmp.end) {
       addRow(comparison.get(r.businessLine)!, r);
+      const aligned = alignToCurrent(r.date, { start: q.start, end: q.end }, q.compare);
+      const key = `${periodBucket(aligned, seasonRange(seasonForDate(aligned)).start, q.granularity)}|${r.businessLine}`;
+      const t = cmpSeries.get(key) ?? emptyTotals();
+      addRow(t, r);
+      cmpSeries.set(key, t);
     }
   }
 
@@ -89,12 +98,17 @@ export function summarizeRows(rows: DailyRevenueRow[], q: RevenueQuery, lines: B
       current: roundTotals(current.get(l)!),
       comparison: cmp ? roundTotals(comparison.get(l)!) : null,
     })),
-    series: [...series.entries()]
-      .map(([key, t]) => {
-        const [period, businessLine] = key.split("|") as [string, BusinessLine];
-        return { period, businessLine, value: round2(measureValue(t, q.measure)) };
-      })
-      .sort((a, b) => a.period.localeCompare(b.period) || a.businessLine.localeCompare(b.businessLine)),
+    series: toSeries(series, q.measure),
+    comparisonSeries: toSeries(cmpSeries, q.measure),
     generatedAt: new Date().toISOString(),
   };
+}
+
+function toSeries(m: Map<string, RevenueTotals>, measure: RevenueMeasure) {
+  return [...m.entries()]
+    .map(([key, t]) => {
+      const [period, businessLine] = key.split("|") as [string, BusinessLine];
+      return { period, businessLine, value: round2(measureValue(t, measure)) };
+    })
+    .sort((a, b) => a.period.localeCompare(b.period) || a.businessLine.localeCompare(b.businessLine));
 }

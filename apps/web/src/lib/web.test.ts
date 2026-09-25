@@ -45,3 +45,13 @@ describe("source health", () => {
     expect(health({ ...base, status: "never_run", lastDataAt: null, lastSuccessAt: null }, now)).toBe("pending");
   });
 });
+
+describe("date typing", () => {
+  it("ignores half-typed years", async () => {
+    const { isUsableDate } = await import("../components/FilterBar");
+    expect(isUsableDate("0002-09-01")).toBe(false);
+    expect(isUsableDate("0202-09-01")).toBe(false);
+    expect(isUsableDate("2025-09-01")).toBe(true);
+    expect(isUsableDate("2025-02-30")).toBe(false);
+  });
+});

@@ -151,3 +151,16 @@ describe("retail SQL", () => {
     expect(kpiSql("marts")).toContain("fct_retail_orders");
   });
 });
+
+describe("comparison series", () => {
+  it("puts last year's values on this year's buckets", () => {
+    const row = (date: string, gross: number) => ({ businessLine: "square" as const, date, seasonStart: "2025-09-01", gross, discounts: 0, refunds: 0, fees: 0, transactions: 1 });
+    const s = summarizeRows(
+      [row("2026-06-02", 100), row("2025-06-02", 60), row("2025-06-03", 40)],
+      { start: "2026-06-01", end: "2026-06-07", basis: "booked", measure: "gross", granularity: "week", compare: "previous_year" },
+      ["square"],
+    );
+    expect(s.series).toEqual([{ period: "2026-06-01", businessLine: "square", value: 100 }]);
+    expect(s.comparisonSeries).toEqual([{ period: "2026-06-01", businessLine: "square", value: 100 }]);
+  });
+});

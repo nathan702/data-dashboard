@@ -73,3 +73,13 @@ describe("eastern time", () => {
     expect(isIsoDate("26-02-28")).toBe(false);
   });
 });
+
+describe("alignToCurrent", () => {
+  it("moves comparison dates onto the current period", async () => {
+    const { alignToCurrent } = await import("./dates.js");
+    const range = { start: "2026-03-01", end: "2026-03-31" };
+    expect(alignToCurrent("2025-03-15", range, "previous_year")).toBe("2026-03-15");
+    // previous period for March is Jan 29 – Feb 28 (31 days earlier)
+    expect(alignToCurrent("2026-01-29", range, "previous_period")).toBe("2026-03-01");
+  });
+});

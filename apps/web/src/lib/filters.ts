@@ -53,11 +53,18 @@ export function autoGranularity(start: string, end: string): Granularity {
 export function useFilters(): [Filters, (patch: Partial<Filters>) => void] {
   const [params, setParams] = useSearchParams();
   const presetParam = params.get("range");
-  const customStart = params.get("start");
-  const customEnd = params.get("end");
-  const isCustom = presetParam === "custom" && customStart && customEnd && isIsoDate(customStart) && isIsoDate(customEnd) && customStart <= customEnd;
+  // A custom range stays custom even while its dates are being edited;
+  // missing or invalid dates fall back to the last 30 days.
+  const isCustom = presetParam === "custom";
   const preset: Filters["preset"] = isCustom ? "custom" : pick(presetParam, PRESETS.map((p) => p.id), "last_30_days");
-  const range = isCustom ? { start: customStart!, end: customEnd! } : presetRange(preset as DatePreset);
+  let range = presetRange(isCustom ? "last_30_days" : (preset as DatePreset));
+  if (isCustom) {
+    const s = params.get("start");
+    const e = params.get("end");
+    const start = s && isIsoDate(s) ? s : range.start;
+    const end = e && isIsoDate(e) ? e : range.end;
+    range = start <= end ? { start, end } : { start: end, end: start };
+  }
 
   const filters: Filters = {
     preset,

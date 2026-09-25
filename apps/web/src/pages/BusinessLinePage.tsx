@@ -9,7 +9,7 @@ export function BusinessLinePage() {
   const info = BUSINESS_LINE_INFO[line];
   return (
     <>
-      <RevenueView key={line} lines={[line]} title={info.label} />
+      <RevenueView key={line} lines={[line]} title={info.label} showBasis={!isRetailLine(line)} showBreakdown={false} />
       {isRetailLine(line) ? (
         <RetailDetail key={`${line}-detail`} line={line} />
       ) : (

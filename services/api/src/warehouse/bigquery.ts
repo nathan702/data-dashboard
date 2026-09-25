@@ -2,6 +2,8 @@ import { BigQuery } from "@google-cloud/bigquery";
 import {
   BUSINESS_LINES,
   comparisonRange,
+  daysBetweenInclusive,
+  DEFAULT_SEASON_CONFIG,
   type BusinessLine,
   type Granularity,
   type InventoryResponse,
@@ -20,12 +22,22 @@ import type { Warehouse } from "./types.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
 // comes from the request is passed as a query parameter.
-const BUCKET_SQL: Record<Granularity, string> = {
-  day: "revenue_date",
-  week: "DATE_TRUNC(revenue_date, WEEK(MONDAY))",
-  month: "DATE_TRUNC(revenue_date, MONTH)",
-  season: "season_start_date",
-};
+const { startMonth: SM, startDay: SD } = DEFAULT_SEASON_CONFIG;
+
+/** Bucket start date for a DATE expression. `d` is always a fixed SQL fragment. */
+function bucketSql(g: Granularity, d: string): string {
+  switch (g) {
+    case "day":
+      return d;
+    case "week":
+      return `DATE_TRUNC(${d}, WEEK(MONDAY))`;
+    case "month":
+      return `DATE_TRUNC(${d}, MONTH)`;
+    case "season":
+      // First day of the Campminder season containing d (same rule as dim_date).
+      return `DATE(IF(${d} >= DATE(EXTRACT(YEAR FROM ${d}), ${SM}, ${SD}), EXTRACT(YEAR FROM ${d}), EXTRACT(YEAR FROM ${d}) - 1), ${SM}, ${SD})`;
+  }
+}
 
 const MEASURE_SQL: Record<RevenueMeasure, string> = {
   gross: "SUM(gross)",
@@ -120,8 +132,12 @@ export class BigQueryWarehouse implements Warehouse {
       has_cmp: cmp !== null,
       cmp_start: cmp?.start ?? q.start,
       cmp_end: cmp?.end ?? q.end,
+      shift_days: daysBetweenInclusive(q.start, q.end),
     };
     const types = { lines: ["STRING"] };
+    // Comparison rows moved onto the current period (see alignToCurrent in @dash/shared).
+    const aligned =
+      q.compare === "previous_year" ? "DATE_ADD(revenue_date, INTERVAL 1 YEAR)" : "DATE_ADD(revenue_date, INTERVAL @shift_days DAY)";
 
     const totalsSql = `
       SELECT
@@ -138,7 +154,7 @@ export class BigQueryWarehouse implements Warehouse {
 
     const seriesSql = `
       SELECT
-        CAST(${BUCKET_SQL[q.granularity]} AS STRING) AS period,
+        CAST(${bucketSql(q.granularity, "revenue_date")} AS STRING) AS period,
         business_line,
         ${MEASURE_SQL[q.measure]} AS value
       FROM ${this.table}
@@ -148,10 +164,25 @@ export class BigQueryWarehouse implements Warehouse {
       GROUP BY 1, 2
       ORDER BY 1, 2`;
 
-    const [[totalRows], [seriesRows]] = await Promise.all([
+    const comparisonSeriesSql = `
+      SELECT
+        CAST(${bucketSql(q.granularity, aligned)} AS STRING) AS period,
+        business_line,
+        ${MEASURE_SQL[q.measure]} AS value
+      FROM ${this.table}
+      WHERE date_basis = @basis
+        AND business_line IN UNNEST(@lines)
+        AND revenue_date BETWEEN @cmp_start AND @cmp_end
+      GROUP BY 1, 2
+      ORDER BY 1, 2`;
+
+    const [[totalRows], [seriesRows], cmpResult] = await Promise.all([
       this.bq.query({ query: totalsSql, params, types }),
       this.bq.query({ query: seriesSql, params, types }),
+      cmp ? this.bq.query({ query: comparisonSeriesSql, params, types }) : Promise.resolve([[]]),
     ]);
+    const toPoints = (rows: SeriesRow[]) =>
+      rows.map((r) => ({ period: r.period, businessLine: r.business_line as BusinessLine, value: round2(Number(r.value)) }));
 
     const find = (line: string, period: string) =>
       (totalRows as TotalsRow[]).find((r) => r.business_line === line && r.period === period);
@@ -164,11 +195,8 @@ export class BigQueryWarehouse implements Warehouse {
         current: toTotals(find(l, "current")),
         comparison: cmp ? toTotals(find(l, "comparison")) : null,
       })),
-      series: (seriesRows as SeriesRow[]).map((r) => ({
-        period: r.period,
-        businessLine: r.business_line as BusinessLine,
-        value: round2(Number(r.value)),
-      })),
+      series: toPoints(seriesRows as SeriesRow[]),
+      comparisonSeries: toPoints(cmpResult[0] as SeriesRow[]),
       generatedAt: new Date().toISOString(),
     };
   }

@@ -12,12 +12,24 @@ import { StatTile } from "./StatTile";
 const pickMeasure = (t: RevenueTotals, m: RevenueMeasure) => (m === "gross" ? t.gross : m === "net" ? t.net : t.netAfterFees);
 
 /** Filters, headline tiles, trend chart and table for one or more business lines. */
-export function RevenueView({ lines, title }: { lines: BusinessLine[]; title: string }) {
+export function RevenueView({
+  lines,
+  title,
+  showBasis = true,
+  showBreakdown = true,
+}: {
+  lines: BusinessLine[];
+  title: string;
+  /** Off for retail lines, where booked, paid and activity dates are the same. */
+  showBasis?: boolean;
+  /** The per-line table; pointless on a single-line page. */
+  showBreakdown?: boolean;
+}) {
   const [filters, setFilters] = useFilters();
   const query = {
     start: filters.start,
     end: filters.end,
-    basis: filters.basis,
+    basis: showBasis ? filters.basis : ("booked" as const),
     measure: filters.measure,
     granularity: filters.granularity,
     compare: filters.compare,
@@ -82,7 +94,7 @@ export function RevenueView({ lines, title }: { lines: BusinessLine[]; title: st
         <h1>{title}</h1>
         <FreshnessNote sources={lines} />
       </header>
-      <FilterBar filters={filters} onChange={setFilters} />
+      <FilterBar filters={filters} onChange={setFilters} showBasis={showBasis} />
       {error && <div className="error-banner">Couldn't load revenue: {error.message}</div>}
       <div className={`page-body${isFetching && isPlaceholderData ? " refetching" : ""}`}>
         {data && (
@@ -109,16 +121,23 @@ export function RevenueView({ lines, title }: { lines: BusinessLine[]; title: st
                 {formatDate(data.range.start)} – {formatDate(data.range.end)}
                 {data.comparisonRange && ` · compared with ${formatDate(data.comparisonRange.start)} – ${formatDate(data.comparisonRange.end)}`}
               </p>
-              <RevenueChart series={data.series} lines={lines} granularity={filters.granularity} />
+              <RevenueChart
+                series={data.series}
+                lines={lines}
+                granularity={filters.granularity}
+                comparison={cmpLabel ? { series: data.comparisonSeries, label: cmpLabel === "last year" ? "Same period last year" : "Previous period" } : null}
+              />
             </section>
-            <DataTable
-              caption="Breakdown"
-              rows={data.byLine}
-              columns={columns}
-              rowKey={(r) => r.businessLine}
-              exportName={`revenue_${filters.start}_${filters.end}`}
-              searchable={lines.length > 1}
-            />
+            {showBreakdown && (
+              <DataTable
+                caption="Breakdown"
+                rows={data.byLine}
+                columns={columns}
+                rowKey={(r) => r.businessLine}
+                exportName={`revenue_${filters.start}_${filters.end}`}
+                searchable={lines.length > 1}
+              />
+            )}
           </>
         )}
       </div>
