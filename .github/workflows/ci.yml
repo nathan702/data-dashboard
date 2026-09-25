@@ -27,10 +27,7 @@ jobs:
   # only accepts GitHub sign-ins from those branches.
   deploy:
     needs: check
-    # "false &&" keeps this off until infra/setup.sh has created the GitHub
-    # sign-in; remove it to switch automatic deploys on.
     if: >-
-      false &&
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/ecstatic-maxwell-hh3yl3')
     runs-on: ubuntu-latest
