@@ -8,7 +8,7 @@ js { const { latestRaw, ts } = require("includes/sql"); }
 WITH latest AS (
   SELECT payload, source_updated_at FROM (${latestRaw(ref("raw_shopify", "inventory_levels"))})
 ),
-newest AS (SELECT MAX(source_updated_at) AS at FROM latest)
+newest AS (SELECT MAX(source_updated_at) AS newest_at FROM latest)
 SELECT
   JSON_VALUE(payload, '$.productTitle') AS product,
   NULLIF(JSON_VALUE(payload, '$.variantTitle'), 'Default Title') AS variant,
@@ -19,4 +19,4 @@ SELECT
   ${ts("payload", "$.snapshotAt")} AS snapshot_at
 FROM latest, newest
 -- Rows missing from recent snapshots belong to deleted items or locations.
-WHERE latest.source_updated_at >= TIMESTAMP_SUB(newest.at, INTERVAL 2 HOUR)
+WHERE latest.source_updated_at >= TIMESTAMP_SUB(newest.newest_at, INTERVAL 2 HOUR)
