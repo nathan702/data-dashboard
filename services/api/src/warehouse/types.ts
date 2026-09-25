@@ -14,6 +14,7 @@ import type {
   Source,
   SourceFreshness,
 } from "@dash/shared";
+import type { ReferenceTotals } from "../selfCheck.js";
 
 export interface Warehouse {
   revenueSummary(q: RevenueQuery): Promise<RevenueSummaryResponse>;
@@ -23,6 +24,8 @@ export interface Warehouse {
   /** Every assignable value with its effective business line; saved-but-not-yet-applied choices included. */
   assignments(): Promise<{ rows: AssignmentRow[]; pendingRefresh: boolean }>;
   saveAssignments(changes: AssignmentUpdate["changes"], by: string): Promise<void>;
+  /** Plain totals straight from the tables, for the deploy self-check. */
+  referenceTotals(start: string, end: string): Promise<ReferenceTotals>;
 }
 
 export interface FreshnessSource {

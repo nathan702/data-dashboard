@@ -155,6 +155,16 @@ export class DemoWarehouse implements Warehouse {
     return { rows, pendingRefresh: false };
   }
 
+  async referenceTotals(start: string, end: string) {
+    // The demo's own summaries are its reference.
+    const s = await this.revenueSummary({ start, end, basis: "booked", measure: "gross", granularity: "week", compare: "none", groupBy: "source" });
+    const k = async (src: RetailSource) => (await this.retailKpis(src, { start, end, compare: "none" })).current.gross;
+    return {
+      revenueGross: s.groups.reduce((t, g) => t + g.current.gross, 0),
+      retailGross: { shopify: await k("shopify"), square: await k("square") },
+    };
+  }
+
   async saveAssignments(changes: AssignmentUpdate["changes"]) {
     for (const c of changes) this.saved.set(`${c.source}|${c.kind}|${c.key}`, c.businessLine);
   }

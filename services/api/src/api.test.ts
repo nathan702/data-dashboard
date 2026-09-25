@@ -265,3 +265,27 @@ describe("revenue SQL", () => {
     }
   });
 });
+
+describe("deploy self-check", () => {
+  it("passes when the API's queries agree with the tables", async () => {
+    const res = await request(api()).get("/healthz/deep").expect(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.checks.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("fails when summaries come back empty (the zero-revenue bug)", async () => {
+    const { runSelfCheck } = await import("./selfCheck.js");
+    const demo = new DemoWarehouse();
+    const broken = Object.create(demo) as DemoWarehouse;
+    broken.revenueSummary = async (q) => {
+      const r = await demo.revenueSummary(q);
+      return { ...r, series: [], groups: r.groups.map((g) => ({ ...g, current: { ...g.current, gross: 0 } })) };
+    };
+    const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
+    expect(result.ok).toBe(false);
+    expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual([
+      "revenue summary by business_line matches tables",
+      "revenue summary by source matches tables",
+    ]);
+  });
+});

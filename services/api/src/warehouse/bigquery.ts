@@ -248,6 +248,27 @@ export class BigQueryWarehouse implements Warehouse {
     return { rows: out, pendingRefresh };
   }
 
+  async referenceTotals(start: string, end: string) {
+    // Deliberately simple SQL with scalar parameters only.
+    const [[rev], [retail]] = await Promise.all([
+      this.bq.query({
+        query: `SELECT COALESCE(SUM(gross), 0) AS gross FROM ${this.table} WHERE date_basis = 'booked' AND revenue_date BETWEEN @start AND @end`,
+        params: { start, end },
+        location: this.location,
+      }),
+      this.bq.query({
+        query: `SELECT source, COALESCE(SUM(gross), 0) AS gross FROM \`${this.martsDataset}.fct_retail_line_items\` WHERE sale_date BETWEEN @start AND @end GROUP BY 1`,
+        params: { start, end },
+        location: this.location,
+      }),
+    ]);
+    const bySource = new Map((retail as Array<{ source: string; gross: unknown }>).map((r) => [r.source, Number(r.gross)]));
+    return {
+      revenueGross: Number((rev as Array<{ gross: unknown }>)[0]?.gross ?? 0),
+      retailGross: { shopify: bySource.get("shopify") ?? 0, square: bySource.get("square") ?? 0 },
+    };
+  }
+
   async saveAssignments(changes: AssignmentUpdate["changes"], by: string): Promise<void> {
     await this.bq.query({
       query: saveAssignmentsSql(this.configDataset),

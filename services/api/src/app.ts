@@ -13,6 +13,7 @@ import {
   type MeResponse,
 } from "@dash/shared";
 import { requireAdmin, requireViewer, type AuthDeps } from "./auth.js";
+import { runSelfCheck } from "./selfCheck.js";
 import type { PreferencesStore } from "./preferences.js";
 import type { RefreshTrigger } from "./refresh.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
@@ -63,6 +64,16 @@ export function createApi(opts: ApiOptions) {
 
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  // Run by infra/deploy.sh after each deploy. Pass/fail only, no business
+  // numbers; unauthenticated, so results are reused for a minute to bound cost.
+  let lastCheck: { at: number; result: Awaited<ReturnType<typeof runSelfCheck>> } | null = null;
+  app.get("/healthz/deep", async (_req, res) => {
+    if (!lastCheck || Date.now() - lastCheck.at > 60_000) {
+      lastCheck = { at: Date.now(), result: await runSelfCheck(opts.warehouse, (start, end) => opts.warehouse.referenceTotals(start, end)) };
+    }
+    res.status(lastCheck.result.ok ? 200 : 500).json(lastCheck.result);
   });
 
   const api = express.Router();

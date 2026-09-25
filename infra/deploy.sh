@@ -75,11 +75,27 @@ gcloud scheduler jobs "$SCHED_CMD" http dashboard-transform --location="$REGION"
   --schedule="*/15 * * * *" --time-zone="America/New_York" \
   --uri="$JOB_URI" --http-method=POST --oauth-service-account-email="$SCHED_SA"
 # Build the tables once now rather than waiting for the first scheduled run.
-gcloud run jobs execute dashboard-transform --region="$REGION" --wait \
-  || echo "   WARNING: first transform run failed; see Cloud Run → Jobs → dashboard-transform → Logs"
+TRANSFORM_OK=1
+gcloud run jobs execute dashboard-transform --region="$REGION" --wait || TRANSFORM_OK=0
 
 echo "==> Web app"
 npm ci
 npm run build -w packages/shared
 npm run build -w apps/web
 npx -y firebase-tools@latest deploy --only hosting,firestore:rules --project "$PROJECT_ID"
+
+echo "==> Checking the live API against the tables"
+API_URL=$(gcloud run services describe dashboard-api --region="$REGION" --format='value(status.url)')
+FAILED=0
+if [ "$TRANSFORM_OK" != 1 ]; then
+  echo "   FAILED: the SQL transform run failed. Logs: Cloud Run → Jobs → dashboard-transform → Logs"
+  FAILED=1
+fi
+CHECK=$(curl -sS --max-time 180 "$API_URL/healthz/deep" || echo '{"ok":false,"checks":[{"name":"reach API","ok":false}]}')
+echo "$CHECK" | jq -r '.checks[] | "   \(if .ok then "ok  " else "FAIL" end)  \(.name)\(if .detail then " — \(.detail)" else "" end)"'
+echo "$CHECK" | jq -e '.ok' >/dev/null || FAILED=1
+if [ "$FAILED" = 1 ]; then
+  echo "Deploy finished, but checks failed (see above)."
+  exit 1
+fi
+echo "All checks passed."
