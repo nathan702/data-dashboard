@@ -249,3 +249,19 @@ describe("settings", () => {
     await request(app).put("/api/me/preferences").send({ tabs: ["nope"] }).expect(400);
   });
 });
+
+describe("revenue SQL", () => {
+  it("treats a missing (NULL) filter list as no filter", async () => {
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const queries: string[] = [];
+    const fake = { query: async (o: { query: string }) => (queries.push(o.query), [[]]) };
+    await new BigQueryWarehouse(fake as never, "marts").revenueSummary({
+      start: "2026-08-01", end: "2026-08-31", basis: "booked", measure: "net", granularity: "day",
+      compare: "none", groupBy: "business_line", businessLines: ["farm_store"],
+    });
+    for (const q of queries) {
+      expect(q).toContain("COALESCE(ARRAY_LENGTH(@sources), 0) = 0");
+      expect(q).toContain("COALESCE(ARRAY_LENGTH(@business_lines), 0) = 0");
+    }
+  });
+});

@@ -81,10 +81,12 @@ export class BigQueryWarehouse implements Warehouse {
       shift_days: daysBetweenInclusive(q.start, q.end),
     };
     const types = { business_lines: ["STRING"], sources: ["STRING"] };
+    // The client sends an empty array parameter as NULL, and ARRAY_LENGTH(NULL)
+    // is NULL, so "no filter" must be spelled with COALESCE or every row drops.
     const filters = `
         date_basis = @basis
-        AND (ARRAY_LENGTH(@business_lines) = 0 OR business_line IN UNNEST(@business_lines))
-        AND (ARRAY_LENGTH(@sources) = 0 OR source IN UNNEST(@sources))`;
+        AND (COALESCE(ARRAY_LENGTH(@business_lines), 0) = 0 OR business_line IN UNNEST(@business_lines))
+        AND (COALESCE(ARRAY_LENGTH(@sources), 0) = 0 OR source IN UNNEST(@sources))`;
     // Comparison rows moved onto the current period (see alignToCurrent in @dash/shared).
     const aligned =
       q.compare === "previous_year" ? "DATE_ADD(revenue_date, INTERVAL 1 YEAR)" : "DATE_ADD(revenue_date, INTERVAL @shift_days DAY)";
