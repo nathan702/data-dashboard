@@ -4,6 +4,7 @@
 #   (settings live in infra/config.sh)
 #   bash infra/setup.sh
 set -euo pipefail
+trap 'echo; echo "ERROR: setup stopped at line $LINENO while running: $BASH_COMMAND" >&2' ERR
 cd "$(dirname "$0")"
 source ./config.sh
 
@@ -41,6 +42,15 @@ for t in $RAW_TABLES; do
     "$PROJECT_ID:$t" ./raw_table_schema.json >/dev/null
 done
 
+echo "==> Secrets (values are added later in the console: Security → Secret Manager → secret → New version)"
+for s in pseudonymization-key shopify-shop shopify-client-id shopify-client-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret; do
+  gcloud secrets describe "$s" >/dev/null 2>&1 || gcloud secrets create "$s" --replication-policy=automatic
+done
+if [ "$(gcloud secrets versions list pseudonymization-key --format='value(name)' | wc -l)" = "0" ]; then
+  openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add pseudonymization-key --data-file=- >/dev/null
+  echo "   generated pseudonymization-key"
+fi
+
 echo "==> Service accounts (least privilege)"
 make_sa() { gcloud iam service-accounts describe "$1@$PROJECT_ID.iam.gserviceaccount.com" >/dev/null 2>&1 \
   || gcloud iam service-accounts create "$1" --display-name="$2"; }
@@ -53,36 +63,32 @@ CONN_SA="dashboard-connectors@$PROJECT_ID.iam.gserviceaccount.com"
 XFORM_SA="dashboard-transform@$PROJECT_ID.iam.gserviceaccount.com"
 SCHED_SA="dashboard-scheduler@$PROJECT_ID.iam.gserviceaccount.com"
 
+# Dataset-level access via BigQuery's GRANT statement (idempotent). Errors stay visible.
+grant_dataset() {
+  bq query --quiet --format=none --use_legacy_sql=false --location="$BQ_LOCATION" \
+    "GRANT \`$2\` ON SCHEMA \`$PROJECT_ID.$3\` TO \"serviceAccount:$1\""
+}
 bind() { gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$1" --role="$2" --condition=None >/dev/null; }
 # API: run queries, read marts only, read Firestore sync state/access list, verify sign-ins.
 bind "$API_SA" roles/bigquery.jobUser
 bind "$API_SA" roles/datastore.viewer
 bind "$API_SA" roles/firebaseauth.viewer
-bq add-iam-policy-binding --member="serviceAccount:$API_SA" --role=roles/bigquery.dataViewer "$PROJECT_ID:marts" >/dev/null
+grant_dataset "$API_SA" roles/bigquery.dataViewer marts
 # Connectors: write raw_* and ops, keep sync state, read their secrets.
 bind "$CONN_SA" roles/bigquery.jobUser
 bind "$CONN_SA" roles/datastore.user
 for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square ops; do
-  bq add-iam-policy-binding --member="serviceAccount:$CONN_SA" --role=roles/bigquery.dataEditor "$PROJECT_ID:$ds" >/dev/null
+  grant_dataset "$CONN_SA" roles/bigquery.dataEditor "$ds"
 done
 bind "$CONN_SA" roles/secretmanager.secretAccessor
 # Transforms: read raw_* and ops, rebuild staging/marts and run assertions.
 bind "$XFORM_SA" roles/bigquery.jobUser
 for ds in raw_campminder raw_fareharbor raw_hubspot raw_shopify raw_square ops; do
-  bq add-iam-policy-binding --member="serviceAccount:$XFORM_SA" --role=roles/bigquery.dataViewer "$PROJECT_ID:$ds" >/dev/null
+  grant_dataset "$XFORM_SA" roles/bigquery.dataViewer "$ds"
 done
 for ds in staging marts dataform_assertions; do
-  bq add-iam-policy-binding --member="serviceAccount:$XFORM_SA" --role=roles/bigquery.dataEditor "$PROJECT_ID:$ds" >/dev/null
+  grant_dataset "$XFORM_SA" roles/bigquery.dataEditor "$ds"
 done
-
-echo "==> Secrets (values are added later with: echo -n VALUE | gcloud secrets versions add NAME --data-file=-)"
-for s in pseudonymization-key shopify-shop shopify-client-id shopify-client-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret; do
-  gcloud secrets describe "$s" >/dev/null 2>&1 || gcloud secrets create "$s" --replication-policy=automatic
-done
-if [ "$(gcloud secrets versions list pseudonymization-key --format='value(name)' | wc -l)" = "0" ]; then
-  openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add pseudonymization-key --data-file=- >/dev/null
-  echo "   generated pseudonymization-key"
-fi
 
 # Connectors save the Square webhook signing key themselves when they create the subscription.
 gcloud secrets add-iam-policy-binding square-webhook-signature-key \
