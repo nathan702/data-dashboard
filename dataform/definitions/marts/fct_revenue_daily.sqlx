@@ -3,9 +3,9 @@ config {
   schema: "marts",
   description: "Daily revenue per business line, platform and date basis. Business line comes from marts.business_line_assignments ('unassigned' when no rule matches). Sources are listed in includes/revenue_sources.js.",
   bigquery: {
-    partitionBy: "revenue_date",
-    // Partitioning and clustering can't change on an existing table (BigQuery
-    // refuses to replace it); changing these needs the table dropped first.
+    // Not partitioned: the table is small, and daily partitions rebuilt every
+    // 15 minutes exceed BigQuery's partition-modification quota. Clustering
+    // can't change on an existing table without dropping it first.
     clusterBy: ["business_line", "date_basis"]
   },
   assertions: {
@@ -14,6 +14,12 @@ config {
       "date_basis IN ('booked', 'collected', 'service')"
     ]
   }
+}
+
+js { const { dropIfPartitioned } = require("includes/sql"); }
+
+pre_operations {
+  ${dropIfPartitioned("marts", "fct_revenue_daily")}
 }
 
 js {

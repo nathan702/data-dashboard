@@ -2,8 +2,14 @@ config {
   type: "table",
   schema: "marts",
   description: "One row per Shopify or Square order with its business line: units, gross, discounts, tax, tips and fees. Powers the order KPIs.",
-  bigquery: { partitionBy: "sale_date", clusterBy: ["business_line"] },
+  bigquery: { clusterBy: ["business_line"] },
   assertions: { nonNull: ["source", "business_line", "sale_date", "order_id"] }
+}
+
+js { const { dropIfPartitioned } = require("includes/sql"); }
+
+pre_operations {
+  ${dropIfPartitioned("marts", "fct_retail_orders")}
 }
 
 WITH shopify_lines AS (

@@ -30,3 +30,22 @@ function ts(json, path) {
 }
 
 module.exports = { easternDate, latestRaw, squareMoney, shopMoney, ts };
+
+/**
+ * One-time migration for tables that used to be partitioned by day. Full
+ * rebuilds every 15 minutes rewrote thousands of daily partitions and hit
+ * BigQuery's per-table daily partition-modification quota. BigQuery can't
+ * drop partitioning in place, so drop the old table once; later runs see an
+ * unpartitioned table and skip this.
+ */
+function dropIfPartitioned(dataset, table) {
+  return `
+    IF EXISTS (
+      SELECT 1 FROM \`${dataset}.INFORMATION_SCHEMA.COLUMNS\`
+      WHERE table_name = '${table}' AND is_partitioning_column = 'YES'
+    ) THEN
+      DROP TABLE \`${dataset}.${table}\`;
+    END IF;`;
+}
+
+module.exports.dropIfPartitioned = dropIfPartitioned;
