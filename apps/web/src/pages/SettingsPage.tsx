@@ -32,7 +32,9 @@ export function SettingsPage() {
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const changed = rows.filter((r) => edits[rowId(r)] !== undefined && edits[rowId(r)] !== r.businessLine);
-  const unassigned = rows.filter((r) => (edits[rowId(r)] ?? r.businessLine) === UNASSIGNED && (r.netLast12Months !== 0 || r.activityLast12Months !== 0));
+  // Campminder groups count from any season, so past seasons' groups get assigned too.
+  const active = (r: AssignmentRow) => (r.source === "campminder" ? !!r.lastActivity : r.netLast12Months !== 0 || r.activityLast12Months !== 0);
+  const unassigned = rows.filter((r) => (edits[rowId(r)] ?? r.businessLine) === UNASSIGNED && active(r));
 
   const submit = async () => {
     await save.mutateAsync({
