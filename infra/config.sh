@@ -14,4 +14,4 @@ DEPLOY_BRANCHES="main claude/ecstatic-maxwell-hh3yl3"
 # connectors service account as Viewer). The sheet id isn't a secret.
 CAMPMINDER_SHEET_ID="12_XrzB1Qhv9SJH5lZ5uy5sfL-zI6ykGhtmjEomddbCI"
 # Optional sheet of past seasons, one tab per season named by its year ("2022").
-CAMPMINDER_HISTORY_SHEET_ID=""
+CAMPMINDER_HISTORY_SHEET_ID="19NuOxcVlp9svYARGRI-1Sx5W79_hyTfOQ0oV80BY4k0"
