@@ -338,8 +338,24 @@ describe("campminder endpoints", () => {
     expect(groups.body.rows.map((r: { key: string }) => r.key).sort()).toEqual(["Fall Saddle Club MONDAY", "Spring Group Lessons"]);
   });
 
+  it("drills down with filters that all have to match", async () => {
+    const f = encodeURIComponent(JSON.stringify({ program: ["Explorers"], week: ["9"] }));
+    const all = await request(api()).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200);
+    const some = await request(api()).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${f}`).expect(200);
+    expect(some.body.current.enrollments).toBeGreaterThan(0);
+    expect(some.body.current.enrollments).toBeLessThan(all.body.current.enrollments);
+    expect(some.body.byWeek.map((w: { week: number }) => w.week)).toEqual([9]);
+    const ages = await request(api()).get(`/api/campminder/breakdown?season=2026&businessLine=camp&dimension=age&filters=${f}`).expect(200);
+    const total = ages.body.rows.reduce((s: number, r: { enrollments: number }) => s + r.enrollments, 0);
+    expect(total).toBe(some.body.current.enrollments);
+    const programs = await request(api()).get(`/api/campminder/breakdown?season=2026&businessLine=camp&dimension=program&filters=${f}`).expect(200);
+    expect(programs.body.rows.map((r: { key: string }) => r.key)).toEqual(["Explorers"]);
+  });
+
   it("validates input", async () => {
     await request(api()).get("/api/campminder/summary?season=abc").expect(400);
+    await request(api()).get("/api/campminder/summary?season=2026&filters=notjson").expect(400);
+    await request(api()).get(`/api/campminder/summary?season=2026&filters=${encodeURIComponent('{"name":["x"]}')}`).expect(400);
     await request(api()).get("/api/campminder/breakdown?season=2026&dimension=name").expect(400);
     await request(api()).get("/api/campminder/seasons?businessLine=nope").expect(400);
   });
@@ -350,5 +366,12 @@ describe("campminder endpoints", () => {
       expect(s).toContain("@business_line IS NULL");
       expect(s).not.toMatch(/\b(WITH|FROM|AS)\s+rows\b/i);
     }
+    const { params, types } = sql.drillParams({ week: ["9"] });
+    for (const s of [sql.kpiSql("t"), sql.byWeekSql("t"), sql.paceSql("t"), sql.breakdownSql("t", "age")]) {
+      for (const p of Object.keys(params)) expect(s).toContain(`@${p}`);
+    }
+    expect(params.f_week).toEqual(["9"]);
+    expect(params.f_program).toEqual([]);
+    expect(types.f_program).toEqual(["STRING"]);
   });
 });

@@ -19,10 +19,13 @@ interface Props<T> {
   caption?: string;
   /** Extra buttons in the toolbar, before Export CSV. */
   actions?: ReactNode;
+  /** Makes rows clickable (drill-down); also works with Enter. */
+  onRowClick?(row: T): void;
+  rowTitle?: string;
 }
 
 /** Sortable, filterable table with CSV export. Used for every tabular view. */
-export function DataTable<T>({ rows, columns, rowKey, exportName, searchable = true, caption, actions }: Props<T>) {
+export function DataTable<T>({ rows, columns, rowKey, exportName, searchable = true, caption, actions, onRowClick, rowTitle }: Props<T>) {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [query, setQuery] = useState("");
 
@@ -100,7 +103,14 @@ export function DataTable<T>({ rows, columns, rowKey, exportName, searchable = t
           </thead>
           <tbody>
             {visible.map((r) => (
-              <tr key={rowKey(r)}>
+              <tr
+                key={rowKey(r)}
+                className={onRowClick ? "row-link" : undefined}
+                title={onRowClick ? rowTitle : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onClick={onRowClick ? () => onRowClick(r) : undefined}
+                onKeyDown={onRowClick ? (e) => e.key === "Enter" && onRowClick(r) : undefined}
+              >
                 {columns.map((c) => (
                   <td key={c.key} className={c.numeric ? "num" : undefined}>
                     {c.render ? c.render(r) : c.value(r)}

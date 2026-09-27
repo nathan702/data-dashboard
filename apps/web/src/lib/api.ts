@@ -1,4 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { encodeEnrollmentFilters } from "@dash/shared";
 import type {
   AssignmentsResponse,
   AssignmentUpdate,
@@ -6,6 +7,7 @@ import type {
   ComparisonMode,
   EnrollmentBreakdownResponse,
   EnrollmentDimension,
+  EnrollmentFilters,
   EnrollmentSeason,
   EnrollmentSummaryResponse,
   InventoryResponse,
@@ -154,12 +156,16 @@ export function useEnrollmentSeasons(businessLine?: BusinessLineOrUnassigned) {
   return useApi<{ seasons: EnrollmentSeason[] }>(["enrollment-seasons", qs], `/api/campminder/seasons?${qs}`, { refetchInterval: 10 * 60_000 });
 }
 
-export function useEnrollmentSummary(q: { season: number | undefined; businessLine?: BusinessLineOrUnassigned }) {
-  const qs = retailQs({ season: q.season ? String(q.season) : undefined, businessLine: q.businessLine });
+type EnrollmentScope = { season: number | undefined; businessLine?: BusinessLineOrUnassigned; filters?: EnrollmentFilters };
+const enrollmentQs = (q: EnrollmentScope, extra: Record<string, string> = {}) =>
+  retailQs({ season: q.season ? String(q.season) : undefined, businessLine: q.businessLine, filters: encodeEnrollmentFilters(q.filters ?? {}), ...extra });
+
+export function useEnrollmentSummary(q: EnrollmentScope) {
+  const qs = enrollmentQs(q);
   return useApiWhen<EnrollmentSummaryResponse>(!!q.season, ["enrollment-summary", qs], `/api/campminder/summary?${qs}`);
 }
 
-export function useEnrollmentBreakdown(q: { season: number | undefined; businessLine?: BusinessLineOrUnassigned; dimension: EnrollmentDimension }) {
-  const qs = retailQs({ season: q.season ? String(q.season) : undefined, businessLine: q.businessLine, dimension: q.dimension });
+export function useEnrollmentBreakdown(q: EnrollmentScope & { dimension: EnrollmentDimension }) {
+  const qs = enrollmentQs(q, { dimension: q.dimension });
   return useApiWhen<EnrollmentBreakdownResponse>(!!q.season, ["enrollment-breakdown", qs], `/api/campminder/breakdown?${qs}`);
 }

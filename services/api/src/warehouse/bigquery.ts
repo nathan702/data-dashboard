@@ -7,6 +7,7 @@ import {
   type AssignmentUpdate,
   type BusinessLineOrUnassigned,
   type EnrollmentBreakdownQuery,
+  type EnrollmentFilters,
   type EnrollmentBreakdownResponse,
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
@@ -24,7 +25,7 @@ import {
   type Source,
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis } from "./campminder.js";
-import { breakdownSql as enrollmentBreakdownSql, byWeekSql, kpiSql as enrollmentKpiSql, paceSql, seasonsSql } from "./campminderSql.js";
+import { breakdownSql as enrollmentBreakdownSql, byWeekSql, drillParams, kpiSql as enrollmentKpiSql, paceSql, seasonsSql } from "./campminderSql.js";
 import { toKpis } from "./retail.js";
 import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, inventorySql, kpiSql, saveAssignmentsSql } from "./retailSql.js";
 import { groupKeys } from "./summarize.js";
@@ -261,9 +262,20 @@ export class BigQueryWarehouse implements Warehouse {
     return `\`${this.martsDataset}.fct_campminder_enrollments\``;
   }
 
-  private enrollmentQuery<T>(query: string, params: Record<string, unknown>, businessLine: BusinessLineOrUnassigned | undefined) {
+  private enrollmentQuery<T>(
+    query: string,
+    params: Record<string, unknown>,
+    businessLine: BusinessLineOrUnassigned | undefined,
+    filters?: EnrollmentFilters,
+  ) {
+    const drill = drillParams(filters);
     return this.bq
-      .query({ query, params: { ...params, business_line: businessLine ?? null }, types: { business_line: "STRING" }, location: this.location })
+      .query({
+        query,
+        params: { ...params, ...drill.params, business_line: businessLine ?? null },
+        types: { ...drill.types, business_line: "STRING" },
+        location: this.location,
+      })
       .then(([rows]) => rows as T[]);
   }
 
@@ -276,9 +288,14 @@ export class BigQueryWarehouse implements Warehouse {
     const { asOf, prevCutoff, seasonStart } = enrollmentAsOf(q.season);
     const params = { season: q.season, prev_cutoff: prevCutoff };
     const [kpis, weeks, pace] = await Promise.all([
-      this.enrollmentQuery<Record<string, unknown>>(enrollmentKpiSql(this.enrollments), params, q.businessLine),
-      this.enrollmentQuery<{ week: number; enrollments: number }>(byWeekSql(this.enrollments), { season: q.season }, q.businessLine),
-      this.enrollmentQuery<{ season: number; week_of_season: number; enrollments: number }>(paceSql(this.enrollments), { season: q.season }, q.businessLine),
+      this.enrollmentQuery<Record<string, unknown>>(enrollmentKpiSql(this.enrollments), params, q.businessLine, q.filters),
+      this.enrollmentQuery<{ week: number; enrollments: number }>(byWeekSql(this.enrollments), { season: q.season }, q.businessLine, q.filters),
+      this.enrollmentQuery<{ season: number; week_of_season: number; enrollments: number }>(
+        paceSql(this.enrollments),
+        { season: q.season },
+        q.businessLine,
+        q.filters,
+      ),
     ]);
     const cmp = kpis.find((r) => r.period === "comparison");
     return {
@@ -293,7 +310,12 @@ export class BigQueryWarehouse implements Warehouse {
   }
 
   async enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse> {
-    const rows = await this.enrollmentQuery<Record<string, unknown>>(enrollmentBreakdownSql(this.enrollments, q.dimension), { season: q.season }, q.businessLine);
+    const rows = await this.enrollmentQuery<Record<string, unknown>>(
+      enrollmentBreakdownSql(this.enrollments, q.dimension),
+      { season: q.season },
+      q.businessLine,
+      q.filters,
+    );
     return {
       season: q.season,
       businessLine: q.businessLine ?? null,

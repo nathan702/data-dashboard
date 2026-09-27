@@ -81,8 +81,8 @@ export async function runSelfCheck(
     const e = (ref as ReferenceTotals).enrollments;
     if (!e) return null; // nothing synced yet
     const [summary, breakdown] = await Promise.all([
-      warehouse.enrollmentSummary({ season: e.season }),
-      warehouse.enrollmentBreakdown({ season: e.season, dimension: "session_group" }),
+      warehouse.enrollmentSummary({ season: e.season, filters: {} }),
+      warehouse.enrollmentBreakdown({ season: e.season, dimension: "session_group", filters: {} }),
     ]);
     if (summary.current.enrollments !== e.count) return "summary differs from table count";
     if (sum(breakdown.rows.map((r) => r.enrollments)) !== e.count) return "breakdown differs from table count";

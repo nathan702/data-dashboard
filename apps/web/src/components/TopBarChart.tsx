@@ -2,7 +2,10 @@ import { Bar, BarChart, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } 
 import { formatInt, formatUsd, formatUsdCompact } from "../lib/format";
 
 interface Props {
-  rows: Array<{ key: string; value: number }>;
+  /** `id` is what onSelect receives, when it differs from the label. */
+  rows: Array<{ key: string; value: number; id?: string }>;
+  /** Makes bars clickable (drill-down). */
+  onSelect?(id: string): void;
   color: string;
   valueLabel: string;
   /** Counts (campers, enrollments) instead of dollars. */
@@ -36,7 +39,7 @@ function BarTooltip({ active, payload, color, valueLabel, count }: TipProps) {
 const truncate = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** Horizontal bars for a ranked top-N list. Single series, so no legend. */
-export function TopBarChart({ rows, color, valueLabel, count = false, emptyText = "No sales in this range." }: Props) {
+export function TopBarChart({ rows, color, valueLabel, count = false, emptyText = "No sales in this range.", onSelect }: Props) {
   if (rows.length === 0) return <div className="empty">{emptyText}</div>;
   const narrow = typeof window !== "undefined" && window.innerWidth < 600;
   const height = rows.length * 34 + 16;
@@ -55,7 +58,15 @@ export function TopBarChart({ rows, color, valueLabel, count = false, emptyText 
             tickLine={false}
           />
           <Tooltip content={<BarTooltip color={color} valueLabel={valueLabel} count={count} />} cursor={{ fill: "var(--wash)" }} />
-          <Bar dataKey="value" fill={color} barSize={20} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+          <Bar
+            dataKey="value"
+            fill={color}
+            barSize={20}
+            radius={[0, 4, 4, 0]}
+            isAnimationActive={false}
+            cursor={onSelect ? "pointer" : undefined}
+            onClick={onSelect ? (d: { payload?: { key: string; id?: string } }) => d.payload && onSelect(d.payload.id ?? d.payload.key) : undefined}
+          >
             <LabelList
               dataKey="value"
               position="right"

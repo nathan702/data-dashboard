@@ -1,10 +1,13 @@
 import {
   addDays,
   seasonRange,
+  UNKNOWN_KEY,
   type BusinessLineOrUnassigned,
   type EnrollmentBreakdownQuery,
   type EnrollmentBreakdownResponse,
   type EnrollmentBreakdownRow,
+  type EnrollmentDimension,
+  type EnrollmentFilters,
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
   type EnrollmentSummaryResponse,
@@ -90,7 +93,26 @@ function rows(): Row[] {
   return out;
 }
 
-const scoped = (bl: BusinessLineOrUnassigned | undefined) => rows().filter((r) => !bl || r.businessLine === bl);
+function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week">): string {
+  return {
+    session_group: r.sessionGroup, session: r.sessionName, program: r.program ?? UNKNOWN_KEY, age: String(r.age),
+    grade: r.grade, gender: r.gender, years: String(r.years), state: r.state, status: r.status,
+  }[d];
+}
+
+/** Same rule as the SQL: every filtered dimension must match. */
+function matches(r: Row, f: EnrollmentFilters | undefined) {
+  for (const [d, values] of Object.entries(f ?? {}) as Array<[EnrollmentDimension, string[]]>) {
+    if (!values.length) continue;
+    if (d === "week") {
+      if (r.weekStart === null || !values.some((w) => Number(w) >= r.weekStart! && Number(w) <= r.weekEnd!)) return false;
+    } else if (!values.includes(keyOf(r, d))) return false;
+  }
+  return true;
+}
+
+const scoped = (bl: BusinessLineOrUnassigned | undefined, f?: EnrollmentFilters) =>
+  rows().filter((r) => (!bl || r.businessLine === bl) && matches(r, f));
 
 function counts(rs: Row[]) {
   const en = rs.filter((r) => r.statusCode === "EN");
@@ -114,7 +136,7 @@ export function demoEnrollmentSeasons(bl: BusinessLineOrUnassigned | undefined):
 
 export function demoEnrollmentSummary(q: EnrollmentSummaryQuery): EnrollmentSummaryResponse {
   const { asOf, prevCutoff, seasonStart } = enrollmentAsOf(q.season);
-  const all = scoped(q.businessLine);
+  const all = scoped(q.businessLine, q.filters);
   const cur = all.filter((r) => r.season === q.season);
   const prev = all.filter((r) => r.season === q.season - 1 && r.applicationDate <= prevCutoff);
   const weeks = new Map<number, number>();
@@ -141,7 +163,7 @@ export function demoEnrollmentSummary(q: EnrollmentSummaryQuery): EnrollmentSumm
 }
 
 export function demoEnrollmentBreakdown(q: EnrollmentBreakdownQuery): EnrollmentBreakdownResponse {
-  const cur = scoped(q.businessLine).filter((r) => r.season === q.season);
+  const cur = scoped(q.businessLine, q.filters).filter((r) => r.season === q.season);
   const groups = new Map<string, Row[]>();
   const add = (k: string, r: Row) => groups.set(k, [...(groups.get(k) ?? []), r]);
   for (const r of cur) {
@@ -149,11 +171,7 @@ export function demoEnrollmentBreakdown(q: EnrollmentBreakdownQuery): Enrollment
       if (r.weekStart !== null) for (let w = r.weekStart; w <= r.weekEnd!; w++) add(String(w), r);
       continue;
     }
-    const key = {
-      session_group: r.sessionGroup, session: r.sessionName, program: r.program ?? "(unknown)", age: String(r.age),
-      grade: r.grade, gender: r.gender, years: String(r.years), state: r.state, status: r.status,
-    }[q.dimension];
-    add(key, r);
+    add(keyOf(r, q.dimension), r);
   }
   const out: EnrollmentBreakdownRow[] = [...groups.entries()].map(([key, rs]) => {
     const c = counts(rs);

@@ -5,10 +5,13 @@ import {
   addDays,
   ENROLLMENT_DIMENSION_LABEL,
   ENROLLMENT_DIMENSIONS,
+  encodeEnrollmentFilters,
+  enrollmentFiltersSchema,
   seasonRange,
   type BusinessLineOrUnassigned,
   type EnrollmentBreakdownRow,
   type EnrollmentDimension,
+  type EnrollmentFilters,
   type EnrollmentKpis,
   type EnrollmentSummaryResponse,
 } from "@dash/shared";
@@ -52,6 +55,44 @@ function CountTile({ label, value, previous, upIsGood = true, cmpLabel }: {
   );
 }
 
+/** Where a click on a value goes next when drilling down. */
+const DRILL_ORDER: EnrollmentDimension[] = ["session_group", "session", "program", "week", "age", "grade", "gender", "years", "state", "status"];
+
+const valueLabel = (d: EnrollmentDimension, v: string) => (d === "week" ? `Week ${v}` : v);
+
+/**
+ * Drill-down state in the URL (?cf= filters, ?cdim= breakdown), so a view can
+ * be shared and Back steps out of the last drill.
+ */
+function useDrill() {
+  const [params, setParams] = useSearchParams();
+  let filters: EnrollmentFilters = {};
+  try {
+    const parsed = enrollmentFiltersSchema.safeParse(JSON.parse(params.get("cf") ?? "{}"));
+    if (parsed.success) filters = parsed.data;
+  } catch {
+    // Bad link: show everything.
+  }
+  const cdim = params.get("cdim") as EnrollmentDimension | null;
+  const dimension: EnrollmentDimension = cdim && ENROLLMENT_DIMENSIONS.includes(cdim) ? cdim : "session_group";
+  const set = (next: { filters?: EnrollmentFilters; dimension?: EnrollmentDimension }, push = false) => {
+    const p = new URLSearchParams(params);
+    if (next.filters) {
+      const enc = encodeEnrollmentFilters(next.filters);
+      if (enc) p.set("cf", enc);
+      else p.delete("cf");
+    }
+    if (next.dimension) p.set("cdim", next.dimension);
+    setParams(p, { replace: !push });
+  };
+  const drill = (d: EnrollmentDimension, value: string) => {
+    const f = { ...filters, [d]: [value] };
+    const nextDim = DRILL_ORDER.slice(DRILL_ORDER.indexOf(d) + 1).find((x) => !f[x]?.length) ?? d;
+    set({ filters: f, dimension: nextDim }, true);
+  };
+  return { filters, dimension, set, drill };
+}
+
 /** Which season is shown: ?season= in the URL, else the newest with data. */
 function useSeason(available: number[]) {
   const [params, setParams] = useSearchParams();
@@ -74,9 +115,12 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
   const seasons = useEnrollmentSeasons(businessLine);
   const available = (seasons.data?.seasons ?? []).map((s) => s.season);
   const [season, setSeason] = useSeason(available);
-  const [dimension, setDimension] = useState<EnrollmentDimension>("session_group");
-  const summary = useEnrollmentSummary({ season, businessLine });
-  const breakdown = useEnrollmentBreakdown({ season, businessLine, dimension });
+  const { filters, dimension, set, drill } = useDrill();
+  const setDimension = (d: EnrollmentDimension) => set({ dimension: d });
+  const [picking, setPicking] = useState(false);
+  const summary = useEnrollmentSummary({ season, businessLine, filters });
+  const breakdown = useEnrollmentBreakdown({ season, businessLine, dimension, filters });
+  const active = (Object.entries(filters) as Array<[EnrollmentDimension, string[]]>).filter(([, v]) => v.length > 0);
 
   const header = (
     <div className="card-header">
@@ -133,7 +177,7 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
   ];
   const bars = (breakdown.data?.rows ?? [])
     .filter((r) => r.enrollments > 0)
-    .map((r) => ({ key: dimension === "week" ? `Week ${r.key}` : r.key, value: r.enrollments }));
+    .map((r) => ({ key: valueLabel(dimension, r.key), id: r.key, value: r.enrollments }));
   // Ordered dimensions (weeks, ages, grades) read best in order; others by size.
   const ordered = dimension === "week" || dimension === "age" || dimension === "grade" || dimension === "years";
   const topBars = ordered ? bars : [...bars].sort((a, b) => b.value - a.value).slice(0, 15);
@@ -141,10 +185,42 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
   return (
     <section className="page-section" aria-label={title}>
       {header}
+      <div className="chips" aria-label="Filters">
+        {active.map(([d, values]) => (
+          <span key={d} className="chip">
+            <span className="chip-label">{ENROLLMENT_DIMENSION_LABEL[d]}:</span> {values.map((v) => valueLabel(d, v)).join(", ")}
+            <button type="button" aria-label={`Remove ${ENROLLMENT_DIMENSION_LABEL[d]} filter`} onClick={() => set({ filters: { ...filters, [d]: [] } }, true)}>
+              ×
+            </button>
+          </span>
+        ))}
+        <button type="button" className="button" onClick={() => setPicking((x) => !x)} aria-expanded={picking}>
+          + Filter
+        </button>
+        {active.length > 0 && (
+          <button type="button" className="link-button" onClick={() => set({ filters: {}, dimension: "session_group" }, true)}>
+            Clear filters
+          </button>
+        )}
+        {active.length === 0 && <span className="hint">Click any bar or row to drill in.</span>}
+      </div>
+      {picking && season !== undefined && (
+        <FilterPicker
+          season={season}
+          businessLine={businessLine}
+          filters={filters}
+          onApply={(d, values) => {
+            set({ filters: { ...filters, [d]: values } }, true);
+            setPicking(false);
+          }}
+          onCancel={() => setPicking(false)}
+        />
+      )}
       {summary.error && <div className="error-banner">Couldn't load enrollment stats: {summary.error.message}</div>}
       {s && (
         <>
           <p className="card-subtitle">
+            {active.length > 0 ? "Only camper-sessions matching every filter. " : ""}
             Counts enrolled camper-sessions; each camper counts once in Campers.
             {s.comparison && ` Compared with season ${s.season - 1} ${seasonOver(s) ? "overall" : "at the same point in its season"}.`}
             {!seasonOver(s) && ` As of ${formatDate(s.asOf)}.`}
@@ -167,10 +243,11 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
               <h3 className="card-title">Campers per week</h3>
               <p className="card-subtitle">Enrolled in weekly sessions; a multi-week session counts in each of its weeks.</p>
               <TopBarChart
-                rows={s.byWeek.map((w) => ({ key: `Week ${w.week}`, value: w.enrollments }))}
+                rows={s.byWeek.map((w) => ({ key: `Week ${w.week}`, id: String(w.week), value: w.enrollments }))}
                 color={ACCENT_VAR}
                 valueLabel="campers"
                 count
+                onSelect={(w) => drill("week", w)}
               />
             </div>
           )}
@@ -200,7 +277,14 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
         {breakdown.error && <div className="error-banner">Couldn't load breakdown: {breakdown.error.message}</div>}
         {breakdown.data && (
           <div className={breakdown.isPlaceholderData ? "refetching" : undefined}>
-            <TopBarChart rows={topBars} color={ACCENT_VAR} valueLabel="enrollments" count emptyText="No enrollments." />
+            <TopBarChart
+              rows={topBars}
+              color={ACCENT_VAR}
+              valueLabel="enrollments"
+              count
+              emptyText="No enrollments match."
+              onSelect={(v) => drill(dimension, v)}
+            />
           </div>
         )}
       </div>
@@ -212,9 +296,88 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
           columns={columns}
           rowKey={(r) => r.key}
           exportName={`campminder${businessLine ? `_${businessLine}` : ""}_${season}_${dimension}`}
+          onRowClick={(r) => drill(dimension, r.key)}
+          rowTitle="Filter to this and drill in"
         />
       )}
     </section>
+  );
+}
+
+/** Pick a dimension, then tick values (with counts under the other filters). */
+function FilterPicker({
+  season,
+  businessLine,
+  filters,
+  onApply,
+  onCancel,
+}: {
+  season: number;
+  businessLine?: BusinessLineOrUnassigned;
+  filters: EnrollmentFilters;
+  onApply(d: EnrollmentDimension, values: string[]): void;
+  onCancel(): void;
+}) {
+  const [dim, setDim] = useState<EnrollmentDimension>("program");
+  const [chosen, setChosen] = useState<string[]>(filters[dim] ?? []);
+  const [query, setQuery] = useState("");
+  // Counts ignore this dimension's own filter, so every option stays visible.
+  const others = { ...filters, [dim]: [] };
+  const options = useEnrollmentBreakdown({ season, businessLine, dimension: dim, filters: others });
+  const q = query.trim().toLowerCase();
+  const rows = (options.data?.rows ?? []).filter((r) => !q || valueLabel(dim, r.key).toLowerCase().includes(q));
+  const toggle = (v: string) => setChosen((c) => (c.includes(v) ? c.filter((x) => x !== v) : [...c, v]));
+  return (
+    <div className="card filter-picker">
+      <div className="filter-bar">
+        <label className="field">
+          <span className="field-label">Filter by</span>
+          <select
+            value={dim}
+            onChange={(e) => {
+              const d = e.target.value as EnrollmentDimension;
+              setDim(d);
+              setChosen(filters[d] ?? []);
+              setQuery("");
+            }}
+          >
+            {ENROLLMENT_DIMENSIONS.map((d) => (
+              <option key={d} value={d}>
+                {ENROLLMENT_DIMENSION_LABEL[d]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Search</span>
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. rafting" />
+        </label>
+      </div>
+      {options.error && <div className="error-banner">Couldn't load values: {options.error.message}</div>}
+      <div className="filter-values" role="group" aria-label={`${ENROLLMENT_DIMENSION_LABEL[dim]} values`}>
+        {rows.map((r) => (
+          <label key={r.key}>
+            <input type="checkbox" checked={chosen.includes(r.key)} onChange={() => toggle(r.key)} />
+            {valueLabel(dim, r.key)}
+            <span className="muted">{formatInt(r.enrollments)}</span>
+          </label>
+        ))}
+        {options.data && rows.length === 0 && <span className="hint">No values match.</span>}
+      </div>
+      <div className="chips">
+        <button type="button" className="button button-primary" onClick={() => onApply(dim, chosen)}>
+          Apply
+        </button>
+        {q && rows.length > 0 && (
+          <button type="button" className="link-button" onClick={() => setChosen((c) => [...new Set([...c, ...rows.map((r) => r.key)])])}>
+            Select all {rows.length} matching
+          </button>
+        )}
+        <button type="button" className="link-button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 
