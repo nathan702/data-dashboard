@@ -53,7 +53,7 @@ transactions are split across lines by assignment rules set on the dashboard's
  Shopify ─┐ webhooks + 15-min polls        ┌────────────────────────────┐
  Square  ─┼──────────────────────────────▶ │ Cloud Run: connectors      │
  HubSpot ─┘                                 │  • jobs (private, Scheduler)│
- Campminder automation ─▶ Cloud Storage ──▶ │  • webhooks (public, signed)│
+ Campminder automation ─▶ Google Sheet ───▶ │  • webhooks (public, signed)│
  FareHarbor emails ─▶ Gmail ──────────────▶ └──────────┬─────────────────┘
                                                        │ raw JSON rows
                                             BigQuery raw_<source>.*
@@ -93,7 +93,7 @@ basis × location × channel: gross, discounts, refunds, fees, transactions).
 | Shopify | Dev Dashboard app (client credentials, 24h tokens); webhooks for orders/refunds/products + 15-min syncs; hourly inventory snapshot | Seconds (raw) / 15 min (dashboards) | Paged GraphQL import, resumable |
 | Square | Personal access token; webhooks for orders/payments/refunds + 15-min syncs (catalog, locations, per-location payments/refunds) | Seconds (raw) / 15 min (dashboards) | Orders/Payments search, resumable |
 | HubSpot | Private-app token; webhooks for deals + 15-min polls of deals, stage history, payments | Seconds–minutes | Full CRM export |
-| Campminder | Existing Cloud automation writes its report to a Cloud Storage bucket; an upload triggers import with PII allow-listing | Each automation run | Depends on past-season exports |
+| Campminder | Existing automation overwrites a Google Sheet daily; an hourly sync reads it with a field allow-list and keeps each season as last seen | Hourly check (sheet changes daily) | From 2026 onward (earlier seasons only if exported) |
 | FareHarbor | No API. Booking notification emails to a dedicated Workspace mailbox, read via the Gmail API (push via Pub/Sub). One-time CSV export for history. | ~1 minute | Manual export |
 
 FareHarbor limitation: notification emails carry bookings, changes and

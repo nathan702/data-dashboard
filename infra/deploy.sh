@@ -46,16 +46,18 @@ gcloud run deploy dashboard-connectors-webhooks --image="$REPO/connectors:$TAG" 
 gcloud run deploy dashboard-connectors-jobs --image="$REPO/connectors:$TAG" --region="$REGION" \
   --service-account="$CONN_SA" --no-allow-unauthenticated --timeout=1800 \
   --min-instances=0 --max-instances=2 --memory=1Gi \
-  --set-env-vars="$COMMON_ENV,SERVICE_ROLE=jobs"
+  --set-env-vars="$COMMON_ENV,SERVICE_ROLE=jobs,CAMPMINDER_SHEET_ID=$CAMPMINDER_SHEET_ID"
 gcloud run services add-iam-policy-binding dashboard-connectors-jobs --region="$REGION" \
   --member="serviceAccount:$SCHED_SA" --role=roles/run.invoker >/dev/null
 JOBS_URL=$(gcloud run services describe dashboard-connectors-jobs --region="$REGION" --format='value(status.url)')
 
 # Sources without credentials yet just report "not connected", so every source is scheduled.
-for SRC in shopify square; do
+# Campminder's sheet only changes once a day; hourly checks are cheap (unchanged sheets are skipped).
+for ENTRY in "shopify|*/15 * * * *" "square|*/15 * * * *" "campminder|5 * * * *"; do
+  SRC="${ENTRY%%|*}"
   if gcloud scheduler jobs describe "sync-$SRC" --location="$REGION" >/dev/null 2>&1; then SCHED_CMD=update; else SCHED_CMD=create; fi
   gcloud scheduler jobs "$SCHED_CMD" http "sync-$SRC" --location="$REGION" \
-    --schedule="*/15 * * * *" --time-zone="America/New_York" \
+    --schedule="${ENTRY#*|}" --time-zone="America/New_York" \
     --uri="$JOBS_URL/run/$SRC" --http-method=POST --attempt-deadline=30m \
     --oidc-service-account-email="$SCHED_SA" --oidc-token-audience="$JOBS_URL" >/dev/null
 done

@@ -6,6 +6,11 @@ import {
   type AssignmentRow,
   type AssignmentUpdate,
   type BusinessLineOrUnassigned,
+  type EnrollmentBreakdownQuery,
+  type EnrollmentBreakdownResponse,
+  type EnrollmentSeason,
+  type EnrollmentSummaryQuery,
+  type EnrollmentSummaryResponse,
   type Granularity,
   type InventoryResponse,
   type RetailBreakdownQuery,
@@ -18,6 +23,8 @@ import {
   type RevenueSummaryResponse,
   type Source,
 } from "@dash/shared";
+import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis } from "./campminder.js";
+import { breakdownSql as enrollmentBreakdownSql, byWeekSql, kpiSql as enrollmentKpiSql, paceSql, seasonsSql } from "./campminderSql.js";
 import { toKpis } from "./retail.js";
 import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, inventorySql, kpiSql, saveAssignmentsSql } from "./retailSql.js";
 import { groupKeys } from "./summarize.js";
@@ -228,6 +235,7 @@ export class BigQueryWarehouse implements Warehouse {
       origin: AssignmentRow["origin"];
       last_activity: string | null;
       net_12m: number | string;
+      activity_12m: number | string;
       saved_at: unknown;
     }>;
     let pendingRefresh = false;
@@ -243,14 +251,70 @@ export class BigQueryWarehouse implements Warehouse {
         origin: r.origin,
         lastActivity: r.last_activity,
         netLast12Months: round2(Number(r.net_12m)),
+        activityLast12Months: Number(r.activity_12m ?? 0),
       };
     });
     return { rows: out, pendingRefresh };
   }
 
+  private get enrollments() {
+    return `\`${this.martsDataset}.fct_campminder_enrollments\``;
+  }
+
+  private enrollmentQuery<T>(query: string, params: Record<string, unknown>, businessLine: BusinessLineOrUnassigned | undefined) {
+    return this.bq
+      .query({ query, params: { ...params, business_line: businessLine ?? null }, types: { business_line: "STRING" }, location: this.location })
+      .then(([rows]) => rows as T[]);
+  }
+
+  async enrollmentSeasons(businessLine: BusinessLineOrUnassigned | undefined): Promise<EnrollmentSeason[]> {
+    const rows = await this.enrollmentQuery<{ season: number; enrollments: number }>(seasonsSql(this.enrollments), {}, businessLine);
+    return rows.map((r) => ({ season: Number(r.season), enrollments: Number(r.enrollments) }));
+  }
+
+  async enrollmentSummary(q: EnrollmentSummaryQuery): Promise<EnrollmentSummaryResponse> {
+    const { asOf, prevCutoff, seasonStart } = enrollmentAsOf(q.season);
+    const params = { season: q.season, prev_cutoff: prevCutoff };
+    const [kpis, weeks, pace] = await Promise.all([
+      this.enrollmentQuery<Record<string, unknown>>(enrollmentKpiSql(this.enrollments), params, q.businessLine),
+      this.enrollmentQuery<{ week: number; enrollments: number }>(byWeekSql(this.enrollments), { season: q.season }, q.businessLine),
+      this.enrollmentQuery<{ season: number; week_of_season: number; enrollments: number }>(paceSql(this.enrollments), { season: q.season }, q.businessLine),
+    ]);
+    const cmp = kpis.find((r) => r.period === "comparison");
+    return {
+      season: q.season,
+      businessLine: q.businessLine ?? null,
+      current: toEnrollmentKpis(kpis.find((r) => r.period === "current")),
+      comparison: cmp ? toEnrollmentKpis(cmp) : null,
+      byWeek: weeks.map((w) => ({ week: Number(w.week), enrollments: Number(w.enrollments) })),
+      pace: buildPace(pace, q.season, asOf, seasonStart),
+      asOf,
+    };
+  }
+
+  async enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse> {
+    const rows = await this.enrollmentQuery<Record<string, unknown>>(enrollmentBreakdownSql(this.enrollments, q.dimension), { season: q.season }, q.businessLine);
+    return {
+      season: q.season,
+      businessLine: q.businessLine ?? null,
+      dimension: q.dimension,
+      rows: sortBreakdown(
+        rows.map((r) => ({
+          key: String(r.key),
+          campers: Number(r.campers),
+          enrollments: Number(r.enrollments),
+          cancelled: Number(r.cancelled),
+          withdrawn: Number(r.withdrawn),
+          waitlisted: Number(r.waitlisted),
+        })),
+        q.dimension,
+      ),
+    };
+  }
+
   async referenceTotals(start: string, end: string) {
     // Deliberately simple SQL with scalar parameters only.
-    const [[rev], [retail]] = await Promise.all([
+    const [[rev], [retail], [enrolled]] = await Promise.all([
       this.bq.query({
         query: `SELECT COALESCE(SUM(gross), 0) AS gross FROM ${this.table} WHERE date_basis = 'booked' AND revenue_date BETWEEN @start AND @end`,
         params: { start, end },
@@ -261,11 +325,17 @@ export class BigQueryWarehouse implements Warehouse {
         params: { start, end },
         location: this.location,
       }),
+      this.bq.query({
+        query: `SELECT season, COUNTIF(status_code = 'EN') AS n FROM \`${this.martsDataset}.fct_campminder_enrollments\` GROUP BY 1 ORDER BY 1 DESC LIMIT 1`,
+        location: this.location,
+      }),
     ]);
+    const newest = (enrolled as Array<{ season: unknown; n: unknown }>)[0];
     const bySource = new Map((retail as Array<{ source: string; gross: unknown }>).map((r) => [r.source, Number(r.gross)]));
     return {
       revenueGross: Number((rev as Array<{ gross: unknown }>)[0]?.gross ?? 0),
       retailGross: { shopify: bySource.get("shopify") ?? 0, square: bySource.get("square") ?? 0 },
+      enrollments: newest ? { season: Number(newest.season), count: Number(newest.n) } : null,
     };
   }
 

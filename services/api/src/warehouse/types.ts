@@ -2,6 +2,11 @@ import type {
   AssignmentRow,
   AssignmentUpdate,
   BusinessLineOrUnassigned,
+  EnrollmentBreakdownQuery,
+  EnrollmentBreakdownResponse,
+  EnrollmentSeason,
+  EnrollmentSummaryQuery,
+  EnrollmentSummaryResponse,
   InventoryResponse,
   IsoDate,
   RetailBreakdownQuery,
@@ -24,6 +29,9 @@ export interface Warehouse {
   /** Every assignable value with its effective business line; saved-but-not-yet-applied choices included. */
   assignments(): Promise<{ rows: AssignmentRow[]; pendingRefresh: boolean }>;
   saveAssignments(changes: AssignmentUpdate["changes"], by: string): Promise<void>;
+  enrollmentSeasons(businessLine: BusinessLineOrUnassigned | undefined): Promise<EnrollmentSeason[]>;
+  enrollmentSummary(q: EnrollmentSummaryQuery): Promise<EnrollmentSummaryResponse>;
+  enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse>;
   /** Plain totals straight from the tables, for the deploy self-check. */
   referenceTotals(start: string, end: string): Promise<ReferenceTotals>;
 }

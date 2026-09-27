@@ -1,17 +1,24 @@
 import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 import { BUSINESS_LINE_INFO, isBusinessLine, isRetailSource, SOURCE_INFO, type BusinessLine, type Source } from "@dash/shared";
+import { EnrollmentDetail } from "../components/EnrollmentDetail";
+import { FreshnessNote } from "../components/Freshness";
 import { RetailDetail } from "../components/RetailDetail";
 import { RevenueView } from "../components/RevenueView";
 import { SOURCE_COLOR_VAR } from "../lib/colors";
 
 /** Platforms that have a connector today; others show when they arrive. */
-const CONNECTED: Source[] = ["shopify", "square"];
+const CONNECTED: Source[] = ["campminder", "shopify", "square"];
+/** Connected platforms that carry money (Campminder has no financials yet). */
+const REVENUE: Source[] = ["shopify", "square"];
 
 function SourceSection({ line, source }: { line: BusinessLine; source: Source }) {
   const role = BUSINESS_LINE_INFO[line].sourceRoles[source];
   const title = `${role} · ${SOURCE_INFO[source].label}`;
   if (isRetailSource(source) && CONNECTED.includes(source)) {
     return <RetailDetail source={source} businessLine={line} title={title} />;
+  }
+  if (source === "campminder" && CONNECTED.includes(source)) {
+    return <EnrollmentDetail businessLine={line} title={title} />;
   }
   return (
     <section className="page-section" aria-label={title}>
@@ -32,6 +39,29 @@ export function BusinessLinePage() {
   const info = BUSINESS_LINE_INFO[id];
   const retailOnly = info.sources.every((s) => isRetailSource(s));
   const multi = info.sources.length > 1;
+  const settingsNote = (
+    <p className="phase-note">
+      Which Square locations, sessions and pipelines count toward {info.label} is set on the{" "}
+      <Link to="/advanced/settings">Settings</Link> page.
+    </p>
+  );
+  // Nothing with dollars feeds this line yet: skip the (all-zero) revenue summary.
+  if (!info.sources.some((s) => REVENUE.includes(s))) {
+    return (
+      <div className="page" key={id}>
+        <header className="page-header">
+          <h1>{info.label}</h1>
+          <FreshnessNote sources={info.sources} />
+        </header>
+        <div className="page-body">
+          {info.sources.map((s) => (
+            <SourceSection key={s} line={id} source={s} />
+          ))}
+          {settingsNote}
+        </div>
+      </div>
+    );
+  }
   return (
     <RevenueView
       key={id}
@@ -56,10 +86,7 @@ export function BusinessLinePage() {
       {info.sources.map((s) => (
         <SourceSection key={s} line={id} source={s} />
       ))}
-      <p className="phase-note">
-        Which Square locations, sessions and pipelines count toward {info.label} is set on the{" "}
-        <Link to="/advanced/settings">Settings</Link> page.
-      </p>
+      {settingsNote}
     </RevenueView>
   );
 }

@@ -288,4 +288,55 @@ describe("deploy self-check", () => {
       "revenue summary by source matches tables",
     ]);
   });
+
+  it("catches enrollment totals that disagree with the table", async () => {
+    const { runSelfCheck } = await import("./selfCheck.js");
+    const demo = new DemoWarehouse();
+    const broken = Object.create(demo) as DemoWarehouse;
+    broken.enrollmentBreakdown = async (q) => ({ ...(await demo.enrollmentBreakdown(q)), rows: [] });
+    const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
+    expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["campminder enrollments match tables"]);
+  });
+});
+
+describe("campminder endpoints", () => {
+  it("lists seasons per business line", async () => {
+    const res = await request(api()).get("/api/campminder/seasons?businessLine=camp").expect(200);
+    expect(res.body.seasons.map((s: { season: number }) => s.season)).toEqual([2026, 2025]);
+  });
+
+  it("returns KPIs, weeks and pace with last season as of the same date", async () => {
+    const res = await request(api()).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200);
+    const b = res.body;
+    expect(b.current.enrollments).toBeGreaterThan(0);
+    expect(b.current.campers).toBeLessThanOrEqual(b.current.enrollments);
+    expect(b.comparison).not.toBeNull();
+    expect(b.byWeek.length).toBe(12);
+    expect(b.pace.length).toBeGreaterThan(0);
+    const last = b.pace[b.pace.length - 1];
+    expect(last.current).toBeGreaterThanOrEqual(b.pace[0].current);
+  });
+
+  it("breaks down by dimension and keeps grades in school order", async () => {
+    const res = await request(api()).get("/api/campminder/breakdown?season=2026&businessLine=camp&dimension=grade").expect(200);
+    const keys = res.body.rows.map((r: { key: string }) => r.key);
+    expect(keys.indexOf("K")).toBeLessThan(keys.indexOf("1st"));
+    expect(keys.indexOf("2nd")).toBeLessThan(keys.indexOf("9th"));
+    const groups = await request(api()).get("/api/campminder/breakdown?season=2026&businessLine=chaps&dimension=session_group").expect(200);
+    expect(groups.body.rows.map((r: { key: string }) => r.key).sort()).toEqual(["Fall Saddle Club MONDAY", "Spring Group Lessons"]);
+  });
+
+  it("validates input", async () => {
+    await request(api()).get("/api/campminder/summary?season=abc").expect(400);
+    await request(api()).get("/api/campminder/breakdown?season=2026&dimension=name").expect(400);
+    await request(api()).get("/api/campminder/seasons?businessLine=nope").expect(400);
+  });
+
+  it("only interpolates fixed SQL fragments", async () => {
+    const sql = await import("./warehouse/campminderSql.js");
+    for (const s of [sql.seasonsSql("t"), sql.kpiSql("t"), sql.byWeekSql("t"), sql.paceSql("t"), sql.breakdownSql("t", "grade")]) {
+      expect(s).toContain("@business_line IS NULL");
+      expect(s).not.toMatch(/\b(WITH|FROM|AS)\s+rows\b/i);
+    }
+  });
 });

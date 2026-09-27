@@ -6,3 +6,4 @@ export * from "./preferences.js";
 export * from "./retail.js";
 export * from "./sources.js";
 export * from "./types.js";
+export * from "./campminder.js";

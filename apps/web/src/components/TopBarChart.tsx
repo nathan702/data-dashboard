@@ -1,10 +1,13 @@
 import { Bar, BarChart, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { formatUsd, formatUsdCompact } from "../lib/format";
+import { formatInt, formatUsd, formatUsdCompact } from "../lib/format";
 
 interface Props {
   rows: Array<{ key: string; value: number }>;
   color: string;
   valueLabel: string;
+  /** Counts (campers, enrollments) instead of dollars. */
+  count?: boolean;
+  emptyText?: string;
 }
 
 interface TipProps {
@@ -12,9 +15,10 @@ interface TipProps {
   payload?: Array<{ payload: { key: string; value: number } }>;
   color: string;
   valueLabel: string;
+  count?: boolean;
 }
 
-function BarTooltip({ active, payload, color, valueLabel }: TipProps) {
+function BarTooltip({ active, payload, color, valueLabel, count }: TipProps) {
   const p = payload?.[0]?.payload;
   if (!active || !p) return null;
   return (
@@ -22,7 +26,7 @@ function BarTooltip({ active, payload, color, valueLabel }: TipProps) {
       <div className="chart-tooltip-title">{p.key}</div>
       <div className="chart-tooltip-row">
         <span className="line-key" style={{ background: color }} aria-hidden />
-        <strong>{formatUsd(p.value)}</strong>
+        <strong>{count ? formatInt(p.value) : formatUsd(p.value)}</strong>
         <span className="muted">{valueLabel}</span>
       </div>
     </div>
@@ -32,8 +36,8 @@ function BarTooltip({ active, payload, color, valueLabel }: TipProps) {
 const truncate = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** Horizontal bars for a ranked top-N list. Single series, so no legend. */
-export function TopBarChart({ rows, color, valueLabel }: Props) {
-  if (rows.length === 0) return <div className="empty">No sales in this range.</div>;
+export function TopBarChart({ rows, color, valueLabel, count = false, emptyText = "No sales in this range." }: Props) {
+  if (rows.length === 0) return <div className="empty">{emptyText}</div>;
   const narrow = typeof window !== "undefined" && window.innerWidth < 600;
   const height = rows.length * 34 + 16;
   return (
@@ -50,12 +54,12 @@ export function TopBarChart({ rows, color, valueLabel }: Props) {
             axisLine={{ stroke: "var(--axis)" }}
             tickLine={false}
           />
-          <Tooltip content={<BarTooltip color={color} valueLabel={valueLabel} />} cursor={{ fill: "var(--wash)" }} />
+          <Tooltip content={<BarTooltip color={color} valueLabel={valueLabel} count={count} />} cursor={{ fill: "var(--wash)" }} />
           <Bar dataKey="value" fill={color} barSize={20} radius={[0, 4, 4, 0]} isAnimationActive={false}>
             <LabelList
               dataKey="value"
               position="right"
-              formatter={(v: unknown) => formatUsdCompact(Number(v))}
+              formatter={(v: unknown) => (count ? formatInt(Number(v)) : formatUsdCompact(Number(v)))}
               style={{ fill: "var(--text-secondary)", fontSize: 12 }}
             />
           </Bar>

@@ -1,6 +1,7 @@
 import type { Source } from "@dash/shared";
 import { EnvSecretStore, GcpSecretStore, type SecretStore } from "../core/secrets.js";
 import type { Connector } from "../core/types.js";
+import { CampminderConnector, campminderConfigFromEnv } from "./campminder.js";
 import { ShopifyConnector, shopifyConfigFromEnv } from "./shopify.js";
 import { SquareConnector, squareConfigFromEnv } from "./square.js";
 
@@ -12,6 +13,7 @@ import { SquareConnector, squareConfigFromEnv } from "./square.js";
 export type ConnectorFactory = (env: NodeJS.ProcessEnv, secrets: SecretStore) => Connector | null;
 
 export const CONNECTOR_FACTORIES: Partial<Record<Source, ConnectorFactory>> = {
+  campminder: (env, secrets) => new CampminderConnector(campminderConfigFromEnv(env, secrets)),
   shopify: (env, secrets) => new ShopifyConnector(shopifyConfigFromEnv(env, secrets)),
   square: (env, secrets) => new SquareConnector(squareConfigFromEnv(env, secrets)),
 };

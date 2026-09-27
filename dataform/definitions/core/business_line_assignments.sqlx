@@ -26,7 +26,12 @@ SELECT
   c.label,
   c.last_activity,
   c.net_12m,
-  COALESCE(e.business_line, c.default_business_line, 'unassigned') AS business_line,
-  CASE WHEN e.business_line IS NOT NULL THEN 'explicit' WHEN c.default_business_line IS NOT NULL THEN 'default' ELSE 'none' END AS origin
+  c.activity_12m,
+  COALESCE(e.business_line, c.default_business_line, c.default_hint, 'unassigned') AS business_line,
+  CASE
+    WHEN e.business_line IS NOT NULL THEN 'explicit'
+    WHEN COALESCE(c.default_business_line, c.default_hint) IS NOT NULL THEN 'default'
+    ELSE 'none'
+  END AS origin
 FROM candidates AS c
 LEFT JOIN explicit AS e USING (source, kind, assign_key)

@@ -2,6 +2,12 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { LRUCache } from "lru-cache";
 import {
   assignmentUpdateSchema,
+  enrollmentBreakdownQuerySchema,
+  enrollmentSeasonsQuerySchema,
+  enrollmentSummaryQuerySchema,
+  type BusinessLineOrUnassigned,
+  type EnrollmentBreakdownQuery,
+  type EnrollmentSummaryQuery,
   isBusinessLineOrUnassigned,
   isRetailSource,
   isSource,
@@ -153,6 +159,22 @@ export function createApi(opts: ApiOptions) {
   api.get("/shopify/inventory", async (_req, res) => {
     res.json(await cached("inventory:shopify", () => opts.warehouse.shopifyInventory()));
   });
+
+  const enrollmentRoute = <T extends { success: boolean }>(path: string, parse: (q: unknown) => T, run: (data: never) => Promise<object>) =>
+    api.get(path, async (req, res) => {
+      const parsed = parse(req.query) as unknown as { success: boolean; data?: unknown; error?: { issues: unknown } };
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query", issues: parsed.error?.issues });
+        return;
+      }
+      res.json(await cached(`${path}:${JSON.stringify(parsed.data)}`, () => run(parsed.data as never)));
+    });
+
+  enrollmentRoute("/campminder/seasons", (q) => enrollmentSeasonsQuerySchema.safeParse(q), (d: { businessLine?: BusinessLineOrUnassigned }) =>
+    opts.warehouse.enrollmentSeasons(d.businessLine).then((seasons) => ({ seasons })),
+  );
+  enrollmentRoute("/campminder/summary", (q) => enrollmentSummaryQuerySchema.safeParse(q), (d: EnrollmentSummaryQuery) => opts.warehouse.enrollmentSummary(d));
+  enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), (d: EnrollmentBreakdownQuery) => opts.warehouse.enrollmentBreakdown(d));
 
   api.get("/assignments", async (req, res) => {
     const { rows, pendingRefresh } = await opts.warehouse.assignments();

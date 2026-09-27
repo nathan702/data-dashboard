@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Latest state of every camper-session in every season's Campminder report.",
+  assertions: { uniqueKey: ["record_id"], nonNull: ["season", "camper_hash", "session_name", "status_code"] }
+}
+js { const { latestRaw } = require("includes/sql"); }
+
+SELECT
+  record_id,
+  SAFE_CAST(JSON_VALUE(payload, '$.season') AS INT64) AS season,
+  JSON_VALUE(payload, '$.camperHash') AS camper_hash,
+  JSON_VALUE(payload, '$.familyHash') AS family_hash,
+  JSON_VALUE(payload, '$.sessionName') AS session_name,
+  JSON_VALUE(payload, '$.sessionGroup') AS session_group,
+  SAFE_CAST(JSON_VALUE(payload, '$.isWeekly') AS BOOL) AS is_weekly,
+  SAFE_CAST(JSON_VALUE(payload, '$.weekStart') AS INT64) AS week_start,
+  SAFE_CAST(JSON_VALUE(payload, '$.weekEnd') AS INT64) AS week_end,
+  SAFE_CAST(JSON_VALUE(payload, '$.sessionStart') AS DATE) AS session_start,
+  SAFE_CAST(JSON_VALUE(payload, '$.sessionEnd') AS DATE) AS session_end,
+  JSON_VALUE(payload, '$.program') AS program,
+  JSON_VALUE(payload, '$.statusCode') AS status_code,
+  JSON_VALUE(payload, '$.status') AS status,
+  JSON_VALUE(payload, '$.gender') AS gender,
+  SAFE_CAST(JSON_VALUE(payload, '$.ageAtSeason') AS INT64) AS age_at_season,
+  JSON_VALUE(payload, '$.campGrade') AS camp_grade,
+  JSON_VALUE(payload, '$.schoolGrade') AS school_grade,
+  SAFE_CAST(JSON_VALUE(payload, '$.yearsAsCamper') AS INT64) AS years_as_camper,
+  SAFE_CAST(JSON_VALUE(payload, '$.applicationDate') AS DATE) AS application_date,
+  SAFE_CAST(JSON_VALUE(payload, '$.statusPostDate') AS DATE) AS status_post_date,
+  JSON_VALUE(payload, '$.homeState') AS home_state
+FROM (${latestRaw(ref("raw_campminder", "sessions"))})

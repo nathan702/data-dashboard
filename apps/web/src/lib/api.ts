@@ -4,6 +4,10 @@ import type {
   AssignmentUpdate,
   BusinessLineOrUnassigned,
   ComparisonMode,
+  EnrollmentBreakdownResponse,
+  EnrollmentDimension,
+  EnrollmentSeason,
+  EnrollmentSummaryResponse,
   InventoryResponse,
   MeResponse,
   Preferences,
@@ -43,11 +47,15 @@ async function call<T>(path: string, token: string | null, init: { method?: stri
 }
 
 function useApi<T>(key: unknown[], path: string, opts: { refetchInterval?: number } = {}) {
+  return useApiWhen<T>(true, key, path, opts);
+}
+
+function useApiWhen<T>(ready: boolean, key: unknown[], path: string, opts: { refetchInterval?: number } = {}) {
   const { getToken, status } = useAuth();
   return useQuery({
     queryKey: key,
     queryFn: async () => call<T>(path, await getToken()),
-    enabled: status === "signed_in",
+    enabled: ready && status === "signed_in",
     // Keep showing the previous numbers while new ones load (no flashing).
     placeholderData: keepPreviousData,
     refetchInterval: opts.refetchInterval,
@@ -130,5 +138,28 @@ export function useAssignments() {
 }
 
 export function useSaveAssignments() {
-  return useApiMutation<AssignmentUpdate, { ok: true; saved: number }>("/api/assignments", [["assignments"], ["revenue"], ["retail-kpis"], ["retail-breakdown"]]);
+  return useApiMutation<AssignmentUpdate, { ok: true; saved: number }>("/api/assignments", [
+    ["assignments"],
+    ["revenue"],
+    ["retail-kpis"],
+    ["retail-breakdown"],
+    ["enrollment-seasons"],
+    ["enrollment-summary"],
+    ["enrollment-breakdown"],
+  ]);
+}
+
+export function useEnrollmentSeasons(businessLine?: BusinessLineOrUnassigned) {
+  const qs = retailQs({ businessLine });
+  return useApi<{ seasons: EnrollmentSeason[] }>(["enrollment-seasons", qs], `/api/campminder/seasons?${qs}`, { refetchInterval: 10 * 60_000 });
+}
+
+export function useEnrollmentSummary(q: { season: number | undefined; businessLine?: BusinessLineOrUnassigned }) {
+  const qs = retailQs({ season: q.season ? String(q.season) : undefined, businessLine: q.businessLine });
+  return useApiWhen<EnrollmentSummaryResponse>(!!q.season, ["enrollment-summary", qs], `/api/campminder/summary?${qs}`);
+}
+
+export function useEnrollmentBreakdown(q: { season: number | undefined; businessLine?: BusinessLineOrUnassigned; dimension: EnrollmentDimension }) {
+  const qs = retailQs({ season: q.season ? String(q.season) : undefined, businessLine: q.businessLine, dimension: q.dimension });
+  return useApiWhen<EnrollmentBreakdownResponse>(!!q.season, ["enrollment-breakdown", qs], `/api/campminder/breakdown?${qs}`);
 }

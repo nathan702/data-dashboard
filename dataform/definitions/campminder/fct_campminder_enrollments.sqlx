@@ -1,0 +1,15 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Every camper-session with its business line (from the session group's assignment). One row per camper per session per season, any status.",
+  bigquery: { clusterBy: ["business_line", "season"] },
+  assertions: { nonNull: ["business_line", "season", "camper_hash"] }
+}
+
+SELECT
+  COALESCE(a.business_line, 'unassigned') AS business_line,
+  s.* EXCEPT (record_id),
+  DATE(s.season - 1, ${dataform.projectConfig.vars.season_start_month}, ${dataform.projectConfig.vars.season_start_day}) AS season_start_date
+FROM ${ref("stg_campminder_sessions")} AS s
+LEFT JOIN ${ref("business_line_assignments")} AS a
+  ON a.source = 'campminder' AND a.assign_key = s.session_group

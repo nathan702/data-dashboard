@@ -10,7 +10,7 @@ export const ASSIGNMENT_KINDS: Record<Source, { kind: string; label: string }> =
   square: { kind: "location", label: "Location" },
   shopify: { kind: "store", label: "Store" },
   fareharbor: { kind: "company", label: "FareHarbor dashboard" },
-  campminder: { kind: "session", label: "Session" },
+  campminder: { kind: "session", label: "Session group" },
   hubspot: { kind: "pipeline", label: "Pipeline" },
 };
 
@@ -24,8 +24,10 @@ export interface AssignmentRow {
   /** "explicit" = saved on the Settings page; "default" = built-in suggestion; "none" = unassigned. */
   origin: "explicit" | "default" | "none";
   lastActivity: string | null;
-  /** Net sales over the last 12 months, to help spot what matters. */
+  /** Net sales over the last 12 months, to help spot what matters (0 where there's no money, e.g. Campminder). */
   netLast12Months: number;
+  /** Orders (Square, Shopify) or enrollments (Campminder) over the last 12 months. */
+  activityLast12Months: number;
 }
 
 export interface AssignmentsResponse {

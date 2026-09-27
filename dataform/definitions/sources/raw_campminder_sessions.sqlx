@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_campminder",
+  name: "sessions",
+  description: "Camper-session rows from the Campminder report sheet, written by services/connectors only when they change. No names, birth dates, addresses or ids (people are keyed hashes)."
+}

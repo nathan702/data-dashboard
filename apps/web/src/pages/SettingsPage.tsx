@@ -11,7 +11,7 @@ import {
 } from "@dash/shared";
 import { DataTable, type Column } from "../components/DataTable";
 import { useAssignments, useMe, useSaveAssignments } from "../lib/api";
-import { formatDate, formatUsd } from "../lib/format";
+import { formatDate, formatInt, formatUsd } from "../lib/format";
 
 const rowId = (r: Pick<AssignmentRow, "source" | "kind" | "key">) => `${r.source}|${r.kind}|${r.key}`;
 
@@ -32,7 +32,7 @@ export function SettingsPage() {
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const changed = rows.filter((r) => edits[rowId(r)] !== undefined && edits[rowId(r)] !== r.businessLine);
-  const unassigned = rows.filter((r) => (edits[rowId(r)] ?? r.businessLine) === UNASSIGNED && r.netLast12Months !== 0);
+  const unassigned = rows.filter((r) => (edits[rowId(r)] ?? r.businessLine) === UNASSIGNED && (r.netLast12Months !== 0 || r.activityLast12Months !== 0));
 
   const submit = async () => {
     await save.mutateAsync({
@@ -46,8 +46,15 @@ export function SettingsPage() {
     { key: "source", label: "Platform", value: (r) => SOURCE_INFO[r.source].label },
     { key: "kind", label: "Type", value: (r) => ASSIGNMENT_KINDS[r.source].label },
     { key: "label", label: "Name", value: (r) => r.label },
-    { key: "lastActivity", label: "Last sale", value: (r) => r.lastActivity, render: (r) => (r.lastActivity ? formatDate(r.lastActivity) : "–") },
-    { key: "net", label: "Net sales, last 12 months", numeric: true, value: (r) => r.netLast12Months, render: (r) => formatUsd(r.netLast12Months) },
+    { key: "lastActivity", label: "Last activity", value: (r) => r.lastActivity, render: (r) => (r.lastActivity ? formatDate(r.lastActivity) : "–") },
+    {
+      key: "activity",
+      label: "Last 12 months",
+      numeric: true,
+      // Campminder has no money yet, so its sessions show enrollments.
+      value: (r) => (r.source === "campminder" ? r.activityLast12Months : r.netLast12Months),
+      render: (r) => (r.source === "campminder" ? `${formatInt(r.activityLast12Months)} enrolled` : formatUsd(r.netLast12Months)),
+    },
     {
       key: "businessLine",
       label: "Counts toward",
@@ -103,7 +110,7 @@ export function SettingsPage() {
       {!canEdit && data && <div className="notice">Only dashboard admins can change these. Ask an admin if something is assigned to the wrong place.</div>}
       {unassigned.length > 0 && (
         <div className="notice notice-warning">
-          <strong>▲ {unassigned.length} with recent sales {unassigned.length === 1 ? "isn't" : "aren't"} assigned</strong> to a business line, so{" "}
+          <strong>▲ {unassigned.length} with recent activity {unassigned.length === 1 ? "isn't" : "aren't"} assigned</strong> to a business line, so{" "}
           {unassigned.length === 1 ? "it shows" : "they show"} as “Unassigned” on the Overview.
         </div>
       )}
@@ -135,7 +142,7 @@ export function SettingsPage() {
         />
       )}
       <p className="phase-note">
-        FareHarbor dashboards, Campminder sessions and HubSpot pipelines appear here as each platform is connected. Anything new starts as
+        FareHarbor dashboards and HubSpot pipelines appear here as each platform is connected. Anything new starts as
         “Unassigned” until it's set here.
       </p>
     </div>

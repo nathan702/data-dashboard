@@ -117,6 +117,35 @@ The webhook subscription and its signing key are created automatically on the
 first sync. The token doesn't expire; if it's ever replaced in the Developer
 Console, store the new one the same way.
 
-### HubSpot, Campminder, FareHarbor
+### Campminder
 
-Instructions arrive with phases 3–5.
+The existing report automation overwrites a Google Sheet once a day. The
+dashboard reads its `Sheet1` tab (one row per camper) every hour at :05 and
+skips it when nothing changed.
+
+1. Open the sheet → **Share** → add
+   `dashboard-connectors@calleva-dashboard.iam.gserviceaccount.com` as **Viewer**
+   (untick "Notify people").
+2. The sheet id lives in `infra/config.sh` (`CAMPMINDER_SHEET_ID`). If the
+   automation ever writes to a different sheet, change it there and push.
+3. On the **Settings** page, choose a business line for each session group
+   (weekly groups default to Camp).
+
+What's stored: for each camper-session, only the season, session, program,
+status, dates, gender, age on June 1, grades, years at camp and home state.
+People are keyed by a one-way hash of their Campminder id. Names, birth dates,
+addresses, parents and medical details are never read into the warehouse.
+
+**Seasons.** The season is taken from the latest session start in the report,
+so when the automation switches to 2027 the new rows are saved as 2027 and
+2026 stays as it was last seen. To force a season (for example, if an early
+2027 report still lists 2026 sessions), store it as the `campminder-season`
+secret and delete that secret's versions once it isn't needed.
+
+**Safety.** If a report arrives with fewer than half the camper-sessions
+already stored for its season, it's treated as a half-written sheet: nothing
+is changed and the sync shows as failed until a complete report arrives.
+
+### HubSpot, FareHarbor
+
+Instructions arrive with their phases.

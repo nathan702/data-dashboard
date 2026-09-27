@@ -1,7 +1,7 @@
 config {
   type: "table",
   schema: "marts",
-  description: "Every value that can be assigned to a business line (e.g. each Square location), with recent activity to help prioritize.",
+  description: "Every value that can be assigned to a business line (each Square location, Campminder session group, ...), with recent activity to help prioritize and an optional default.",
   assertions: { uniqueKey: ["source", "kind", "assign_key"] }
 }
 
@@ -10,10 +10,12 @@ WITH square AS (
     l.location_id AS assign_key,
     COALESCE(l.location_name, l.location_id) AS label,
     MAX(o.sale_date) AS last_activity,
-    COALESCE(SUM(IF(o.sale_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), o.gross - o.discounts, 0)), 0) AS net_12m
+    COALESCE(SUM(IF(o.sale_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), o.gross - o.discounts, 0)), 0) AS net_12m,
+    COALESCE(SUM(IF(o.sale_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), o.orders, 0)), 0) AS activity_12m,
+    CAST(NULL AS STRING) AS default_hint
   FROM ${ref("stg_square_locations")} AS l
   LEFT JOIN (
-    SELECT o.location_id, o.sale_date, SUM(li.gross) AS gross, SUM(li.discounts) AS discounts
+    SELECT o.location_id, o.sale_date, SUM(li.gross) AS gross, SUM(li.discounts) AS discounts, COUNT(DISTINCT o.order_id) AS orders
     FROM ${ref("stg_square_orders")} AS o
     JOIN ${ref("stg_square_line_items")} AS li USING (order_id)
     GROUP BY 1, 2
@@ -25,9 +27,27 @@ shopify AS (
     'store' AS assign_key,
     'Shopify store' AS label,
     MAX(sale_date) AS last_activity,
-    COALESCE(SUM(IF(sale_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), gross - discounts, 0)), 0) AS net_12m
+    COALESCE(SUM(IF(sale_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), gross - discounts, 0)), 0) AS net_12m,
+    COUNT(DISTINCT IF(sale_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), order_id, NULL)) AS activity_12m,
+    CAST(NULL AS STRING) AS default_hint
   FROM ${ref("stg_shopify_order_lines")}
+),
+campminder AS (
+  -- Session groups: session names without the week ("Farm Week 9" → "Farm").
+  -- Weekly summer sessions default to Camp; everything else is assigned on Settings.
+  SELECT
+    session_group AS assign_key,
+    session_group AS label,
+    MAX(COALESCE(session_start, application_date)) AS last_activity,
+    CAST(0 AS NUMERIC) AS net_12m,
+    COUNTIF(status_code = 'EN' AND COALESCE(session_start, application_date) >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH)) AS activity_12m,
+    IF(LOGICAL_OR(is_weekly), 'camp', NULL) AS default_hint
+  FROM ${ref("stg_campminder_sessions")}
+  WHERE session_group IS NOT NULL
+  GROUP BY 1, 2
 )
 SELECT 'square' AS source, 'location' AS kind, * FROM square
 UNION ALL
 SELECT 'shopify', 'store', * FROM shopify
+UNION ALL
+SELECT 'campminder', 'session', * FROM campminder

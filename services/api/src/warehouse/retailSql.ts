@@ -94,6 +94,7 @@ export function assignmentsSql(dataset: string, configDataset: string) {
       IF(s.business_line IS NOT NULL, 'explicit', a.origin) AS origin,
       CAST(a.last_activity AS STRING) AS last_activity,
       a.net_12m,
+      a.activity_12m,
       s.updated_at AS saved_at
     FROM \`${dataset}.business_line_assignments\` AS a
     LEFT JOIN saved AS s USING (source, kind, assign_key)

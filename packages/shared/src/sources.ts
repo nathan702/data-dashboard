@@ -44,7 +44,7 @@ export const SOURCE_INFO: Record<Source, SourceInfo> = {
   campminder: {
     id: "campminder",
     label: "Campminder",
-    ingestion: "Report export automation → Cloud Storage",
+    ingestion: "Daily report automation → Google Sheet",
     phase: 4,
   },
   fareharbor: {

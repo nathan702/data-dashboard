@@ -12,6 +12,8 @@ export interface ReferenceTotals {
   revenueGross: number;
   /** SUM(gross) of fct_retail_line_items per platform over the range. */
   retailGross: Record<RetailSource, number>;
+  /** Enrolled camper-sessions in the newest Campminder season (null before any sync). */
+  enrollments: { season: number; count: number } | null;
 }
 
 export interface CheckResult {
@@ -73,6 +75,19 @@ export async function runSelfCheck(
       return null;
     });
   }
+
+  await check("campminder enrollments match tables", async () => {
+    if (!ref) return "no reference";
+    const e = (ref as ReferenceTotals).enrollments;
+    if (!e) return null; // nothing synced yet
+    const [summary, breakdown] = await Promise.all([
+      warehouse.enrollmentSummary({ season: e.season }),
+      warehouse.enrollmentBreakdown({ season: e.season, dimension: "session_group" }),
+    ]);
+    if (summary.current.enrollments !== e.count) return "summary differs from table count";
+    if (sum(breakdown.rows.map((r) => r.enrollments)) !== e.count) return "breakdown differs from table count";
+    return null;
+  });
 
   await check("settings assignments load", async () => {
     await warehouse.assignments();

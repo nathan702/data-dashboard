@@ -7,6 +7,8 @@ import {
   type AssignmentRow,
   type AssignmentUpdate,
   type BusinessLineOrUnassigned,
+  type EnrollmentBreakdownQuery,
+  type EnrollmentSummaryQuery,
   type RetailBreakdownQuery,
   type RetailKpiQuery,
   type RetailSource,
@@ -15,6 +17,7 @@ import {
   type Source,
   type SourceFreshness,
 } from "@dash/shared";
+import { DEMO_SESSION_GROUPS, demoEnrollmentBreakdown, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
 import type { DailyRevenueRow, FreshnessSource, Warehouse } from "./types.js";
@@ -104,13 +107,22 @@ export function demoRow(s: DemoStream, date: string, basis: RevenueBasis): Daily
 }
 
 /** Demo stand-ins for the assignable values (Square locations, the Shopify store). */
-const DEMO_CANDIDATES: Array<Omit<AssignmentRow, "businessLine" | "origin"> & { defaultLine: BusinessLineOrUnassigned | null }> = [
-  { source: "square", kind: "location", key: "LDEMOFARM", label: "Farm Store", lastActivity: null, netLast12Months: 520_000, defaultLine: "farm_store" },
-  { source: "square", kind: "location", key: "LDEMOEVENTS", label: "Events", lastActivity: null, netLast12Months: 140_000, defaultLine: "events" },
-  { source: "square", kind: "location", key: "LDEMOPIZZA", label: "Pizza Nights", lastActivity: null, netLast12Months: 45_000, defaultLine: "events" },
-  { source: "square", kind: "location", key: "LDEMOMHF", label: "MHF", lastActivity: null, netLast12Months: 160_000, defaultLine: "haunted_forest" },
-  { source: "square", kind: "location", key: "LDEMOOLD", label: "Old Kiosk", lastActivity: null, netLast12Months: 0, defaultLine: null },
-  { source: "shopify", kind: "store", key: "store", label: "Shopify store", lastActivity: null, netLast12Months: 610_000, defaultLine: "river_store" },
+const DEMO_CANDIDATES: Array<Omit<AssignmentRow, "businessLine" | "origin" | "lastActivity"> & { defaultLine: BusinessLineOrUnassigned | null }> = [
+  { source: "square", kind: "location", key: "LDEMOFARM", label: "Farm Store", netLast12Months: 520_000, activityLast12Months: 21_000, defaultLine: "farm_store" },
+  { source: "square", kind: "location", key: "LDEMOEVENTS", label: "Events", netLast12Months: 140_000, activityLast12Months: 7_800, defaultLine: "events" },
+  { source: "square", kind: "location", key: "LDEMOPIZZA", label: "Pizza Nights", netLast12Months: 45_000, activityLast12Months: 2_600, defaultLine: "events" },
+  { source: "square", kind: "location", key: "LDEMOMHF", label: "MHF", netLast12Months: 160_000, activityLast12Months: 13_000, defaultLine: "haunted_forest" },
+  { source: "square", kind: "location", key: "LDEMOOLD", label: "Old Kiosk", netLast12Months: 0, activityLast12Months: 0, defaultLine: null },
+  { source: "shopify", kind: "store", key: "store", label: "Shopify store", netLast12Months: 610_000, activityLast12Months: 9_400, defaultLine: "river_store" },
+  ...DEMO_SESSION_GROUPS.map((g) => ({
+    source: "campminder" as const,
+    kind: "session",
+    key: g.key,
+    label: g.label,
+    netLast12Months: 0,
+    activityLast12Months: g.activity,
+    defaultLine: g.defaultLine,
+  })),
 ];
 
 export class DemoWarehouse implements Warehouse {
@@ -147,12 +159,24 @@ export class DemoWarehouse implements Warehouse {
       const saved = this.saved.get(`${c.source}|${c.kind}|${c.key}`);
       return {
         ...c,
-        lastActivity: c.netLast12Months ? today : "2024-10-02",
+        lastActivity: c.netLast12Months || c.activityLast12Months ? today : "2024-10-02",
         businessLine: saved ?? defaultLine ?? "unassigned",
         origin: saved ? "explicit" : defaultLine ? "default" : "none",
       };
     });
     return { rows, pendingRefresh: false };
+  }
+
+  async enrollmentSeasons(bl: BusinessLineOrUnassigned | undefined) {
+    return demoEnrollmentSeasons(bl);
+  }
+
+  async enrollmentSummary(q: EnrollmentSummaryQuery) {
+    return demoEnrollmentSummary(q);
+  }
+
+  async enrollmentBreakdown(q: EnrollmentBreakdownQuery) {
+    return demoEnrollmentBreakdown(q);
   }
 
   async referenceTotals(start: string, end: string) {
@@ -162,6 +186,10 @@ export class DemoWarehouse implements Warehouse {
     return {
       revenueGross: s.groups.reduce((t, g) => t + g.current.gross, 0),
       retailGross: { shopify: await k("shopify"), square: await k("square") },
+      enrollments: (() => {
+        const newest = demoEnrollmentSeasons(undefined)[0];
+        return newest ? { season: newest.season, count: newest.enrollments } : null;
+      })(),
     };
   }
 
