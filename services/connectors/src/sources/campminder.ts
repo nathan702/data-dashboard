@@ -45,7 +45,7 @@ export interface CampminderConfig {
 }
 
 /** Bump when parsing changes what's stored, so every sheet is re-read once. */
-const PARSER_VERSION = "2";
+const PARSER_VERSION = "3";
 
 /** A report with far fewer rows than what's stored is probably mid-rewrite. */
 const MIN_FRACTION_OF_PREVIOUS = 0.5;
@@ -130,6 +130,10 @@ export class CampminderConnector implements Connector {
       cursor: "sheet_hash",
       label: "The Campminder report",
       season: (rows) => (Number.isInteger(override) && override > 2000 ? override : reportSeason(rows)),
+      // The daily sheet only moves forward (2026 → 2027); going back means the earlier season was misread.
+      retireEarlierMisfile: true,
+      // Changing the season setting re-reads an unchanged sheet.
+      hashExtra: String(override || ""),
     });
 
     if (this.cfg.historySheetId) await this.importHistory(ctx, key, this.cfg.historySheetId, current);
@@ -177,10 +181,19 @@ export class CampminderConnector implements Connector {
     ctx: SyncContext,
     key: string,
     values: string[][],
-    opts: { cursor: string; label: string; season: (rows: Array<Record<string, string>>) => number | null },
+    opts: {
+      cursor: string;
+      label: string;
+      season: (rows: Array<Record<string, string>>) => number | null;
+      retireEarlierMisfile?: boolean;
+      hashExtra?: string;
+    },
   ): Promise<number | null> {
     // The parser version is part of the hash, so a parsing change re-reads unchanged sheets.
-    const contentHash = createHash("sha256").update(PARSER_VERSION).update(JSON.stringify(values)).digest("hex");
+    const contentHash = createHash("sha256")
+      .update(`${PARSER_VERSION}|${opts.hashExtra ?? ""}|`)
+      .update(JSON.stringify(values))
+      .digest("hex");
     const lastSeason = Number(ctx.state.cursors[`${opts.cursor}_season`]) || null;
     // (Re-read once when the season wasn't saved yet, e.g. imported by an older version.)
     if (ctx.state.cursors[opts.cursor] === contentHash && lastSeason) {
@@ -226,6 +239,12 @@ export class CampminderConnector implements Connector {
     // Sessions no longer in this season's report (removed in Campminder).
     for (const id of previous.keys()) {
       if (!seen.has(id)) records.push({ entity: "sessions", recordId: id, sourceUpdatedAt: now, isDeleted: true, payload: { season } });
+    }
+    // This report was last filed under a later season by mistake: remove that copy.
+    if (opts.retireEarlierMisfile && lastSeason && season < lastSeason) {
+      const misfiled = await this.cfg.current.load(lastSeason);
+      for (const id of misfiled.keys()) records.push({ entity: "sessions", recordId: id, sourceUpdatedAt: now, isDeleted: true, payload: { season: lastSeason } });
+      ctx.log("campminder rows filed under the wrong season removed", { from: lastSeason, to: season, rows: misfiled.size });
     }
     await ctx.emit(records);
     await ctx.saveCursor(`${opts.cursor}_season`, String(season));

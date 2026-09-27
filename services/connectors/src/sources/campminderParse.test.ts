@@ -89,6 +89,11 @@ describe("campminder parsing", () => {
     expect(reportSeason([row({ "Enrolled Child Sessions With Dates (columnar)": "Farm Week 1 (06/14/2027-06/18/2027)" })])).toBe(2027);
   });
 
+  it("isn't moved by a few fall programs in the same report", () => {
+    const fall = row({ "Enrolled Child Sessions With Dates (columnar)": "Fall Saddle Club MONDAY (09/14/2026-11/16/2026)" });
+    expect(reportSeason([row(), row(), fall])).toBe(2026);
+  });
+
   it("changes the row hash only when stored fields change", () => {
     const a = toSessions([row()], KEY, 2026)[0]!;
     const b = toSessions([row({ "First Name": "Different" })], KEY, 2026)[0]!;

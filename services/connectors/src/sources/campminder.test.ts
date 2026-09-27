@@ -207,4 +207,16 @@ describe("campminder connector", () => {
     await runSync(c, deps, "incremental");
     expect(writer.rows.length).toBe(n);
   });
+
+  it("moves a report filed under the wrong season back to the right one", async () => {
+    const env = { CAMPMINDER_SEASON: "2027" };
+    const { c, deps, writer } = setup([HEADER, ...many(4)], env);
+    await runSync(c, deps, "incremental");
+    delete (env as Record<string, string>).CAMPMINDER_SEASON;
+    const fixed = new CampminderConnector({ ...(c as unknown as { cfg: CampminderConfig }).cfg, secrets: new EnvSecretStore({ PSEUDONYMIZATION_KEY: "k".repeat(40), CAMPMINDER_SHEET_ID: "sheet" }) });
+    await runSync(fixed, deps, "incremental");
+    const live = new StoredRows(writer);
+    expect((await live.load(2027)).size).toBe(0);
+    expect((await live.load(2026)).size).toBe(4);
+  });
 });

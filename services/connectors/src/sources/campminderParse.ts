@@ -124,21 +124,29 @@ const clean = (v: string | undefined) => {
   return t && t !== "Undefined" ? t : null;
 };
 
-/** Season a report covers: the season of its latest session start (or latest application). */
+/**
+ * Season a report covers: the season most of its camper-sessions start in
+ * (summer camp dominates, so a few fall programs listed in the same report
+ * don't move it), else the one most applications fall in.
+ */
 export function reportSeason(rows: Array<Record<string, string>>): number | null {
-  let latest: string | null = null;
+  const votes = new Map<number, number>();
+  const vote = (date: string) => {
+    const s = seasonForDate(date);
+    votes.set(s, (votes.get(s) ?? 0) + 1);
+  };
   for (const r of rows) {
-    for (const { start } of parseSessionDates(r["Enrolled Child Sessions With Dates (columnar)"] ?? "").values()) {
-      if (!latest || start > latest) latest = start;
-    }
+    for (const { start } of parseSessionDates(r["Enrolled Child Sessions With Dates (columnar)"] ?? "").values()) vote(start);
   }
-  if (!latest) {
+  if (votes.size === 0) {
     for (const r of rows) {
       const a = usDate(r["Child Application Date"]);
-      if (a && (!latest || a > latest)) latest = a;
+      if (a) vote(a);
     }
   }
-  return latest ? seasonForDate(latest) : null;
+  let best: number | null = null;
+  for (const [season, n] of votes) if (best === null || n > votes.get(best)! || (n === votes.get(best)! && season > best)) best = season;
+  return best;
 }
 
 /**
