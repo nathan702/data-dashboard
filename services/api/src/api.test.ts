@@ -352,6 +352,21 @@ describe("campminder endpoints", () => {
     expect(programs.body.rows.map((r: { key: string }) => r.key)).toEqual(["Explorers"]);
   });
 
+  it("maps homes with the same filters", async () => {
+    const all = await request(api()).get("/api/campminder/map?season=2026&businessLine=camp").expect(200);
+    const f = encodeURIComponent(JSON.stringify({ week: ["9"], program: ["Rock Climbing with THURSDAY CAMPOUT"] }));
+    const some = await request(api()).get(`/api/campminder/map?season=2026&businessLine=camp&filters=${f}`).expect(200);
+    expect(all.body.points.length).toBeGreaterThan(some.body.points.length);
+    expect(some.body.points.length).toBeGreaterThan(0);
+    expect(all.body.unplaced).toBeGreaterThan(0);
+    for (const p of all.body.points) {
+      expect(Object.keys(p).sort()).toEqual(["campers", "enrollments", "lat", "lon"]);
+      expect(p.lat).toBeGreaterThan(38.5);
+    }
+    const { mapSql } = await import("./warehouse/campminderSql.js");
+    expect(mapSql("t")).toContain("status_code = 'EN'");
+  });
+
   it("validates input", async () => {
     await request(api()).get("/api/campminder/summary?season=abc").expect(400);
     await request(api()).get("/api/campminder/summary?season=2026&filters=notjson").expect(400);

@@ -107,3 +107,20 @@ export function breakdownSql(t: string, dimension: EnrollmentDimension) {
     WHERE ${FILTER} AND ${DRILL} AND season = @season
     GROUP BY 1`;
 }
+
+/**
+ * One row per home for the map. Enrolled campers only, unless the status
+ * filter asks for other statuses.
+ */
+export function mapSql(t: string) {
+  return `
+    SELECT
+      home_lat AS lat, home_lon AS lon,
+      COUNT(DISTINCT camper_hash) AS campers,
+      COUNT(*) AS enrollments,
+      COUNT(DISTINCT family_hash) AS families
+    FROM ${t}
+    WHERE ${FILTER} AND ${DRILL} AND season = @season
+      AND (COALESCE(ARRAY_LENGTH(@f_status), 0) > 0 OR status_code = 'EN')
+    GROUP BY 1, 2`;
+}

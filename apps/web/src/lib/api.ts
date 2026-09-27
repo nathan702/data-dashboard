@@ -8,6 +8,7 @@ import type {
   EnrollmentBreakdownResponse,
   EnrollmentDimension,
   EnrollmentFilters,
+  EnrollmentMapResponse,
   EnrollmentSeason,
   EnrollmentSummaryResponse,
   InventoryResponse,
@@ -148,6 +149,7 @@ export function useSaveAssignments() {
     ["enrollment-seasons"],
     ["enrollment-summary"],
     ["enrollment-breakdown"],
+    ["enrollment-map"],
   ]);
 }
 
@@ -168,4 +170,9 @@ export function useEnrollmentSummary(q: EnrollmentScope) {
 export function useEnrollmentBreakdown(q: EnrollmentScope & { dimension: EnrollmentDimension }) {
   const qs = enrollmentQs(q, { dimension: q.dimension });
   return useApiWhen<EnrollmentBreakdownResponse>(!!q.season, ["enrollment-breakdown", qs], `/api/campminder/breakdown?${qs}`);
+}
+
+export function useEnrollmentMap(q: EnrollmentScope) {
+  const qs = enrollmentQs(q);
+  return useApiWhen<EnrollmentMapResponse>(!!q.season, ["enrollment-map", qs], `/api/campminder/map?${qs}`);
 }

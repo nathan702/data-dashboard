@@ -6,6 +6,7 @@ import {
   type EnrollmentBreakdownRow,
   type EnrollmentDimension,
   type EnrollmentKpis,
+  type EnrollmentMapResponse,
 } from "@dash/shared";
 
 /** Shared by the BigQuery and demo warehouses so both shape results the same way. */
@@ -63,4 +64,16 @@ export function sortBreakdown(rows: EnrollmentBreakdownRow[], dimension: Enrollm
   else if (dimension === "grade") sorted.sort((a, b) => gradeOrder(a.key) - gradeOrder(b.key));
   else sorted.sort((a, b) => b.enrollments - a.enrollments || a.key.localeCompare(b.key));
   return sorted;
+}
+
+export function toMapResponse(
+  season: number,
+  rows: Array<{ lat: number | null; lon: number | null; campers: number; enrollments: number; families: number }>,
+): EnrollmentMapResponse {
+  const placed = rows.filter((r) => r.lat !== null && r.lon !== null);
+  return {
+    season,
+    points: placed.map((r) => ({ lat: Number(r.lat), lon: Number(r.lon), campers: Number(r.campers), enrollments: Number(r.enrollments) })),
+    unplaced: rows.filter((r) => r.lat === null || r.lon === null).reduce((s, r) => s + Number(r.families), 0),
+  };
 }

@@ -8,11 +8,13 @@ import {
   type EnrollmentBreakdownRow,
   type EnrollmentDimension,
   type EnrollmentFilters,
+  type EnrollmentMapQuery,
+  type EnrollmentMapResponse,
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
   type EnrollmentSummaryResponse,
 } from "@dash/shared";
-import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis } from "./campminder.js";
+import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import { noise } from "./demo.js";
 
 /** Made-up camper-sessions for local development only. */
@@ -33,6 +35,30 @@ interface Row {
   years: number;
   state: string;
   applicationDate: string;
+  homeLat: number | null;
+  homeLon: number | null;
+}
+
+/** Made-up home areas around DC, weighted roughly like a real camp's families. */
+const AREAS: Array<[number, number, number]> = [
+  [38.9807, -77.1003, 0.22], // Bethesda
+  [38.9296, -77.0628, 0.18], // NW DC
+  [38.8816, -77.091, 0.14], // Arlington
+  [38.9338, -77.1773, 0.1], // McLean
+  [39.0228, -77.0304, 0.1], // Silver Spring
+  [38.8048, -77.0469, 0.09], // Alexandria
+  [39.0184, -77.2086, 0.09], // Potomac
+  [38.8462, -77.3064, 0.08], // Fairfax
+];
+
+function demoHome(camper: string): { homeLat: number | null; homeLon: number | null } {
+  const n = noise(`${camper}home`);
+  if (n > 0.97) return { homeLat: null, homeLon: null }; // address that didn't geocode
+  let acc = 0;
+  const [lat, lon] = AREAS.find(([, , w]) => (acc += w) >= n) ?? AREAS[0]!;
+  const r = 0.035 * Math.sqrt(noise(`${camper}r`));
+  const a = 2 * Math.PI * noise(`${camper}a`);
+  return { homeLat: Math.round((lat + r * Math.sin(a)) * 1e5) / 1e5, homeLon: Math.round((lon + r * 1.3 * Math.cos(a)) * 1e5) / 1e5 };
 }
 
 const GROUPS: Array<{ group: string; line: BusinessLineOrUnassigned; weekly: boolean; programs: string[]; size: number }> = [
@@ -84,6 +110,7 @@ function rows(): Row[] {
             state: ["MD", "DC", "VA"][Math.floor(noise(`${seed}st`) * 3)]!,
             // Most applications arrive in winter (weeks 16-30 of the season).
             applicationDate: addDays(start, Math.floor(Math.pow(noise(`${seed}d`), 0.8) * 300)),
+            ...demoHome(`${season % 2}${camperNo}`),
           });
         }
       }
@@ -187,3 +214,18 @@ export const DEMO_SESSION_GROUPS = GROUPS.map((g) => ({
   defaultLine: g.line,
   activity: rows().filter((r) => r.sessionGroup === g.group && r.season === 2026 && r.statusCode === "EN").length,
 }));
+
+export function demoEnrollmentMap(q: EnrollmentMapQuery): EnrollmentMapResponse {
+  const statusFiltered = (q.filters?.status ?? []).length > 0;
+  const cur = scoped(q.businessLine, q.filters).filter((r) => r.season === q.season && (statusFiltered || r.statusCode === "EN"));
+  const homes = new Map<string, { lat: number | null; lon: number | null; campers: Set<string>; enrollments: number }>();
+  for (const r of cur) {
+    const k = `${r.homeLat},${r.homeLon}`;
+    const h = homes.get(k) ?? { lat: r.homeLat, lon: r.homeLon, campers: new Set(), enrollments: 0 };
+    h.campers.add(r.camper);
+    h.enrollments++;
+    homes.set(k, h);
+  }
+  const rows = [...homes.values()].map((h) => ({ lat: h.lat, lon: h.lon, campers: h.campers.size, enrollments: h.enrollments, families: h.lat === null ? h.campers.size : 1 }));
+  return toMapResponse(q.season, rows);
+}

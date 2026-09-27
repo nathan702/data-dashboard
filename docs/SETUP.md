@@ -132,9 +132,18 @@ skips it when nothing changed.
    (weekly groups default to Camp).
 
 What's stored: for each camper-session, only the season, session, program,
-status, dates, gender, age on June 1, grades, years at camp and home state.
-People are keyed by a one-way hash of their Campminder id. Names, birth dates,
-addresses, parents and medical details are never read into the warehouse.
+status, dates, gender, age on June 1, grades, years at camp, home state, home
+ZIP and the home's map coordinates. People are keyed by a one-way hash of
+their Campminder id. Names, birth dates, street addresses, parents and
+medical details are never written to the warehouse.
+
+**Home locations (family map).** Leadership chose exact locations for the
+map. Each family's address is sent once to the free US Census Bureau
+geocoder, which returns coordinates. The street address itself isn't kept:
+results are cached in Firestore (`campminder_geocodes`, not readable from
+the app) under a keyed hash of the address, and only the coordinates reach
+BigQuery. The coordinates still pinpoint a home, so treat the map as
+sensitive. Addresses the geocoder can't match are counted as "not on the map".
 
 **Seasons.** The season is taken from the latest session start in the report,
 so when the automation switches to 2027 the new rows are saved as 2027 and

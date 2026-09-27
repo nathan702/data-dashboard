@@ -57,9 +57,11 @@ describe("campminder parsing", () => {
     const s = toSessions([row()], KEY, 2026);
     expect(s).toHaveLength(3);
     const text = JSON.stringify(s);
-    for (const secret of ["Testperson", "Alex", "Made Up Lane", "Nowhere", "00000", "Tester", "90000001", "5550001", "2016-03-15"]) {
+    // Street and city never leave the parser (homes are placed by coordinates); ZIP is kept for the map.
+    for (const secret of ["Testperson", "Alex", "Made Up Lane", "Nowhere", "Tester", "90000001", "5550001", "2016-03-15"]) {
       expect(text).not.toContain(secret);
     }
+    expect(s[0]!.homeZip).toBe("00000");
     expect(s[0]).toMatchObject({
       season: 2026, sessionGroup: "Farm", isWeekly: true, weekStart: 3, sessionStart: "2026-06-29", program: "Explorers - Quest",
       status: "Enrolled", gender: "Female", ageAtSeason: 10, homeState: "MD", yearsAsCamper: 2, applicationDate: "2026-01-10",

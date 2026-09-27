@@ -8,6 +8,7 @@ import {
   type AssignmentUpdate,
   type BusinessLineOrUnassigned,
   type EnrollmentBreakdownQuery,
+  type EnrollmentMapQuery,
   type EnrollmentSummaryQuery,
   type RetailBreakdownQuery,
   type RetailKpiQuery,
@@ -17,7 +18,7 @@ import {
   type Source,
   type SourceFreshness,
 } from "@dash/shared";
-import { DEMO_SESSION_GROUPS, demoEnrollmentBreakdown, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
+import { DEMO_SESSION_GROUPS, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
 import type { DailyRevenueRow, FreshnessSource, Warehouse } from "./types.js";
@@ -173,6 +174,10 @@ export class DemoWarehouse implements Warehouse {
 
   async enrollmentSummary(q: EnrollmentSummaryQuery) {
     return demoEnrollmentSummary(q);
+  }
+
+  async enrollmentMap(q: EnrollmentMapQuery) {
+    return demoEnrollmentMap(q);
   }
 
   async enrollmentBreakdown(q: EnrollmentBreakdownQuery) {

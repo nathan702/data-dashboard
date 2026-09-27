@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
@@ -15,11 +15,14 @@ import {
   type EnrollmentKpis,
   type EnrollmentSummaryResponse,
 } from "@dash/shared";
-import { useEnrollmentBreakdown, useEnrollmentSeasons, useEnrollmentSummary } from "../lib/api";
+import { useEnrollmentBreakdown, useEnrollmentMap, useEnrollmentSeasons, useEnrollmentSummary } from "../lib/api";
 import { ACCENT_VAR } from "../lib/colors";
 import { formatDate, formatInt, formatPercent, percentChange } from "../lib/format";
 import { DataTable, type Column } from "./DataTable";
 import { TopBarChart } from "./TopBarChart";
+
+// The map library is only downloaded when a page shows the map.
+const FamilyMap = lazy(() => import("./FamilyMap"));
 
 const TILES: Array<{ key: keyof EnrollmentKpis; label: string; upIsGood?: boolean }> = [
   { key: "campers", label: "Campers" },
@@ -120,6 +123,7 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
   const [picking, setPicking] = useState(false);
   const summary = useEnrollmentSummary({ season, businessLine, filters });
   const breakdown = useEnrollmentBreakdown({ season, businessLine, dimension, filters });
+  const homes = useEnrollmentMap({ season, businessLine, filters });
   const active = (Object.entries(filters) as Array<[EnrollmentDimension, string[]]>).filter(([, v]) => v.length > 0);
 
   const header = (
@@ -251,6 +255,28 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
               />
             </div>
           )}
+
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">Where families live</h3>
+              {homes.data && (
+                <span className="hint">
+                  {formatInt(homes.data.points.length)} homes
+                  {homes.data.unplaced > 0 && ` · ${formatInt(homes.data.unplaced)} not on the map (address not found)`}
+                </span>
+              )}
+            </div>
+            <p className="card-subtitle">
+              One dot per home{active.length > 0 ? " with a camper-session matching the filters" : " with an enrolled camper"}; bigger dots have more campers. Click
+              the map to zoom with the scroll wheel.
+            </p>
+            {homes.error && <div className="error-banner">Couldn't load the map: {homes.error.message}</div>}
+            <div className={homes.isPlaceholderData ? "refetching" : undefined}>
+              <Suspense fallback={<div className="family-map" />}>
+                <FamilyMap points={homes.data?.points ?? []} fitKey={`${season}|${businessLine}|${encodeEnrollmentFilters(filters) ?? ""}`} />
+              </Suspense>
+            </div>
+          </div>
 
           <div className="card">
             <h3 className="card-title">Sign-up pace</h3>

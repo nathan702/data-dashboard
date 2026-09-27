@@ -4,7 +4,9 @@ import { GoogleAuth } from "google-auth-library";
 import { requestJson } from "../core/http.js";
 import { NotConfiguredError, requireSecret, type SecretStore } from "../core/secrets.js";
 import type { Connector, RawRecord, SyncContext } from "../core/types.js";
+import { Firestore } from "@google-cloud/firestore";
 import { reportSeason, sessionRecordId, toSessions } from "./campminderParse.js";
+import { CensusGeocoder, FirestoreGeoCache, homeAddress, locateHomes, type GeoCache, type Geocoder, type HomeAddress } from "./geocode.js";
 
 /**
  * Campminder has no API here: an existing automation writes its report to a
@@ -37,8 +39,13 @@ export interface CampminderConfig {
   tab: string;
   /** Optional sheet of past seasons, one tab per season named by its year. */
   historySheetId?: string;
+  /** Places homes on the map; without it, coordinates are left empty. */
+  geo?: { cache: GeoCache; geocoder: Geocoder };
   serviceAccount?: string;
 }
+
+/** Bump when parsing changes what's stored, so every sheet is re-read once. */
+const PARSER_VERSION = "2";
 
 /** A report with far fewer rows than what's stored is probably mid-rewrite. */
 const MIN_FRACTION_OF_PREVIOUS = 0.5;
@@ -103,6 +110,7 @@ export function campminderConfigFromEnv(env: NodeJS.ProcessEnv, secrets: SecretS
     sheetId: env.CAMPMINDER_SHEET_ID?.trim() || undefined,
     tab: env.CAMPMINDER_SHEET_TAB?.trim() || "Sheet1",
     historySheetId: env.CAMPMINDER_HISTORY_SHEET_ID?.trim() || undefined,
+    geo: { cache: new FirestoreGeoCache(new Firestore({ projectId: project })), geocoder: new CensusGeocoder() },
     serviceAccount: sa,
   };
 }
@@ -171,7 +179,8 @@ export class CampminderConnector implements Connector {
     values: string[][],
     opts: { cursor: string; label: string; season: (rows: Array<Record<string, string>>) => number | null },
   ): Promise<number | null> {
-    const contentHash = createHash("sha256").update(JSON.stringify(values)).digest("hex");
+    // The parser version is part of the hash, so a parsing change re-reads unchanged sheets.
+    const contentHash = createHash("sha256").update(PARSER_VERSION).update(JSON.stringify(values)).digest("hex");
     const lastSeason = Number(ctx.state.cursors[`${opts.cursor}_season`]) || null;
     // (Re-read once when the season wasn't saved yet, e.g. imported by an older version.)
     if (ctx.state.cursors[opts.cursor] === contentHash && lastSeason) {
@@ -190,7 +199,14 @@ export class CampminderConnector implements Connector {
     const season = opts.season(rows);
     if (!season) throw new Error(`Couldn't tell which season ${opts.label.toLowerCase()} covers`);
 
-    const sessions = toSessions(rows, key, season);
+    const located = this.cfg.geo
+      ? await locateHomes(
+          rows.map(homeAddress).filter((a): a is HomeAddress => a !== null),
+          key,
+          { ...this.cfg.geo, outOfTime: ctx.outOfTime, log: ctx.log },
+        )
+      : undefined;
+    const sessions = toSessions(rows, key, season, located?.homes);
     const previous = await this.cfg.current.load(season);
     if (previous.size > 0 && sessions.length < previous.size * MIN_FRACTION_OF_PREVIOUS) {
       throw new Error(
@@ -213,7 +229,8 @@ export class CampminderConnector implements Connector {
     }
     await ctx.emit(records);
     await ctx.saveCursor(`${opts.cursor}_season`, String(season));
-    await ctx.saveCursor(opts.cursor, contentHash);
+    // Some homes not placed yet (geocoder down or out of time): read this sheet again next run.
+    if (!located || located.complete) await ctx.saveCursor(opts.cursor, contentHash);
     ctx.log("campminder sheet imported", { tab: opts.label, season, campers: rows.length, sessions: sessions.length, written: records.length });
     return season;
   }

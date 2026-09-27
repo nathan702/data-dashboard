@@ -3,6 +3,8 @@ import type {
   AssignmentUpdate,
   BusinessLineOrUnassigned,
   EnrollmentBreakdownQuery,
+  EnrollmentMapQuery,
+  EnrollmentMapResponse,
   EnrollmentBreakdownResponse,
   EnrollmentSeason,
   EnrollmentSummaryQuery,
@@ -31,6 +33,7 @@ export interface Warehouse {
   saveAssignments(changes: AssignmentUpdate["changes"], by: string): Promise<void>;
   enrollmentSeasons(businessLine: BusinessLineOrUnassigned | undefined): Promise<EnrollmentSeason[]>;
   enrollmentSummary(q: EnrollmentSummaryQuery): Promise<EnrollmentSummaryResponse>;
+  enrollmentMap(q: EnrollmentMapQuery): Promise<EnrollmentMapResponse>;
   enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse>;
   /** Plain totals straight from the tables, for the deploy self-check. */
   referenceTotals(start: string, end: string): Promise<ReferenceTotals>;

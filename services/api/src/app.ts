@@ -3,10 +3,12 @@ import { LRUCache } from "lru-cache";
 import {
   assignmentUpdateSchema,
   enrollmentBreakdownQuerySchema,
+  enrollmentMapQuerySchema,
   enrollmentSeasonsQuerySchema,
   enrollmentSummaryQuerySchema,
   type BusinessLineOrUnassigned,
   type EnrollmentBreakdownQuery,
+  type EnrollmentMapQuery,
   type EnrollmentSummaryQuery,
   isBusinessLineOrUnassigned,
   isRetailSource,
@@ -174,6 +176,7 @@ export function createApi(opts: ApiOptions) {
     opts.warehouse.enrollmentSeasons(d.businessLine).then((seasons) => ({ seasons })),
   );
   enrollmentRoute("/campminder/summary", (q) => enrollmentSummaryQuerySchema.safeParse(q), (d: EnrollmentSummaryQuery) => opts.warehouse.enrollmentSummary(d));
+  enrollmentRoute("/campminder/map", (q) => enrollmentMapQuerySchema.safeParse(q), (d: EnrollmentMapQuery) => opts.warehouse.enrollmentMap(d));
   enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), (d: EnrollmentBreakdownQuery) => opts.warehouse.enrollmentBreakdown(d));
 
   api.get("/assignments", async (req, res) => {

@@ -8,6 +8,8 @@ import {
   type BusinessLineOrUnassigned,
   type EnrollmentBreakdownQuery,
   type EnrollmentFilters,
+  type EnrollmentMapQuery,
+  type EnrollmentMapResponse,
   type EnrollmentBreakdownResponse,
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
@@ -24,8 +26,8 @@ import {
   type RevenueSummaryResponse,
   type Source,
 } from "@dash/shared";
-import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis } from "./campminder.js";
-import { breakdownSql as enrollmentBreakdownSql, byWeekSql, drillParams, kpiSql as enrollmentKpiSql, paceSql, seasonsSql } from "./campminderSql.js";
+import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
+import { breakdownSql as enrollmentBreakdownSql, byWeekSql, drillParams, kpiSql as enrollmentKpiSql, mapSql, paceSql, seasonsSql } from "./campminderSql.js";
 import { toKpis } from "./retail.js";
 import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, inventorySql, kpiSql, saveAssignmentsSql } from "./retailSql.js";
 import { groupKeys } from "./summarize.js";
@@ -307,6 +309,16 @@ export class BigQueryWarehouse implements Warehouse {
       pace: buildPace(pace, q.season, asOf, seasonStart),
       asOf,
     };
+  }
+
+  async enrollmentMap(q: EnrollmentMapQuery): Promise<EnrollmentMapResponse> {
+    const rows = await this.enrollmentQuery<{ lat: number | null; lon: number | null; campers: number; enrollments: number; families: number }>(
+      mapSql(this.enrollments),
+      { season: q.season },
+      q.businessLine,
+      q.filters,
+    );
+    return toMapResponse(q.season, rows);
   }
 
   async enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse> {

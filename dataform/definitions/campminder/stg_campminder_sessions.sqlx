@@ -28,5 +28,8 @@ SELECT
   SAFE_CAST(JSON_VALUE(payload, '$.yearsAsCamper') AS INT64) AS years_as_camper,
   SAFE_CAST(JSON_VALUE(payload, '$.applicationDate') AS DATE) AS application_date,
   SAFE_CAST(JSON_VALUE(payload, '$.statusPostDate') AS DATE) AS status_post_date,
-  JSON_VALUE(payload, '$.homeState') AS home_state
+  JSON_VALUE(payload, '$.homeState') AS home_state,
+  JSON_VALUE(payload, '$.homeZip') AS home_zip,
+  SAFE_CAST(JSON_VALUE(payload, '$.homeLat') AS FLOAT64) AS home_lat,
+  SAFE_CAST(JSON_VALUE(payload, '$.homeLon') AS FLOAT64) AS home_lon
 FROM (${latestRaw(ref("raw_campminder", "sessions"))})

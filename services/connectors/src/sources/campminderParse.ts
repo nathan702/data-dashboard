@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { seasonForDate } from "@dash/shared";
 import { pseudonymize } from "../core/privacy.js";
+import { addressKey, homeAddress, zip5, type GeoResult } from "./geocode.js";
 
 /**
  * Turns Campminder's one-row-per-camper report into one row per
@@ -45,6 +46,10 @@ export interface CampminderSession {
   statusPostDate: string | null;
   statusEffectiveDate: string | null;
   homeState: string | null;
+  /** 5-digit ZIP and home coordinates (from the address, which isn't kept). */
+  homeZip: string | null;
+  homeLat: number | null;
+  homeLon: number | null;
   /** Changes when any stored field changes; used to write only what changed. */
   rowHash: string;
 }
@@ -140,7 +145,13 @@ export function reportSeason(rows: Array<Record<string, string>>): number | null
  * Convert report rows (header → value) into camper-session rows. Only the
  * fields listed on CampminderSession leave this function.
  */
-export function toSessions(rows: Array<Record<string, string>>, key: string, season: number): CampminderSession[] {
+export function toSessions(
+  rows: Array<Record<string, string>>,
+  key: string,
+  season: number,
+  /** Home coordinates by addressKey(); see geocode.ts. */
+  homes: Map<string, GeoResult> = new Map(),
+): CampminderSession[] {
   // Session dates are the same for every camper; collect them across the report
   // so cancelled sessions (not in a camper's own dates column) get dates too.
   const dates = new Map<string, { start: string; end: string }>();
@@ -167,6 +178,8 @@ export function toSessions(rows: Array<Record<string, string>>, key: string, sea
       statusPostDate: usDate(r["Child Status Post Date"]),
       statusEffectiveDate: usDate(r["Child Status Effective Date"]),
       homeState: clean(r["Primary Childhood HomeState"]),
+      homeZip: zip5(r["Primary Childhood HomeZip"]),
+      ...homeCoords(r, key, homes),
     };
     for (const s of statuses) {
       const w = parseWeek(s.name);
@@ -199,6 +212,12 @@ const STATUS_RANK = ["EN", "LE", "DM", "WL", "AP"];
 function statusRank(code: string) {
   const i = STATUS_RANK.indexOf(code);
   return i === -1 ? STATUS_RANK.length : i;
+}
+
+function homeCoords(r: Record<string, string>, key: string, homes: Map<string, GeoResult>) {
+  const a = homeAddress(r);
+  const loc = a ? homes.get(addressKey(a, key)) : null;
+  return { homeLat: loc?.lat ?? null, homeLon: loc?.lon ?? null };
 }
 
 export function sessionRecordId(s: Pick<CampminderSession, "season" | "camperHash" | "sessionName">): string {

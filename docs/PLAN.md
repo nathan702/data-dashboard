@@ -17,7 +17,7 @@ page shows them side by side.
 | Time zone | US Eastern for all reporting dates. |
 | Seasons | Campminder season *Y* = day after camp ends in *Y*-1 through end of summer *Y*. Cutover configurable (default Sep 1). |
 | Revenue options | Count by booked / paid / activity date; measure gross / net / net after fees. All selectable in the UI. |
-| Privacy | No names, emails, phones or medical data stored. People are counted via keyed hashes. Campminder keeps non-identifying fields: age, grade, gender, new vs returning. |
+| Privacy | No names, emails, phones or medical data stored. People are counted via keyed hashes. Campminder keeps non-identifying fields: age, grade, gender, new vs returning, plus (by later decision) home ZIP and map coordinates for the family map; street addresses aren't stored. |
 | Notifications | Daily/weekly digests and alerts to both Slack and email. |
 | Budgets/targets | Later, via a Google Sheet read directly by BigQuery. |
 | Future sources | Connector framework makes each new source one module (e.g. QuickBooks, Google Analytics, payroll, Ramp). |

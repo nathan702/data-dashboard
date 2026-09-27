@@ -114,6 +114,24 @@ export interface EnrollmentBreakdownResponse {
   rows: EnrollmentBreakdownRow[];
 }
 
+export const enrollmentMapQuerySchema = z.object({ season, businessLine, filters: filtersParam });
+export type EnrollmentMapQuery = z.infer<typeof enrollmentMapQuerySchema>;
+
+/** One dot per home: campers there matching the filters. */
+export interface EnrollmentMapPoint {
+  lat: number;
+  lon: number;
+  campers: number;
+  enrollments: number;
+}
+
+export interface EnrollmentMapResponse {
+  season: number;
+  points: EnrollmentMapPoint[];
+  /** Matching families whose address couldn't be placed. */
+  unplaced: number;
+}
+
 /** Natural order for grades ("Pre-K" < "K" < "1st" … "12th+"). */
 export function gradeOrder(g: string): number {
   const t = g.trim().toLowerCase();

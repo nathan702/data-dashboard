@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MemoryRawWriter, MemoryRunLog, MemoryStateStore } from "../core/memory.js";
 import { runSync } from "../core/runner.js";
 import { EnvSecretStore } from "../core/secrets.js";
-import { CampminderConnector, type CurrentRows, type SheetReader } from "./campminder.js";
+import { CampminderConnector, type CampminderConfig, type CurrentRows, type SheetReader } from "./campminder.js";
 
 const HEADER = ["PersonID", "Gender", "Birth Date", "Child Application Date", "Child Session/Status", "Enrolled Child Sessions With Dates (columnar)", "Primary Childhood ID"];
 const camper = (id: string, status: string, year = 2026) => [id, "Male", "5/5/2015", `1/2/${year}`, status, `Farm Week 1 (06/15/${year}-06/19/${year})`, `F${id}`];
@@ -35,7 +35,7 @@ class StoredRows implements CurrentRows {
   }
 }
 
-function setup(values: string[][], env: Record<string, string> = {}, historySheetId?: string) {
+function setup(values: string[][], env: Record<string, string> = {}, historySheetId?: string, geo?: CampminderConfig["geo"]) {
   const writer = new MemoryRawWriter();
   const deps = { writer, state: new MemoryStateStore(), runLog: new MemoryRunLog() };
   const sheet = new FakeSheet(values);
@@ -45,6 +45,7 @@ function setup(values: string[][], env: Record<string, string> = {}, historyShee
     current: new StoredRows(writer),
     tab: "Sheet1",
     historySheetId,
+    geo,
   });
   return { c, deps, writer, sheet };
 }
@@ -165,5 +166,45 @@ describe("campminder connector", () => {
       expect(r.error).toContain('History tab "2022" has sessions from season 2023');
       expect(seasonOf(writer)).toEqual({ 2024: 3, 2026: 4 });
     });
+  });
+
+  it("places homes on the map without storing the address", async () => {
+    const header = [...HEADER, "Primary Childhood HomeAddr1", "Primary Childhood HomeCity", "Primary Childhood HomeState", "Primary Childhood HomeZip"];
+    const values = [header, [...camper("1000", "Farm Week 1[EN]"), "12 Madeup Street", "Bethesda", "MD", "20814-0000"]];
+    const cache = new Map<string, { lat: number; lon: number } | null>();
+    const geo = {
+      cache: { get: async (k: string[]) => new Map(k.filter((x) => cache.has(x)).map((x) => [x, cache.get(x)!])), set: async (e: Map<string, { lat: number; lon: number } | null>) => void e.forEach((v, k) => cache.set(k, v)) },
+      geocoder: { batch: async (a: Array<{ id: string }>) => new Map(a.map((x) => [x.id, { lat: 38.98, lon: -77.1 }])) },
+    };
+    const { c, deps, writer } = setup(values, {}, undefined, geo);
+    await runSync(c, deps, "incremental");
+    const p = writer.rows[0]!.record.payload as Record<string, unknown>;
+    expect(p).toMatchObject({ homeZip: "20814", homeLat: 38.98, homeLon: -77.1 });
+    expect(JSON.stringify(writer.rows)).not.toMatch(/Madeup|Bethesda/);
+  });
+
+  it("comes back for homes the geocoder couldn't place", async () => {
+    const header = [...HEADER, "Primary Childhood HomeAddr1", "Primary Childhood HomeCity", "Primary Childhood HomeState", "Primary Childhood HomeZip"];
+    const values = [header, [...camper("1000", "Farm Week 1[EN]"), "12 Madeup Street", "Bethesda", "MD", "20814"]];
+    const cache = new Map<string, { lat: number; lon: number } | null>();
+    let down = true;
+    const geo = {
+      cache: { get: async (k: string[]) => new Map(k.filter((x) => cache.has(x)).map((x) => [x, cache.get(x)!])), set: async (e: Map<string, { lat: number; lon: number } | null>) => void e.forEach((v, k) => cache.set(k, v)) },
+      geocoder: {
+        batch: async (a: Array<{ id: string }>) => {
+          if (down) throw new Error("down");
+          return new Map(a.map((x) => [x.id, { lat: 38.98, lon: -77.1 }]));
+        },
+      },
+    };
+    const { c, deps, writer } = setup(values, {}, undefined, geo);
+    await runSync(c, deps, "incremental");
+    expect((writer.rows.at(-1)!.record.payload as { homeLat: number | null }).homeLat).toBeNull();
+    down = false;
+    await runSync(c, deps, "incremental");
+    expect((writer.rows.at(-1)!.record.payload as { homeLat: number | null }).homeLat).toBe(38.98);
+    const n = writer.rows.length;
+    await runSync(c, deps, "incremental");
+    expect(writer.rows.length).toBe(n);
   });
 });
