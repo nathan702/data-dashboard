@@ -19,6 +19,8 @@ export const PSEUDONYMIZATION_SECRET = "pseudonymization-key";
 export interface SheetReader {
   /** Rows of a tab, first row = headers. */
   read(sheetId: string, tab: string): Promise<string[][]>;
+  /** Tab names, in sheet order. */
+  tabs(sheetId: string): Promise<string[]>;
 }
 
 /** What's currently stored for a season: record id → row hash. */
@@ -33,6 +35,8 @@ export interface CampminderConfig {
   /** Sheet id; else the campminder-sheet-id secret. */
   sheetId?: string;
   tab: string;
+  /** Optional sheet of past seasons, one tab per season named by its year. */
+  historySheetId?: string;
   serviceAccount?: string;
 }
 
@@ -44,18 +48,28 @@ export class GoogleSheetReader implements SheetReader {
   constructor(private readonly serviceAccount?: string) {}
 
   async read(sheetId: string, tab: string): Promise<string[][]> {
+    // A1 notation: quote the tab name so "2022" isn't read as a row number.
+    const range = `'${tab.replace(/'/g, "''")}'`;
+    const res = await this.get<{ values?: string[][] }>(sheetId, `/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`, `the tab is named "${tab}"`);
+    return res.values ?? [];
+  }
+
+  async tabs(sheetId: string): Promise<string[]> {
+    const res = await this.get<{ sheets?: Array<{ properties?: { title?: string } }> }>(sheetId, "?fields=sheets.properties.title", "the sheet id is right");
+    return (res.sheets ?? []).map((s) => s.properties?.title ?? "").filter(Boolean);
+  }
+
+  private async get<T>(sheetId: string, path: string, hint: string): Promise<T> {
     const token = await (await this.auth.getClient()).getAccessToken();
     try {
-      const res = await requestJson<{ values?: string[][] }>(
-        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(tab)}?valueRenderOption=FORMATTED_VALUE`,
-        { headers: { Authorization: `Bearer ${token.token}` } },
-      );
-      return res.values ?? [];
+      return await requestJson<T>(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}${path}`, {
+        headers: { Authorization: `Bearer ${token.token}` },
+      });
     } catch (err) {
       const status = (err as { status?: number }).status;
       if (status === 403 || status === 404) {
         throw new Error(
-          `Can't read the Campminder sheet. Share it (Viewer) with ${this.serviceAccount ?? "the dashboard-connectors service account"}, and check the tab is named "${tab}".`,
+          `Can't read Campminder sheet ${sheetId}. Share it (Viewer) with ${this.serviceAccount ?? "the dashboard-connectors service account"}, and check ${hint}.`,
         );
       }
       throw err;
@@ -88,6 +102,7 @@ export function campminderConfigFromEnv(env: NodeJS.ProcessEnv, secrets: SecretS
     current: new BigQueryCurrentRows(new BigQuery({ projectId: project })),
     sheetId: env.CAMPMINDER_SHEET_ID?.trim() || undefined,
     tab: env.CAMPMINDER_SHEET_TAB?.trim() || "Sheet1",
+    historySheetId: env.CAMPMINDER_HISTORY_SHEET_ID?.trim() || undefined,
     serviceAccount: sa,
   };
 }
@@ -101,30 +116,85 @@ export class CampminderConnector implements Connector {
     if (!sheetId) throw new NotConfiguredError(`Campminder isn't connected yet: set CAMPMINDER_SHEET_ID or the "${CAMPMINDER_SHEET_SECRET}" secret`);
     const key = await requireSecret(this.cfg.secrets, PSEUDONYMIZATION_SECRET, "Campminder");
 
+    const override = Number(await this.cfg.secrets.get(CAMPMINDER_SEASON_SECRET));
     const values = await this.cfg.sheet.read(sheetId, this.cfg.tab);
+    const current = await this.importSeason(ctx, key, values, {
+      cursor: "sheet_hash",
+      label: "The Campminder report",
+      season: (rows) => (Number.isInteger(override) && override > 2000 ? override : reportSeason(rows)),
+    });
+
+    if (this.cfg.historySheetId) await this.importHistory(ctx, key, this.cfg.historySheetId, current);
+  }
+
+  /**
+   * Past seasons, one tab per season named by its year ("2022"). Each tab is
+   * read once and again only when it changes; removing a tab (or the sheet)
+   * leaves its season as imported. The daily sheet owns its own season and
+   * anything later, so a history tab can never overwrite it.
+   */
+  private async importHistory(ctx: SyncContext, key: string, sheetId: string, currentSeason: number | null) {
+    const tabs = (await this.cfg.sheet.tabs(sheetId)).filter((t) => /^\d{4}$/.test(t.trim()));
+    const problems: string[] = [];
+    for (const tab of tabs.sort()) {
+      const season = Number(tab.trim());
+      if (currentSeason !== null && season >= currentSeason) {
+        ctx.log("campminder history tab skipped: the daily sheet covers this season", { season });
+        continue;
+      }
+      try {
+        const values = await this.cfg.sheet.read(sheetId, tab);
+        await this.importSeason(ctx, key, values, {
+          cursor: `history_hash_${season}`,
+          label: `History tab "${tab}"`,
+          season: (rows) => {
+            // Guards against a report pasted into the wrong tab.
+            const detected = reportSeason(rows);
+            if (detected && detected !== season) {
+              throw new Error(`History tab "${tab}" has sessions from season ${detected}; rename the tab or check the report`);
+            }
+            return season;
+          },
+        });
+      } catch (err) {
+        problems.push(err instanceof Error ? err.message : String(err));
+      }
+    }
+    // One bad tab doesn't hold up the others, but the run still shows as failed.
+    if (problems.length) throw new Error(problems.join("; "));
+  }
+
+  /** Import one report as one season; returns the season (null when unchanged). */
+  private async importSeason(
+    ctx: SyncContext,
+    key: string,
+    values: string[][],
+    opts: { cursor: string; label: string; season: (rows: Array<Record<string, string>>) => number | null },
+  ): Promise<number | null> {
     const contentHash = createHash("sha256").update(JSON.stringify(values)).digest("hex");
-    if (ctx.state.cursors.sheet_hash === contentHash) {
-      ctx.log("campminder sheet unchanged");
-      return;
+    const lastSeason = Number(ctx.state.cursors[`${opts.cursor}_season`]) || null;
+    // (Re-read once when the season wasn't saved yet, e.g. imported by an older version.)
+    if (ctx.state.cursors[opts.cursor] === contentHash && lastSeason) {
+      ctx.log("campminder sheet unchanged", { tab: opts.label });
+      return lastSeason;
     }
 
     const [header, ...body] = values;
     if (!header?.includes("PersonID") || !header.includes("Child Session/Status")) {
-      throw new Error('The Campminder sheet is missing the "PersonID" or "Child Session/Status" column');
+      throw new Error(`${opts.label} is missing the "PersonID" or "Child Session/Status" column`);
     }
     const rows = body
       .filter((r) => r.some((c) => c && c.trim()))
       .map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ""])));
 
-    const override = Number(await this.cfg.secrets.get(CAMPMINDER_SEASON_SECRET));
-    const season = Number.isInteger(override) && override > 2000 ? override : reportSeason(rows);
-    if (!season) throw new Error("Couldn't tell which season the Campminder report covers");
+    const season = opts.season(rows);
+    if (!season) throw new Error(`Couldn't tell which season ${opts.label.toLowerCase()} covers`);
 
     const sessions = toSessions(rows, key, season);
     const previous = await this.cfg.current.load(season);
     if (previous.size > 0 && sessions.length < previous.size * MIN_FRACTION_OF_PREVIOUS) {
       throw new Error(
-        `The Campminder report has ${sessions.length} camper-sessions but ${previous.size} are stored for ${season}; ` +
+        `${opts.label} has ${sessions.length} camper-sessions but ${previous.size} are stored for ${season}; ` +
           "it looks incomplete (maybe mid-update), so nothing was changed",
       );
     }
@@ -142,7 +212,9 @@ export class CampminderConnector implements Connector {
       if (!seen.has(id)) records.push({ entity: "sessions", recordId: id, sourceUpdatedAt: now, isDeleted: true, payload: { season } });
     }
     await ctx.emit(records);
-    await ctx.saveCursor("sheet_hash", contentHash);
-    ctx.log("campminder sheet imported", { season, campers: rows.length, sessions: sessions.length, written: records.length });
+    await ctx.saveCursor(`${opts.cursor}_season`, String(season));
+    await ctx.saveCursor(opts.cursor, contentHash);
+    ctx.log("campminder sheet imported", { tab: opts.label, season, campers: rows.length, sessions: sessions.length, written: records.length });
+    return season;
   }
 }

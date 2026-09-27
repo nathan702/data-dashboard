@@ -46,7 +46,7 @@ gcloud run deploy dashboard-connectors-webhooks --image="$REPO/connectors:$TAG" 
 gcloud run deploy dashboard-connectors-jobs --image="$REPO/connectors:$TAG" --region="$REGION" \
   --service-account="$CONN_SA" --no-allow-unauthenticated --timeout=1800 \
   --min-instances=0 --max-instances=2 --memory=1Gi \
-  --set-env-vars="$COMMON_ENV,SERVICE_ROLE=jobs,CAMPMINDER_SHEET_ID=$CAMPMINDER_SHEET_ID"
+  --set-env-vars="$COMMON_ENV,SERVICE_ROLE=jobs,CAMPMINDER_SHEET_ID=$CAMPMINDER_SHEET_ID,CAMPMINDER_HISTORY_SHEET_ID=$CAMPMINDER_HISTORY_SHEET_ID"
 gcloud run services add-iam-policy-binding dashboard-connectors-jobs --region="$REGION" \
   --member="serviceAccount:$SCHED_SA" --role=roles/run.invoker >/dev/null
 JOBS_URL=$(gcloud run services describe dashboard-connectors-jobs --region="$REGION" --format='value(status.url)')

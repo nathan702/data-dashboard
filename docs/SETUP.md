@@ -142,6 +142,14 @@ so when the automation switches to 2027 the new rows are saved as 2027 and
 2027 report still lists 2026 sessions), store it as the `campminder-season`
 secret and delete that secret's versions once it isn't needed.
 
+**Past seasons.** Put each season's report (same per-camper layout as
+`Sheet1`) in its own tab of a separate sheet, named by its year (`2022`,
+`2023`, …), share it the same way, and set `CAMPMINDER_HISTORY_SHEET_ID` in
+`infra/config.sh`. Each tab is imported as that season on the next hourly
+sync, and again only when it changes. A tab whose sessions belong to a
+different year is refused. Tabs for the daily sheet's season or later are
+ignored, and deleting a tab or the whole sheet keeps what was imported.
+
 **Safety.** If a report arrives with fewer than half the camper-sessions
 already stored for its season, it's treated as a half-written sheet: nothing
 is changed and the sync shows as failed until a complete report arrives.

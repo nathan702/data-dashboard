@@ -8,9 +8,16 @@ const HEADER = ["PersonID", "Gender", "Birth Date", "Child Application Date", "C
 const camper = (id: string, status: string, year = 2026) => [id, "Male", "5/5/2015", `1/2/${year}`, status, `Farm Week 1 (06/15/${year}-06/19/${year})`, `F${id}`];
 
 class FakeSheet implements SheetReader {
+  /** Tabs of the history sheet (sheet id "history"). */
+  history: Record<string, string[][]> = {};
+  reads: string[] = [];
   constructor(public values: string[][]) {}
-  async read() {
-    return this.values;
+  async read(sheetId: string, tab: string) {
+    this.reads.push(`${sheetId}/${tab}`);
+    return sheetId === "history" ? this.history[tab]! : this.values;
+  }
+  async tabs() {
+    return Object.keys(this.history);
   }
 }
 
@@ -28,7 +35,7 @@ class StoredRows implements CurrentRows {
   }
 }
 
-function setup(values: string[][], env: Record<string, string> = {}) {
+function setup(values: string[][], env: Record<string, string> = {}, historySheetId?: string) {
   const writer = new MemoryRawWriter();
   const deps = { writer, state: new MemoryStateStore(), runLog: new MemoryRunLog() };
   const sheet = new FakeSheet(values);
@@ -37,6 +44,7 @@ function setup(values: string[][], env: Record<string, string> = {}) {
     sheet,
     current: new StoredRows(writer),
     tab: "Sheet1",
+    historySheetId,
   });
   return { c, deps, writer, sheet };
 }
@@ -110,5 +118,52 @@ describe("campminder connector", () => {
     const { c, deps, writer } = setup([HEADER, ...many(1)], { CAMPMINDER_SEASON: "2031" });
     await runSync(c, deps, "incremental");
     expect((writer.rows[0]!.record.payload as { season: number }).season).toBe(2031);
+  });
+
+  describe("history sheet", () => {
+    const seasonOf = (w: MemoryRawWriter) => {
+      const out: Record<number, number> = {};
+      for (const { record } of w.rows) {
+        const season = (record.payload as { season: number }).season;
+        out[season] = (out[season] ?? 0) + 1;
+      }
+      return out;
+    };
+
+    it("imports each year tab as its season, once", async () => {
+      const { c, deps, writer, sheet } = setup([HEADER, ...many(4)], {}, "history");
+      sheet.history = {
+        "2022": [HEADER, ...many(2, "Farm Week 1[EN]", 2022)],
+        "2023": [HEADER, ...many(3, "Farm Week 1[EN]", 2023)],
+        Notes: [["anything"]],
+        "2026": [HEADER, ...many(1, "Farm Week 1[EN]", 2026)],
+      };
+      const r = await runSync(c, deps, "incremental");
+      expect(r.status).toBe("ok");
+      // The daily sheet owns 2026, so the history tab for it is ignored.
+      expect(seasonOf(writer)).toEqual({ 2022: 2, 2023: 3, 2026: 4 });
+      expect(sheet.reads).not.toContain("history/Notes");
+
+      sheet.reads = [];
+      await runSync(c, deps, "incremental");
+      expect(writer.rows).toHaveLength(9);
+
+      // A removed tab keeps its season as imported.
+      delete sheet.history["2022"];
+      await runSync(c, deps, "incremental");
+      expect(writer.rows.filter((x) => x.record.isDeleted)).toHaveLength(0);
+    });
+
+    it("refuses a report in the wrong tab without holding up the rest", async () => {
+      const { c, deps, writer, sheet } = setup([HEADER, ...many(4)], {}, "history");
+      sheet.history = {
+        "2022": [HEADER, ...many(2, "Farm Week 1[EN]", 2023)],
+        "2024": [HEADER, ...many(3, "Farm Week 1[EN]", 2024)],
+      };
+      const r = await runSync(c, deps, "incremental");
+      expect(r.status).toBe("error");
+      expect(r.error).toContain('History tab "2022" has sessions from season 2023');
+      expect(seasonOf(writer)).toEqual({ 2024: 3, 2026: 4 });
+    });
   });
 });
