@@ -80,8 +80,9 @@ export function RevenueView({
   const { data, error, isFetching, isPlaceholderData } = useRevenueSummary(query);
   const m = filters.measure;
 
-  const cmpLabel = data?.comparisonRange && filters.compare !== "none" ? (filters.compare === "previous_year" ? "last year" : "previous period") : null;
-  const cmpLongLabel = filters.compare === "previous_year" ? "Same period last year" : "Previous period";
+  const cmpLabel = data?.comparisonRange && filters.compare !== "none" ? (filters.compare.startsWith("previous_year") ? "last year" : "previous period") : null;
+  const cmpLongLabel =
+    filters.compare === "previous_year_weekday" ? "Same weekdays last year" : filters.compare === "previous_year" ? "Same dates last year" : "Previous period";
 
   const byKey = new Map((data?.groups ?? []).map((g) => [g.key, g]));
   const visible = groups.filter((g) => {

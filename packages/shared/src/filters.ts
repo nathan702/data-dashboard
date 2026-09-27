@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BUSINESS_LINES_WITH_UNASSIGNED } from "./businessLines.js";
 import { SOURCES } from "./sources.js";
-import { daysBetweenInclusive, isIsoDate } from "./dates.js";
+import { COMPARISON_MODES, daysBetweenInclusive, isIsoDate } from "./dates.js";
 
 /**
  * Which date a dollar is counted on:
@@ -35,7 +35,7 @@ export const revenueQuerySchema = z
     basis: z.enum(REVENUE_BASES).default("booked"),
     measure: z.enum(REVENUE_MEASURES).default("net"),
     granularity: z.enum(GRANULARITIES).default("day"),
-    compare: z.enum(["none", "previous_period", "previous_year"]).default("previous_year"),
+    compare: z.enum(COMPARISON_MODES).default("previous_year"),
     /** Group totals and series by business line (default) or by platform. */
     groupBy: z.enum(["business_line", "source"]).default("business_line"),
     businessLines: z.array(z.enum(BUSINESS_LINES_WITH_UNASSIGNED)).optional(),

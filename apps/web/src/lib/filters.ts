@@ -1,5 +1,8 @@
-import { useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import {
+  BUSINESS_LINE_INFO,
+  COMPARISON_MODES,
+  isBusinessLine,
   daysBetweenInclusive,
   GRANULARITIES,
   isIsoDate,
@@ -52,6 +55,9 @@ export function autoGranularity(start: string, end: string): Granularity {
  */
 export function useFilters(): [Filters, (patch: Partial<Filters>) => void] {
   const [params, setParams] = useSearchParams();
+  // Weekend-driven lines compare Friday with Friday by default.
+  const { id } = useParams();
+  const defaultCompare: ComparisonMode = id && isBusinessLine(id) && BUSINESS_LINE_INFO[id].weekdayComparison ? "previous_year_weekday" : "previous_year";
   const presetParam = params.get("range");
   // A custom range stays custom even while its dates are being edited;
   // missing or invalid dates fall back to the last 30 days.
@@ -71,7 +77,7 @@ export function useFilters(): [Filters, (patch: Partial<Filters>) => void] {
     ...range,
     basis: pick(params.get("basis"), REVENUE_BASES, "booked"),
     measure: pick(params.get("measure"), REVENUE_MEASURES, "net"),
-    compare: pick(params.get("compare"), ["none", "previous_period", "previous_year"] as const, "previous_year"),
+    compare: pick(params.get("compare"), COMPARISON_MODES, defaultCompare),
     granularity: pick(params.get("by"), GRANULARITIES, autoGranularity(range.start, range.end)),
   };
 

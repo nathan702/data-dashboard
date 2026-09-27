@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BUSINESS_LINES_WITH_UNASSIGNED, type BusinessLineOrUnassigned } from "./businessLines.js";
-import { daysBetweenInclusive, isIsoDate } from "./dates.js";
+import { COMPARISON_MODES, daysBetweenInclusive, isIsoDate } from "./dates.js";
 import { MAX_RANGE_DAYS } from "./filters.js";
 
 /** Platforms backed by marts.fct_retail_orders / fct_retail_line_items. */
@@ -37,7 +37,7 @@ const businessLine = z.enum(BUSINESS_LINES_WITH_UNASSIGNED).optional();
 const rangeFields = {
   start: isoDate,
   end: isoDate,
-  compare: z.enum(["none", "previous_period", "previous_year"]).default("previous_year"),
+  compare: z.enum(COMPARISON_MODES).default("previous_year"),
   businessLine,
 };
 

@@ -1,7 +1,7 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import {
   comparisonRange,
-  daysBetweenInclusive,
+  comparisonShiftDays,
   DEFAULT_SEASON_CONFIG,
   type AssignmentRow,
   type AssignmentUpdate,
@@ -85,7 +85,7 @@ export class BigQueryWarehouse implements Warehouse {
       has_cmp: cmp !== null,
       cmp_start: cmp?.start ?? q.start,
       cmp_end: cmp?.end ?? q.end,
-      shift_days: daysBetweenInclusive(q.start, q.end),
+      shift_days: comparisonShiftDays({ start: q.start, end: q.end }, q.compare) ?? 0,
     };
     const types = { business_lines: ["STRING"], sources: ["STRING"] };
     // The client sends an empty array parameter as NULL, and ARRAY_LENGTH(NULL)

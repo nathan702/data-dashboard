@@ -31,6 +31,11 @@ export interface BusinessLineInfo {
   sources: Source[];
   /** What each platform contributes, shown as its section title. */
   sourceRoles: Partial<Record<Source, string>>;
+  /**
+   * Compare with last year by weekday (first Friday of October with first
+   * Friday of October) rather than by date. For lines where weekends drive sales.
+   */
+  weekdayComparison?: boolean;
 }
 
 export const BUSINESS_LINE_INFO: Record<BusinessLine, BusinessLineInfo> = {
@@ -41,12 +46,14 @@ export const BUSINESS_LINE_INFO: Record<BusinessLine, BusinessLineInfo> = {
     label: "Events",
     sources: ["fareharbor", "square"],
     sourceRoles: { fareharbor: "Bookings", square: "On-site food & beverage" },
+    weekdayComparison: true,
   },
   haunted_forest: {
     id: "haunted_forest",
     label: "Haunted Forest",
     sources: ["fareharbor", "square"],
     sourceRoles: { fareharbor: "Bookings", square: "On-site food & beverage" },
+    weekdayComparison: true,
   },
   chaps: {
     id: "chaps",

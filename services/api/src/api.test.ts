@@ -136,6 +136,18 @@ describe("aggregation", () => {
   });
 });
 
+describe("same-weekday comparison", () => {
+  it("compares with the same weekdays last year", async () => {
+    const q = "start=2026-10-02&end=2026-10-04&basis=booked&measure=net&granularity=day&compare=previous_year_weekday&groupBy=business_line&businessLines=haunted_forest";
+    const res = await request(api()).get(`/api/revenue/summary?${q}`).expect(200);
+    expect(res.body.comparisonRange).toEqual({ start: "2025-10-03", end: "2025-10-05" });
+    // Last year's points are drawn on this year's dates.
+    for (const p of res.body.comparisonSeries) expect(p.period >= "2026-10-02" && p.period <= "2026-10-04").toBe(true);
+    const k = await request(api()).get("/api/retail/square/kpis?start=2026-10-02&end=2026-10-04&compare=previous_year_weekday").expect(200);
+    expect(k.body.comparisonRange.start).toBe("2025-10-03");
+  });
+});
+
 describe("retail endpoints", () => {
   it("returns KPIs with comparison and derived net/AOV", async () => {
     const res = await request(api()).get("/api/retail/square/kpis?start=2026-07-01&end=2026-07-31&businessLine=farm_store").expect(200);

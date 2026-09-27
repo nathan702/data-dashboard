@@ -87,22 +87,52 @@ export interface DateRange {
   end: IsoDate;
 }
 
-export type ComparisonMode = "none" | "previous_period" | "previous_year";
+export const COMPARISON_MODES = ["none", "previous_period", "previous_year", "previous_year_weekday"] as const;
+export type ComparisonMode = (typeof COMPARISON_MODES)[number];
+
+/** Which occurrence of its weekday a date is in its month: the 1st–7th are the 1st, and so on. */
+const weekdayOfMonth = (date: IsoDate) => Math.ceil(Number(date.slice(8, 10)) / 7);
+
+/**
+ * Days back to the same weekday a year earlier: 52 weeks, or 53 when that's
+ * what keeps "the first Friday of October" on the first Friday of October.
+ */
+export function weekdayYearShift(date: IsoDate): 364 | 371 {
+  const month = date.slice(5, 7);
+  const n = weekdayOfMonth(date);
+  for (const days of [364, 371] as const) {
+    const d = addDays(date, -days);
+    if (d.slice(5, 7) === month && weekdayOfMonth(d) === n) return days;
+  }
+  return 364;
+}
+
+/**
+ * How many days the comparison is shifted back, when it's a fixed number of
+ * days; null for calendar-year shifts ("previous_year") and no comparison.
+ */
+export function comparisonShiftDays(range: DateRange, mode: ComparisonMode): number | null {
+  if (mode === "previous_period") return daysBetweenInclusive(range.start, range.end);
+  if (mode === "previous_year_weekday") return weekdayYearShift(range.start);
+  return null;
+}
 
 /**
  * The period to compare against. "previous_year" shifts both ends back one
- * year (use it for same-period-last-year and for same-point-last-season).
+ * year (use it for same-period-last-year and for same-point-last-season);
+ * "previous_year_weekday" shifts by whole weeks so weekdays line up.
  */
 export function comparisonRange(range: DateRange, mode: ComparisonMode): DateRange | null {
   switch (mode) {
     case "none":
       return null;
-    case "previous_period": {
-      const length = daysBetweenInclusive(range.start, range.end);
-      return { start: addDays(range.start, -length), end: addDays(range.start, -1) };
-    }
     case "previous_year":
       return { start: addYears(range.start, -1), end: addYears(range.end, -1) };
+    case "previous_period":
+    case "previous_year_weekday": {
+      const days = comparisonShiftDays(range, mode)!;
+      return { start: addDays(range.start, -days), end: addDays(range.end, -days) };
+    }
   }
 }
 
@@ -151,9 +181,10 @@ export function alignToCurrent(date: IsoDate, range: DateRange, mode: Comparison
   switch (mode) {
     case "none":
       return date;
-    case "previous_period":
-      return addDays(date, daysBetweenInclusive(range.start, range.end));
     case "previous_year":
       return addYears(date, 1);
+    case "previous_period":
+    case "previous_year_weekday":
+      return addDays(date, comparisonShiftDays(range, mode)!);
   }
 }

@@ -14,7 +14,8 @@ const MEASURE_LABEL: Record<RevenueMeasure, string> = {
   net_after_fees: "Net after fees",
 };
 const COMPARE_LABEL: Record<ComparisonMode, string> = {
-  previous_year: "Same period last year",
+  previous_year: "Same dates last year",
+  previous_year_weekday: "Same weekdays last year",
   previous_period: "Previous period",
   none: "No comparison",
 };

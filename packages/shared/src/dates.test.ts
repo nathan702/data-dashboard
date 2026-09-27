@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  addYears,
-  comparisonRange,
-  easternDate,
-  isIsoDate,
-  presetRange,
-  seasonForDate,
-  seasonRange,
-} from "./dates.js";
+import { addDays, addYears, alignToCurrent, comparisonRange, daysBetweenInclusive, easternDate, isIsoDate, presetRange, seasonForDate, seasonRange, weekdayYearShift } from "./dates.js";
 
 describe("seasons", () => {
   it("assigns fall dates to the following year's season", () => {
@@ -81,5 +73,28 @@ describe("alignToCurrent", () => {
     expect(alignToCurrent("2025-03-15", range, "previous_year")).toBe("2026-03-15");
     // previous period for March is Jan 29 – Feb 28 (31 days earlier)
     expect(alignToCurrent("2026-01-29", range, "previous_period")).toBe("2026-03-01");
+  });
+});
+
+describe("same-weekday comparison", () => {
+  const weekday = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
+
+  it("lines up the nth weekday of the month a year earlier", () => {
+    // First Friday of October, 2026 → 2025.
+    expect(comparisonRange({ start: "2026-10-02", end: "2026-10-02" }, "previous_year_weekday")).toEqual({ start: "2025-10-03", end: "2025-10-03" });
+    // After a leap day 52 weeks lands on the 2nd Friday, so it takes 53.
+    expect(weekdayYearShift("2028-10-06")).toBe(371);
+    expect(comparisonRange({ start: "2028-10-06", end: "2028-10-06" }, "previous_year_weekday")!.start).toBe("2027-10-01");
+  });
+
+  it("always keeps the weekday and the range length", () => {
+    for (let i = 0; i < 800; i += 3) {
+      const start = addDays("2025-01-01", i);
+      const end = addDays(start, 30);
+      const cmp = comparisonRange({ start, end }, "previous_year_weekday")!;
+      expect(weekday(cmp.start)).toBe(weekday(start));
+      expect(daysBetweenInclusive(cmp.start, cmp.end)).toBe(31);
+      expect(alignToCurrent(cmp.start, { start, end }, "previous_year_weekday")).toBe(start);
+    }
   });
 });

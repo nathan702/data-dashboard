@@ -84,7 +84,7 @@ export function RetailDetail({
   const [dimension, setDimension] = useState<RetailDimension>(dims[0]!);
   const kpis = useRetailKpis(source, { start: filters.start, end: filters.end, compare: filters.compare, businessLine });
   const breakdown = useRetailBreakdown(source, { start: filters.start, end: filters.end, dimension, businessLine });
-  const cmpLabel = filters.compare === "none" ? null : filters.compare === "previous_year" ? "last year" : "previous period";
+  const cmpLabel = filters.compare === "none" ? null : filters.compare.startsWith("previous_year") ? "last year" : "previous period";
 
   const columns: Column<RetailBreakdownRow>[] = [
     { key: "key", label: RETAIL_DIMENSION_LABEL[dimension], value: (r) => r.key },
