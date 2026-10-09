@@ -1,25 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { addDays, addYears, alignToCurrent, comparisonRange, daysBetweenInclusive, easternDate, isIsoDate, presetRange, seasonForDate, seasonRange, weekdayYearShift } from "./dates.js";
-
-describe("seasons", () => {
-  it("assigns fall dates to the following year's season", () => {
-    expect(seasonForDate("2025-08-31")).toBe(2025);
-    expect(seasonForDate("2025-09-01")).toBe(2026);
-    expect(seasonForDate("2026-01-15")).toBe(2026);
-    expect(seasonForDate("2026-07-04")).toBe(2026);
-  });
-
-  it("respects a custom cutover", () => {
-    const config = { startMonth: 8, startDay: 20 };
-    expect(seasonForDate("2025-08-19", config)).toBe(2025);
-    expect(seasonForDate("2025-08-20", config)).toBe(2026);
-    expect(seasonRange(2026, config)).toEqual({ start: "2025-08-20", end: "2026-08-19" });
-  });
-
-  it("returns an inclusive season range", () => {
-    expect(seasonRange(2026)).toEqual({ start: "2025-09-01", end: "2026-08-31" });
-  });
-});
+import { addDays, addYears, alignToCurrent, comparisonRange, daysBetweenInclusive, easternDate, isIsoDate, presetRange, weekdayYearShift } from "./dates.js";
+import { campminderCalendar, CALENDAR_YEAR } from "./seasons.js";
 
 describe("comparisons", () => {
   it("previous period has the same length and ends the day before", () => {
@@ -45,12 +26,14 @@ describe("comparisons", () => {
 describe("presets", () => {
   const today = "2026-09-23";
   it("computes season to date", () => {
-    expect(presetRange("season_to_date", today)).toEqual({ start: "2026-09-01", end: today });
-    expect(presetRange("last_season", today)).toEqual({ start: "2025-09-01", end: "2026-08-31" });
+    // Labor Day 2026 is Sep 7, so Campminder season 2027 has begun.
+    expect(presetRange("season_to_date", campminderCalendar(), today)).toEqual({ start: "2026-09-07", end: today });
+    expect(presetRange("last_season", campminderCalendar(), today)).toEqual({ start: "2025-09-01", end: "2026-09-06" });
+    expect(presetRange("season_to_date", CALENDAR_YEAR, today)).toEqual({ start: "2026-01-01", end: today });
   });
   it("computes rolling windows inclusively", () => {
-    expect(presetRange("last_7_days", today)).toEqual({ start: "2026-09-17", end: today });
-    expect(presetRange("month_to_date", today)).toEqual({ start: "2026-09-01", end: today });
+    expect(presetRange("last_7_days", CALENDAR_YEAR, today)).toEqual({ start: "2026-09-17", end: today });
+    expect(presetRange("month_to_date", CALENDAR_YEAR, today)).toEqual({ start: "2026-09-01", end: today });
   });
 });
 

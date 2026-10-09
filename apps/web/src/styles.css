@@ -302,3 +302,8 @@ tbody tr:hover { background: var(--wash); }
 .map-tiles { filter: grayscale(1) brightness(1.05) contrast(0.9); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .map-tiles { filter: grayscale(1) invert(1) brightness(0.9) contrast(0.9); } }
 :root[data-theme="dark"] .map-tiles { filter: grayscale(1) invert(1) brightness(0.9) contrast(0.9); }
+.season-settings .season-intro { padding: 0 16px 8px; margin: 0; }
+.season-settings td { vertical-align: top; }
+.season-campminder { padding: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.year-dates { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.year-date { display: inline-flex; align-items: center; gap: 6px; }

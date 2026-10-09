@@ -1,8 +1,6 @@
 import {
   addDays,
   comparisonRange,
-  seasonForDate,
-  seasonRange,
   SOURCES,
   type AssignmentRow,
   type AssignmentUpdate,
@@ -14,7 +12,9 @@ import {
   type RetailKpiQuery,
   type RetailSource,
   type RevenueBasis,
+  CALENDAR_YEAR,
   type RevenueQuery,
+  type SeasonCalendar,
   type Source,
   type SourceFreshness,
 } from "@dash/shared";
@@ -98,7 +98,6 @@ export function demoRow(s: DemoStream, date: string, basis: RevenueBasis): Daily
     businessLine: s.businessLine,
     source: s.source,
     date,
-    seasonStart: seasonRange(seasonForDate(date)).start,
     gross,
     discounts,
     refunds,
@@ -129,7 +128,7 @@ const DEMO_CANDIDATES: Array<Omit<AssignmentRow, "businessLine" | "origin" | "la
 export class DemoWarehouse implements Warehouse {
   private readonly saved = new Map<string, BusinessLineOrUnassigned>();
 
-  async revenueSummary(q: RevenueQuery) {
+  async revenueSummary(q: RevenueQuery, seasons: SeasonCalendar) {
     const ranges = [{ start: q.start, end: q.end }];
     const cmp = comparisonRange(ranges[0]!, q.compare);
     if (cmp) ranges.push(cmp);
@@ -139,7 +138,7 @@ export class DemoWarehouse implements Warehouse {
         for (const s of DEMO_STREAMS) rows.push(demoRow(s, d, q.basis));
       }
     }
-    return summarizeRows(rows, q);
+    return summarizeRows(rows, q, seasons);
   }
 
   async retailKpis(source: RetailSource, q: RetailKpiQuery) {
@@ -172,8 +171,8 @@ export class DemoWarehouse implements Warehouse {
     return demoEnrollmentSeasons(bl);
   }
 
-  async enrollmentSummary(q: EnrollmentSummaryQuery) {
-    return demoEnrollmentSummary(q);
+  async enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar) {
+    return demoEnrollmentSummary(q, seasons);
   }
 
   async enrollmentMap(q: EnrollmentMapQuery) {
@@ -186,7 +185,7 @@ export class DemoWarehouse implements Warehouse {
 
   async referenceTotals(start: string, end: string) {
     // The demo's own summaries are its reference.
-    const s = await this.revenueSummary({ start, end, basis: "booked", measure: "gross", granularity: "week", compare: "none", groupBy: "source" });
+    const s = await this.revenueSummary({ start, end, basis: "booked", measure: "gross", granularity: "week", compare: "none", groupBy: "source" }, CALENDAR_YEAR);
     const k = async (src: RetailSource) => (await this.retailKpis(src, { start, end, compare: "none" })).current.gross;
     return {
       revenueGross: s.groups.reduce((t, g) => t + g.current.gross, 0),

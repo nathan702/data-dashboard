@@ -7,6 +7,7 @@ import type { AccessList, AuthDeps } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { FirestoreFreshness } from "./freshness.js";
 import { FirestorePreferences, MemoryPreferences } from "./preferences.js";
+import { FirestoreSeasonSettings, MemorySeasonSettings } from "./seasons.js";
 import { CloudRunJobTrigger, NoopTrigger } from "./refresh.js";
 import { BigQueryWarehouse } from "./warehouse/bigquery.js";
 import { DemoFreshness, DemoWarehouse } from "./warehouse/demo.js";
@@ -40,6 +41,7 @@ const app = createApi({
     : new BigQueryWarehouse(new BigQuery({ projectId: config.projectId }), config.martsDataset, config.configDataset, config.bqLocation),
   freshness: config.demoData || !firebase ? new DemoFreshness() : new FirestoreFreshness(getFirestore(firebase)),
   preferences: config.demoData || !firebase ? new MemoryPreferences() : new FirestorePreferences(getFirestore(firebase)),
+  seasons: config.demoData || !firebase ? new MemorySeasonSettings() : new FirestoreSeasonSettings(getFirestore(firebase)),
   refresh: config.transformJob && !config.demoData ? new CloudRunJobTrigger(config.transformJob) : new NoopTrigger(),
   corsOrigins: config.corsOrigins,
   cacheTtlSeconds: config.cacheTtlSeconds,

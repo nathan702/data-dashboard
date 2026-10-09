@@ -1,3 +1,4 @@
+import { seasonNameFromStart } from "@dash/shared";
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const usdCompact = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -31,7 +32,8 @@ export function formatDate(iso: string): string {
 
 export function formatPeriod(iso: string, granularity: string): string {
   if (granularity === "month") return monthFmt.format(new Date(`${iso}T00:00:00Z`));
-  if (granularity === "season") return `Season ${Number(iso.slice(0, 4)) + 1}`;
+  // Calendar-year seasons start Jan 1 and read better as a plain year.
+  if (granularity === "season") return iso.endsWith("-01-01") ? iso.slice(0, 4) : `Season ${seasonNameFromStart(iso)}`;
   if (granularity === "week") return `Wk of ${dateFmt.format(new Date(`${iso}T00:00:00Z`)).replace(/, \d{4}$/, "")}`;
   return formatDate(iso);
 }

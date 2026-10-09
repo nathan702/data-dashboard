@@ -87,7 +87,11 @@ export function FilterBar({
   /** Hidden where every date basis is the same (retail is paid at purchase). */
   showBasis?: boolean;
 }) {
-  const presetOptions = Object.fromEntries([...PRESETS.map((p) => [p.id, p.label]), ["custom", "Custom range"]]) as Record<
+  // Calendar-year seasons would just repeat "Year to date", so season choices only show for other rules.
+  const seasonal = filters.seasonRule !== null && filters.seasonRule !== "calendar";
+  const shown = PRESETS.filter((p) => seasonal || !p.id.includes("season") || p.id === filters.preset);
+  const granularityOptions = seasonal ? GRANULARITY_LABEL : { ...GRANULARITY_LABEL, season: "By year" };
+  const presetOptions = Object.fromEntries([...shown.map((p) => [p.id, p.label]), ["custom", "Custom range"]]) as Record<
     Filters["preset"],
     string
   >;
@@ -111,7 +115,7 @@ export function FilterBar({
       )}
       <Select label="Measure" value={filters.measure} options={MEASURE_LABEL} onChange={(measure) => onChange({ measure })} />
       <Select label="Compare to" value={filters.compare} options={COMPARE_LABEL} onChange={(compare) => onChange({ compare })} />
-      <Select label="Chart by" value={filters.granularity} options={GRANULARITY_LABEL} onChange={(granularity) => onChange({ granularity })} />
+      <Select label="Chart by" value={filters.granularity} options={granularityOptions} onChange={(granularity) => onChange({ granularity })} />
     </div>
   );
 }

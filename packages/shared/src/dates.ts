@@ -2,21 +2,9 @@
  * Date helpers. All reporting is in US Eastern time, and dates travel as
  * ISO "YYYY-MM-DD" strings so they never pick up a timezone by accident.
  */
+import type { SeasonCalendar } from "./seasons.js";
+
 export const REPORTING_TIME_ZONE = "America/New_York";
-
-/**
- * A Campminder season named Y runs from the day after camp ends in Y-1
- * through the end of summer Y. The cutover (first day of the new season) is
- * configurable; it defaults to September 1.
- */
-export interface SeasonConfig {
-  /** 1-12 */
-  startMonth: number;
-  /** 1-31 */
-  startDay: number;
-}
-
-export const DEFAULT_SEASON_CONFIG: SeasonConfig = { startMonth: 9, startDay: 1 };
 
 export type IsoDate = string;
 
@@ -65,21 +53,6 @@ export function easternDate(instant: Date = new Date()): IsoDate {
     month: "2-digit",
     day: "2-digit",
   }).format(instant);
-}
-
-export function seasonForDate(date: IsoDate, config: SeasonConfig = DEFAULT_SEASON_CONFIG): number {
-  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-  const onOrAfterCutover = m > config.startMonth || (m === config.startMonth && d >= config.startDay);
-  return onOrAfterCutover ? y + 1 : y;
-}
-
-export function seasonRange(
-  season: number,
-  config: SeasonConfig = DEFAULT_SEASON_CONFIG,
-): { start: IsoDate; end: IsoDate } {
-  const start = formatIsoDate(new Date(Date.UTC(season - 1, config.startMonth - 1, config.startDay)));
-  const nextStart = formatIsoDate(new Date(Date.UTC(season, config.startMonth - 1, config.startDay)));
-  return { start, end: addDays(nextStart, -1) };
 }
 
 export interface DateRange {
@@ -146,11 +119,8 @@ export type DatePreset =
   | "season_to_date"
   | "last_season";
 
-export function presetRange(
-  preset: DatePreset,
-  today: IsoDate = easternDate(),
-  config: SeasonConfig = DEFAULT_SEASON_CONFIG,
-): DateRange {
+/** `seasons` decides "season to date" and "last season" (see seasons.ts). */
+export function presetRange(preset: DatePreset, seasons: SeasonCalendar, today: IsoDate = easternDate()): DateRange {
   switch (preset) {
     case "today":
       return { start: today, end: today };
@@ -167,9 +137,9 @@ export function presetRange(
     case "year_to_date":
       return { start: `${today.slice(0, 4)}-01-01`, end: today };
     case "season_to_date":
-      return { start: seasonRange(seasonForDate(today, config), config).start, end: today };
+      return { start: seasons.range(seasons.seasonFor(today)).start, end: today };
     case "last_season":
-      return seasonRange(seasonForDate(today, config) - 1, config);
+      return seasons.range(seasons.seasonFor(today) - 1);
   }
 }
 

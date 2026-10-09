@@ -1,7 +1,7 @@
 import {
   addDays,
-  seasonRange,
   UNKNOWN_KEY,
+  campminderCalendar,
   type BusinessLineOrUnassigned,
   type EnrollmentBreakdownQuery,
   type EnrollmentBreakdownResponse,
@@ -10,6 +10,7 @@ import {
   type EnrollmentFilters,
   type EnrollmentMapQuery,
   type EnrollmentMapResponse,
+  type SeasonCalendar,
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
   type EnrollmentSummaryResponse,
@@ -80,7 +81,7 @@ function rows(): Row[] {
   if (cache) return cache;
   const out: Row[] = [];
   for (const season of [2025, 2026]) {
-    const start = seasonRange(season).start;
+    const start = campminderCalendar().range(season).start;
     for (const g of GROUPS) {
       const perWeek = Math.round(g.size * (season === 2026 ? 1.06 : 1));
       for (let week = 1; week <= (g.weekly ? 12 : 1); week++) {
@@ -161,8 +162,8 @@ export function demoEnrollmentSeasons(bl: BusinessLineOrUnassigned | undefined):
   return [...m.entries()].sort((a, b) => b[0] - a[0]).map(([season, enrollments]) => ({ season, enrollments }));
 }
 
-export function demoEnrollmentSummary(q: EnrollmentSummaryQuery): EnrollmentSummaryResponse {
-  const { asOf, prevCutoff, seasonStart } = enrollmentAsOf(q.season);
+export function demoEnrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar): EnrollmentSummaryResponse {
+  const { asOf, prevCutoff, seasonStart } = enrollmentAsOf(q.season, seasons);
   const all = scoped(q.businessLine, q.filters);
   const cur = all.filter((r) => r.season === q.season);
   const prev = all.filter((r) => r.season === q.season - 1 && r.applicationDate <= prevCutoff);
@@ -171,7 +172,7 @@ export function demoEnrollmentSummary(q: EnrollmentSummaryQuery): EnrollmentSumm
   const paceRows = new Map<string, { season: number; week_of_season: number; enrollments: number }>();
   for (const r of all) {
     if (r.statusCode !== "EN" || (r.season !== q.season && r.season !== q.season - 1)) continue;
-    const start = seasonRange(r.season).start;
+    const start = seasons.range(r.season).start;
     const wk = Math.min(52, Math.max(0, Math.floor((Date.parse(r.applicationDate) - Date.parse(start)) / (7 * 86_400_000))));
     const k = `${r.season}|${wk}`;
     const e = paceRows.get(k) ?? { season: r.season, week_of_season: wk, enrollments: 0 };

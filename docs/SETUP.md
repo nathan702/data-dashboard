@@ -69,6 +69,16 @@ bash infra/deploy.sh
 
 The app is at `https://calleva-dashboard.web.app`.
 
+## Seasons
+
+Each business line's seasons are set on **Advanced → Settings → Seasons**:
+calendar year, Campminder's season (Labor Day starts the next one), or a
+last day set for each year (Haunted Forest: the last night of the run).
+Numbers are grouped by program or activity date. Campminder's own seasons
+(pace charts, "same point last season") follow Labor Day unless a year is
+listed there with a different first day. Stored in Firestore at
+`config/seasons`.
+
 ## Connecting sources
 
 Credentials are stored in Secret Manager and read by the connectors on every

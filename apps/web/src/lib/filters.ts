@@ -1,8 +1,13 @@
 import { useParams, useSearchParams } from "react-router-dom";
+import { useSeasonSettings } from "./api";
 import {
   BUSINESS_LINE_INFO,
   COMPARISON_MODES,
   isBusinessLine,
+  CALENDAR_YEAR,
+  DEFAULT_SEASON_SETTINGS,
+  lineCalendar,
+  type SeasonRule,
   daysBetweenInclusive,
   GRANULARITIES,
   isIsoDate,
@@ -35,6 +40,8 @@ export interface Filters {
   measure: RevenueMeasure;
   compare: ComparisonMode;
   granularity: Granularity;
+  /** The page's business line season rule; null on pages mixing lines (calendar years). */
+  seasonRule: SeasonRule | null;
 }
 
 function pick<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
@@ -57,13 +64,17 @@ export function useFilters(): [Filters, (patch: Partial<Filters>) => void] {
   const [params, setParams] = useSearchParams();
   // Weekend-driven lines compare Friday with Friday by default.
   const { id } = useParams();
+  // "Season to date" and "Last season" follow this line's seasons (Settings page).
+  const seasonSettings = useSeasonSettings().data ?? DEFAULT_SEASON_SETTINGS;
+  const line = id && isBusinessLine(id) ? id : null;
+  const seasons = line ? lineCalendar(line, seasonSettings) : CALENDAR_YEAR;
   const defaultCompare: ComparisonMode = id && isBusinessLine(id) && BUSINESS_LINE_INFO[id].weekdayComparison ? "previous_year_weekday" : "previous_year";
   const presetParam = params.get("range");
   // A custom range stays custom even while its dates are being edited;
   // missing or invalid dates fall back to the last 30 days.
   const isCustom = presetParam === "custom";
   const preset: Filters["preset"] = isCustom ? "custom" : pick(presetParam, PRESETS.map((p) => p.id), "last_30_days");
-  let range = presetRange(isCustom ? "last_30_days" : (preset as DatePreset));
+  let range = presetRange(isCustom ? "last_30_days" : (preset as DatePreset), seasons);
   if (isCustom) {
     const s = params.get("start");
     const e = params.get("end");
@@ -79,6 +90,7 @@ export function useFilters(): [Filters, (patch: Partial<Filters>) => void] {
     measure: pick(params.get("measure"), REVENUE_MEASURES, "net"),
     compare: pick(params.get("compare"), COMPARISON_MODES, defaultCompare),
     granularity: pick(params.get("by"), GRANULARITIES, autoGranularity(range.start, range.end)),
+    seasonRule: line ? seasons.rule : null,
   };
 
   const update = (patch: Partial<Filters>) => {

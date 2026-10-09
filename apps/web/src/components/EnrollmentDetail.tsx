@@ -7,7 +7,9 @@ import {
   ENROLLMENT_DIMENSIONS,
   encodeEnrollmentFilters,
   enrollmentFiltersSchema,
-  seasonRange,
+  campminderCalendar,
+  DEFAULT_SEASON_SETTINGS,
+  easternDate,
   type BusinessLineOrUnassigned,
   type EnrollmentBreakdownRow,
   type EnrollmentDimension,
@@ -15,7 +17,7 @@ import {
   type EnrollmentKpis,
   type EnrollmentSummaryResponse,
 } from "@dash/shared";
-import { useEnrollmentBreakdown, useEnrollmentMap, useEnrollmentSeasons, useEnrollmentSummary } from "../lib/api";
+import { useEnrollmentBreakdown, useEnrollmentMap, useEnrollmentSeasons, useEnrollmentSummary, useSeasonSettings } from "../lib/api";
 import { ACCENT_VAR } from "../lib/colors";
 import { formatDate, formatInt, formatPercent, percentChange } from "../lib/format";
 import { DataTable, type Column } from "./DataTable";
@@ -408,13 +410,15 @@ function FilterPicker({
 }
 
 function seasonOver(s: EnrollmentSummaryResponse) {
-  return s.asOf >= seasonRange(s.season).end;
+  // asOf stops at the season's last day once it's over.
+  return s.asOf < easternDate();
 }
 
 const monthDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 function PaceChart({ summary }: { summary: EnrollmentSummaryResponse }) {
-  const start = seasonRange(summary.season).start;
+  const settings = useSeasonSettings().data ?? DEFAULT_SEASON_SETTINGS;
+  const start = campminderCalendar(settings.campminderStarts).range(summary.season).start;
   const label = (w: number) => monthDay.format(new Date(`${addDays(start, w * 7)}T00:00:00Z`));
   if (summary.pace.length === 0) return <div className="empty">No application dates yet.</div>;
   const cur = `Season ${summary.season}`;

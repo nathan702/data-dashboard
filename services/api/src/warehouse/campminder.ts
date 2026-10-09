@@ -2,18 +2,22 @@ import {
   addYears,
   easternDate,
   gradeOrder,
-  seasonRange,
   type EnrollmentBreakdownRow,
   type EnrollmentDimension,
   type EnrollmentKpis,
+  type SeasonCalendar,
   type EnrollmentMapResponse,
 } from "@dash/shared";
 
-/** Shared by the BigQuery and demo warehouses so both shape results the same way. */
-export function enrollmentAsOf(season: number, today = easternDate()) {
-  const end = seasonRange(season).end;
+/**
+ * Where a Campminder season stands: today (or its last day, once over), the
+ * same point a year earlier, and where this season and the last one started.
+ * Shared by the BigQuery and demo warehouses so both shape results the same way.
+ */
+export function enrollmentAsOf(season: number, seasons: SeasonCalendar, today = easternDate()) {
+  const { start, end } = seasons.range(season);
   const asOf = today < end ? today : end;
-  return { asOf, prevCutoff: addYears(asOf, -1), seasonStart: seasonRange(season).start };
+  return { asOf, prevCutoff: addYears(asOf, -1), seasonStart: start, prevSeasonStart: seasons.range(season - 1).start };
 }
 
 export function toEnrollmentKpis(r: Partial<Record<string, unknown>> | undefined): EnrollmentKpis {

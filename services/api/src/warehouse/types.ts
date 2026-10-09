@@ -18,13 +18,15 @@ import type {
   RetailSource,
   RevenueQuery,
   RevenueSummaryResponse,
+  SeasonCalendar,
   Source,
   SourceFreshness,
 } from "@dash/shared";
 import type { ReferenceTotals } from "../selfCheck.js";
 
 export interface Warehouse {
-  revenueSummary(q: RevenueQuery): Promise<RevenueSummaryResponse>;
+  /** `seasons` decides "By season" buckets. */
+  revenueSummary(q: RevenueQuery, seasons: SeasonCalendar): Promise<RevenueSummaryResponse>;
   retailKpis(source: RetailSource, q: RetailKpiQuery): Promise<RetailKpiResponse>;
   retailBreakdown(source: RetailSource, q: RetailBreakdownQuery): Promise<RetailBreakdownResponse>;
   shopifyInventory(): Promise<InventoryResponse>;
@@ -32,7 +34,8 @@ export interface Warehouse {
   assignments(): Promise<{ rows: AssignmentRow[]; pendingRefresh: boolean }>;
   saveAssignments(changes: AssignmentUpdate["changes"], by: string): Promise<void>;
   enrollmentSeasons(businessLine: BusinessLineOrUnassigned | undefined): Promise<EnrollmentSeason[]>;
-  enrollmentSummary(q: EnrollmentSummaryQuery): Promise<EnrollmentSummaryResponse>;
+  /** `seasons` is Campminder's calendar (where each season starts, for pace and comparisons). */
+  enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar): Promise<EnrollmentSummaryResponse>;
   enrollmentMap(q: EnrollmentMapQuery): Promise<EnrollmentMapResponse>;
   enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse>;
   /** Plain totals straight from the tables, for the deploy self-check. */
@@ -48,7 +51,6 @@ export interface DailyRevenueRow {
   businessLine: BusinessLineOrUnassigned;
   source: Source;
   date: IsoDate;
-  seasonStart: IsoDate;
   gross: number;
   discounts: number;
   refunds: number;

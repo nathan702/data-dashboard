@@ -21,25 +21,32 @@ export const DIMENSION_SQL: Record<RetailDimension, { key: string; detail: strin
 export function kpiSql(dataset: string) {
   return `
     WITH orders AS (
+      -- A day can be in both periods when they overlap (long ranges), so tag it per period.
       SELECT
-        IF(sale_date BETWEEN @start AND @end, 'current', 'comparison') AS period,
+        period,
         COUNT(DISTINCT order_id) AS orders,
         SUM(units) AS units, SUM(gross) AS gross, SUM(discounts) AS discounts,
         SUM(tax) AS tax, SUM(tips) AS tips, SUM(fees) AS fees,
         COUNT(DISTINCT customer_hash) AS customers
-      FROM \`${dataset}.fct_retail_orders\`
+      FROM \`${dataset}.fct_retail_orders\`,
+        UNNEST(ARRAY_CONCAT(
+          IF(sale_date BETWEEN @start AND @end, ['current'], []),
+          IF(@has_cmp AND sale_date BETWEEN @cmp_start AND @cmp_end, ['comparison'], [])
+        )) AS period
       WHERE source = @source AND (@business_line IS NULL OR business_line = @business_line)
-        AND (sale_date BETWEEN @start AND @end OR (@has_cmp AND sale_date BETWEEN @cmp_start AND @cmp_end))
       GROUP BY 1
     ),
     refunds AS (
       -- Refunds are counted on the day they happen, as in the revenue view.
       SELECT
-        IF(revenue_date BETWEEN @start AND @end, 'current', 'comparison') AS period,
+        period,
         SUM(refunds) AS refunds
-      FROM \`${dataset}.fct_revenue_daily\`
+      FROM \`${dataset}.fct_revenue_daily\`,
+        UNNEST(ARRAY_CONCAT(
+          IF(revenue_date BETWEEN @start AND @end, ['current'], []),
+          IF(@has_cmp AND revenue_date BETWEEN @cmp_start AND @cmp_end, ['comparison'], [])
+        )) AS period
       WHERE source = @source AND (@business_line IS NULL OR business_line = @business_line) AND date_basis = 'booked'
-        AND (revenue_date BETWEEN @start AND @end OR (@has_cmp AND revenue_date BETWEEN @cmp_start AND @cmp_end))
       GROUP BY 1
     )
     SELECT

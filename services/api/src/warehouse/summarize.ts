@@ -3,9 +3,8 @@ import {
   BUSINESS_LINES_WITH_UNASSIGNED,
   SOURCES,
   comparisonRange,
-  seasonForDate,
-  seasonRange,
   type Granularity,
+  type SeasonCalendar,
   type RevenueMeasure,
   type RevenueQuery,
   type RevenueSummaryResponse,
@@ -31,14 +30,14 @@ export function measureValue(t: RevenueTotals, m: RevenueMeasure): number {
   return m === "gross" ? t.gross : m === "net" ? t.net : t.netAfterFees;
 }
 
-export function periodBucket(date: string, seasonStart: string, g: Granularity): string {
+export function periodBucket(date: string, g: Granularity, seasons: SeasonCalendar): string {
   switch (g) {
     case "day":
       return date;
     case "month":
       return `${date.slice(0, 7)}-01`;
     case "season":
-      return seasonStart;
+      return seasons.range(seasons.seasonFor(date)).start;
     case "week": {
       const d = new Date(`${date}T00:00:00Z`);
       const offset = (d.getUTCDay() + 6) % 7; // Monday-start weeks, like BigQuery WEEK(MONDAY)
@@ -78,7 +77,7 @@ function rowMatches(r: DailyRevenueRow, q: RevenueQuery): boolean {
  * Aggregate daily rows the same way the BigQuery SQL does. Used by the demo
  * warehouse, and as the reference the SQL is tested against.
  */
-export function summarizeRows(rows: DailyRevenueRow[], q: RevenueQuery): RevenueSummaryResponse {
+export function summarizeRows(rows: DailyRevenueRow[], q: RevenueQuery, seasons: SeasonCalendar): RevenueSummaryResponse {
   const keys = groupKeys(q);
   const keyOf = (r: DailyRevenueRow) => (q.groupBy === "source" ? r.source : r.businessLine);
   const cmp = comparisonRange({ start: q.start, end: q.end }, q.compare);
@@ -93,14 +92,16 @@ export function summarizeRows(rows: DailyRevenueRow[], q: RevenueQuery): Revenue
     if (!current.has(key)) continue;
     if (r.date >= q.start && r.date <= q.end) {
       addRow(current.get(key)!, r);
-      const sk = `${periodBucket(r.date, r.seasonStart, q.granularity)}|${key}`;
+      const sk = `${periodBucket(r.date, q.granularity, seasons)}|${key}`;
       const t = series.get(sk) ?? emptyTotals();
       addRow(t, r);
       series.set(sk, t);
-    } else if (cmp && r.date >= cmp.start && r.date <= cmp.end) {
+    }
+    // Not "else": with long ranges the comparison overlaps the current period.
+    if (cmp && r.date >= cmp.start && r.date <= cmp.end) {
       addRow(comparison.get(key)!, r);
       const aligned = alignToCurrent(r.date, { start: q.start, end: q.end }, q.compare);
-      const sk = `${periodBucket(aligned, seasonRange(seasonForDate(aligned)).start, q.granularity)}|${key}`;
+      const sk = `${periodBucket(aligned, q.granularity, seasons)}|${key}`;
       const t = cmpSeries.get(sk) ?? emptyTotals();
       addRow(t, r);
       cmpSeries.set(sk, t);

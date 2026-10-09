@@ -86,7 +86,8 @@ export function paceSql(t: string) {
   return `
     SELECT
       season,
-      LEAST(DIV(DATE_DIFF(GREATEST(application_date, season_start_date), season_start_date, DAY), 7), 52) AS week_of_season,
+      -- Weeks since the season started (@cur_start / @prev_start: Campminder's calendar).
+      LEAST(DIV(DATE_DIFF(GREATEST(application_date, IF(season = @season, @cur_start, @prev_start)), IF(season = @season, @cur_start, @prev_start), DAY), 7), 52) AS week_of_season,
       COUNT(*) AS enrollments
     FROM ${t}
     WHERE ${FILTER} AND ${DRILL} AND season IN (@season, @season - 1) AND status_code = 'EN' AND application_date IS NOT NULL

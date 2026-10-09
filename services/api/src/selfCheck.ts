@@ -1,4 +1,4 @@
-import { addDays, easternDate, RETAIL_SOURCES, type RetailSource } from "@dash/shared";
+import { addDays, CALENDAR_YEAR, campminderCalendar, easternDate, RETAIL_SOURCES, type RetailSource } from "@dash/shared";
 import type { Warehouse } from "./warehouse/types.js";
 
 /**
@@ -52,7 +52,7 @@ export async function runSelfCheck(
   const base = { start, end, basis: "booked" as const, measure: "gross" as const, granularity: "week" as const, compare: "none" as const };
   for (const groupBy of ["business_line", "source"] as const) {
     await check(`revenue summary by ${groupBy} matches tables`, async () => {
-      const r = await warehouse.revenueSummary({ ...base, groupBy });
+      const r = await warehouse.revenueSummary({ ...base, groupBy }, CALENDAR_YEAR);
       const total = sum(r.groups.map((g) => g.current.gross));
       const seriesTotal = sum(r.series.map((p) => p.value));
       if (!ref) return "no reference";
@@ -81,7 +81,7 @@ export async function runSelfCheck(
     const e = (ref as ReferenceTotals).enrollments;
     if (!e) return null; // nothing synced yet
     const [summary, breakdown] = await Promise.all([
-      warehouse.enrollmentSummary({ season: e.season, filters: {} }),
+      warehouse.enrollmentSummary({ season: e.season, filters: {} }, campminderCalendar()),
       warehouse.enrollmentBreakdown({ season: e.season, dimension: "session_group", filters: {} }),
     ]);
     if (summary.current.enrollments !== e.count) return "summary differs from table count";

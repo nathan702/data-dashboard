@@ -5,6 +5,8 @@ import { decideAccess, type AuthDeps } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { MemoryPreferences } from "./preferences.js";
 import { NoopTrigger } from "./refresh.js";
+import { MemorySeasonSettings } from "./seasons.js";
+import { CALENDAR_YEAR, campminderCalendar, DEFAULT_SEASON_SETTINGS } from "@dash/shared";
 import { DEMO_STREAMS, DemoFreshness, DemoWarehouse, demoRow } from "./warehouse/demo.js";
 import { periodBucket, summarizeRows } from "./warehouse/summarize.js";
 
@@ -55,6 +57,7 @@ function api(auth: AuthDeps | null = null, refresh = new NoopTrigger()) {
     warehouse: new DemoWarehouse(),
     freshness: new DemoFreshness(),
     preferences: new MemoryPreferences(),
+    seasons: new MemorySeasonSettings(),
     refresh,
     corsOrigins: ["https://dash.web.app"],
     cacheTtlSeconds: 60,
@@ -114,18 +117,19 @@ describe("api", () => {
 
 describe("aggregation", () => {
   it("buckets weeks starting Monday and computes net measures", () => {
-    expect(periodBucket("2026-09-23", "2025-09-01", "week")).toBe("2026-09-21");
-    expect(periodBucket("2026-09-21", "2025-09-01", "week")).toBe("2026-09-21");
-    expect(periodBucket("2026-09-20", "2025-09-01", "week")).toBe("2026-09-14");
+    expect(periodBucket("2026-09-23", "week", CALENDAR_YEAR)).toBe("2026-09-21");
+    expect(periodBucket("2026-09-21", "week", CALENDAR_YEAR)).toBe("2026-09-21");
+    expect(periodBucket("2026-09-20", "week", CALENDAR_YEAR)).toBe("2026-09-14");
+    expect(periodBucket("2026-09-20", "season", campminderCalendar())).toBe("2026-09-07");
     const base = { businessLine: "farm_store" as const, source: "square" as const };
     const rows = [
-      { ...base, date: "2026-01-01", seasonStart: "2025-09-01", gross: 100, discounts: 10, refunds: 5, fees: 3, transactions: 2 },
-      { ...base, date: "2025-01-01", seasonStart: "2024-09-01", gross: 50, discounts: 0, refunds: 0, fees: 1, transactions: 1 },
+      { ...base, date: "2026-01-01", gross: 100, discounts: 10, refunds: 5, fees: 3, transactions: 2 },
+      { ...base, date: "2025-01-01", gross: 50, discounts: 0, refunds: 0, fees: 1, transactions: 1 },
     ];
     const s = summarizeRows(rows, {
       start: "2026-01-01", end: "2026-01-01", basis: "booked", measure: "net_after_fees", granularity: "day",
       compare: "previous_year", groupBy: "business_line", businessLines: ["farm_store"],
-    });
+    }, CALENDAR_YEAR);
     expect(s.groups[0]!.current).toMatchObject({ gross: 100, net: 85, netAfterFees: 82, transactions: 2 });
     expect(s.groups[0]!.comparison).toMatchObject({ gross: 50, netAfterFees: 49 });
     expect(s.series).toEqual([{ period: "2026-01-01", key: "farm_store", value: 82 }]);
@@ -200,15 +204,63 @@ describe("retail SQL", () => {
   });
 });
 
+describe("overlapping comparison", () => {
+  it("counts days in both periods when a long range overlaps last year", () => {
+    const row = (date: string, gross: number) => ({ businessLine: "farm_store" as const, source: "square" as const, date, gross, discounts: 0, refunds: 0, fees: 0, transactions: 1 });
+    // Two years against the two years before (shifted one year): 2025 is in both.
+    const s = summarizeRows([row("2024-06-01", 10), row("2025-06-01", 20), row("2026-06-01", 40)], {
+      start: "2025-01-01", end: "2026-12-31", basis: "booked", measure: "gross", granularity: "season",
+      compare: "previous_year", groupBy: "business_line", businessLines: ["farm_store"],
+    }, CALENDAR_YEAR);
+    expect(s.groups[0]!.current.gross).toBe(60);
+    expect(s.groups[0]!.comparison!.gross).toBe(30);
+  });
+
+  it("tags SQL rows per period instead of choosing one", async () => {
+    const { kpiSql } = await import("./warehouse/retailSql.js");
+    expect(kpiSql("marts")).toContain("ARRAY_CONCAT");
+    expect(kpiSql("marts")).not.toContain("@end, 'current', 'comparison')");
+  });
+});
+
 describe("comparison series", () => {
   it("puts last year's values on this year's buckets", () => {
-    const row = (date: string, gross: number) => ({ businessLine: "farm_store" as const, source: "square" as const, date, seasonStart: "2025-09-01", gross, discounts: 0, refunds: 0, fees: 0, transactions: 1 });
+    const row = (date: string, gross: number) => ({ businessLine: "farm_store" as const, source: "square" as const, date, gross, discounts: 0, refunds: 0, fees: 0, transactions: 1 });
     const s = summarizeRows([row("2026-06-02", 100), row("2025-06-02", 60), row("2025-06-03", 40)], {
       start: "2026-06-01", end: "2026-06-07", basis: "booked", measure: "gross", granularity: "week",
       compare: "previous_year", groupBy: "business_line", businessLines: ["farm_store"],
-    });
+    }, CALENDAR_YEAR);
     expect(s.series).toEqual([{ period: "2026-06-01", key: "farm_store", value: 100 }]);
     expect(s.comparisonSeries).toEqual([{ period: "2026-06-01", key: "farm_store", value: 100 }]);
+  });
+});
+
+describe("season settings", () => {
+  const admin = (admins: string[]): AuthDeps => ({
+    allowedDomains: ["calleva.org"],
+    loadAccessList: async () => ({ allowedEmails: [], admins }),
+    verifyIdToken: async () => org,
+  });
+
+  it("starts from the agreed rules and only lets admins change them", async () => {
+    const res = await request(api()).get("/api/settings/seasons").expect(200);
+    expect(res.body).toEqual(DEFAULT_SEASON_SETTINGS);
+    const next = { ...DEFAULT_SEASON_SETTINGS, endDates: { haunted_forest: { "2026": "2026-11-08", "2027": "2027-11-06" } } };
+    await request(api(admin(["boss@calleva.org"]))).put("/api/settings/seasons").set("Authorization", "Bearer t").send(next).expect(403);
+    const app = api();
+    await request(app).put("/api/settings/seasons").send({ ...next, rules: { ...next.rules, camp: "weekly" } }).expect(400);
+    await request(app).put("/api/settings/seasons").send(next).expect(200);
+    expect((await request(app).get("/api/settings/seasons")).body.endDates.haunted_forest["2027"]).toBe("2027-11-06");
+  });
+
+  it("buckets a line's revenue by its own seasons", async () => {
+    const q = (line: string) =>
+      `/api/revenue/summary?start=2025-10-01&end=2026-12-31&basis=service&measure=gross&granularity=season&compare=none&groupBy=business_line&businessLines=${line}`;
+    const hf = await request(api()).get(q("haunted_forest")).expect(200);
+    // Haunted Forest's 2026 season ended Nov 8; Nov 9 starts 2027.
+    expect([...new Set(hf.body.series.map((p: { period: string }) => p.period))].sort()).toEqual(["2024-11-09", "2025-11-09", "2026-11-09"]);
+    const rs = await request(api()).get(q("river_school")).expect(200);
+    expect([...new Set(rs.body.series.map((p: { period: string }) => p.period))].sort()).toEqual(["2025-01-01", "2026-01-01"]);
   });
 });
 
@@ -270,11 +322,35 @@ describe("revenue SQL", () => {
     await new BigQueryWarehouse(fake as never, "marts").revenueSummary({
       start: "2026-08-01", end: "2026-08-31", basis: "booked", measure: "net", granularity: "day",
       compare: "none", groupBy: "business_line", businessLines: ["farm_store"],
-    });
+    }, CALENDAR_YEAR);
     for (const q of queries) {
       expect(q).toContain("COALESCE(ARRAY_LENGTH(@sources), 0) = 0");
       expect(q).toContain("COALESCE(ARRAY_LENGTH(@business_lines), 0) = 0");
     }
+  });
+
+  it("buckets seasons from the line's season starts, passed as DATEs", async () => {
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
+    const fake = { query: async (o: never) => (calls.push(o), [[]]) };
+    await new BigQueryWarehouse(fake as never, "marts").revenueSummary({
+      start: "2026-01-01", end: "2026-10-31", basis: "service", measure: "net", granularity: "season",
+      compare: "previous_year", groupBy: "business_line", businessLines: ["school_year"],
+    }, campminderCalendar());
+    const series = calls.find((c) => c.query.includes("UNNEST(@season_starts)"))!;
+    expect(series.params.season_starts).toEqual(["2024-09-02", "2025-09-01", "2026-09-07"]);
+    expect(series.types.season_starts).toEqual(["DATE"]);
+  });
+
+  it("starts Campminder pace on each season's first day, passed as DATEs", async () => {
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
+    const fake = { query: async (o: never) => (calls.push(o), [[]]) };
+    await new BigQueryWarehouse(fake as never, "marts").enrollmentSummary({ season: 2026, filters: {} }, campminderCalendar());
+    const pace = calls.find((c) => c.query.includes("week_of_season"))!;
+    expect(pace.params).toMatchObject({ cur_start: "2025-09-01", prev_start: "2024-09-02" });
+    expect(pace.types).toMatchObject({ cur_start: "DATE", prev_start: "DATE" });
+    expect(calls.find((c) => c.query.includes("@prev_cutoff"))!.types).toMatchObject({ prev_cutoff: "DATE" });
   });
 });
 

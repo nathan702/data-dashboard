@@ -20,6 +20,7 @@ import type {
   RetailSource,
   RevenueQuery,
   RevenueSummaryResponse,
+  SeasonSettings,
   SourceFreshness,
 } from "@dash/shared";
 import { useAuth } from "./auth";
@@ -73,6 +74,18 @@ function useApiMutation<TBody, TResult>(path: string, invalidate: unknown[][]) {
     mutationFn: async (body: TBody) => call<TResult>(path, await getToken(), { method: "PUT", body }),
     onSuccess: () => Promise.all(invalidate.map((key) => qc.invalidateQueries({ queryKey: key }))),
   });
+}
+
+export function useSeasonSettings() {
+  return useApi<SeasonSettings>(["season-settings"], "/api/settings/seasons", { refetchInterval: 10 * 60_000 });
+}
+
+export function useSaveSeasonSettings() {
+  return useApiMutation<SeasonSettings, SeasonSettings>("/api/settings/seasons", [
+    ["season-settings"],
+    ["revenue"],
+    ["enrollment-summary"],
+  ]);
 }
 
 export function useMe() {

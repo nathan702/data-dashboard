@@ -2,6 +2,12 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { LRUCache } from "lru-cache";
 import {
   assignmentUpdateSchema,
+  CALENDAR_YEAR,
+  campminderCalendar,
+  isBusinessLine,
+  lineCalendar,
+  seasonSettingsSchema,
+  type SeasonSettings,
   enrollmentBreakdownQuerySchema,
   enrollmentMapQuerySchema,
   enrollmentSeasonsQuerySchema,
@@ -23,6 +29,7 @@ import {
 import { requireAdmin, requireViewer, type AuthDeps } from "./auth.js";
 import { runSelfCheck } from "./selfCheck.js";
 import type { PreferencesStore } from "./preferences.js";
+import type { SeasonSettingsStore } from "./seasons.js";
 import type { RefreshTrigger } from "./refresh.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
 
@@ -32,6 +39,7 @@ export interface ApiOptions {
   warehouse: Warehouse;
   freshness: FreshnessSource;
   preferences: PreferencesStore;
+  seasons: SeasonSettingsStore;
   refresh: RefreshTrigger;
   corsOrigins: string[];
   cacheTtlSeconds: number;
@@ -127,7 +135,13 @@ export function createApi(opts: ApiOptions) {
       res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
       return;
     }
-    res.json(await cached(`revenue:${JSON.stringify(parsed.data)}`, () => opts.warehouse.revenueSummary(parsed.data)));
+    // "By season" uses the line's own seasons when the view is one business line; calendar years otherwise.
+    const settings = await opts.seasons.get();
+    const only = parsed.data.businessLines?.length === 1 ? parsed.data.businessLines[0]! : null;
+    const seasons = only && isBusinessLine(only) ? lineCalendar(only, settings) : CALENDAR_YEAR;
+    res.json(
+      await cached(`revenue:${JSON.stringify(parsed.data)}:${JSON.stringify(settings)}`, () => opts.warehouse.revenueSummary(parsed.data, seasons)),
+    );
   });
 
   api.get("/retail/:source/kpis", async (req, res) => {
@@ -175,9 +189,26 @@ export function createApi(opts: ApiOptions) {
   enrollmentRoute("/campminder/seasons", (q) => enrollmentSeasonsQuerySchema.safeParse(q), (d: { businessLine?: BusinessLineOrUnassigned }) =>
     opts.warehouse.enrollmentSeasons(d.businessLine).then((seasons) => ({ seasons })),
   );
-  enrollmentRoute("/campminder/summary", (q) => enrollmentSummaryQuerySchema.safeParse(q), (d: EnrollmentSummaryQuery) => opts.warehouse.enrollmentSummary(d));
+  enrollmentRoute("/campminder/summary", (q) => enrollmentSummaryQuerySchema.safeParse(q), (d: EnrollmentSummaryQuery) =>
+    opts.seasons.get().then((s) => opts.warehouse.enrollmentSummary(d, campminderCalendar(s.campminderStarts))),
+  );
   enrollmentRoute("/campminder/map", (q) => enrollmentMapQuerySchema.safeParse(q), (d: EnrollmentMapQuery) => opts.warehouse.enrollmentMap(d));
   enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), (d: EnrollmentBreakdownQuery) => opts.warehouse.enrollmentBreakdown(d));
+
+  api.get("/settings/seasons", async (_req, res) => {
+    res.json(await opts.seasons.get());
+  });
+
+  api.put("/settings/seasons", requireAdmin, async (req, res) => {
+    const parsed = seasonSettingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid season settings", issues: parsed.error.issues });
+      return;
+    }
+    await opts.seasons.set(parsed.data as SeasonSettings, req.viewer!.email);
+    cache.clear();
+    res.json(parsed.data);
+  });
 
   api.get("/assignments", async (req, res) => {
     const { rows, pendingRefresh } = await opts.warehouse.assignments();

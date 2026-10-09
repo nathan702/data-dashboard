@@ -2,7 +2,7 @@ import { BigQuery } from "@google-cloud/bigquery";
 import {
   comparisonRange,
   comparisonShiftDays,
-  DEFAULT_SEASON_CONFIG,
+  seasonStarts,
   type AssignmentRow,
   type AssignmentUpdate,
   type BusinessLineOrUnassigned,
@@ -10,6 +10,7 @@ import {
   type EnrollmentFilters,
   type EnrollmentMapQuery,
   type EnrollmentMapResponse,
+  type SeasonCalendar,
   type EnrollmentBreakdownResponse,
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
@@ -35,7 +36,6 @@ import type { Warehouse } from "./types.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
 // comes from the request is passed as a query parameter.
-const { startMonth: SM, startDay: SD } = DEFAULT_SEASON_CONFIG;
 
 /** Bucket start date for a DATE expression. `d` is always a fixed SQL fragment. */
 function bucketSql(g: Granularity, d: string): string {
@@ -47,8 +47,8 @@ function bucketSql(g: Granularity, d: string): string {
     case "month":
       return `DATE_TRUNC(${d}, MONTH)`;
     case "season":
-      // First day of the Campminder season containing d (same rule as dim_date).
-      return `DATE(IF(${d} >= DATE(EXTRACT(YEAR FROM ${d}), ${SM}, ${SD}), EXTRACT(YEAR FROM ${d}), EXTRACT(YEAR FROM ${d}) - 1), ${SM}, ${SD})`;
+      // First day of the season containing d; @season_starts comes from the line's season settings.
+      return `(SELECT MAX(s) FROM UNNEST(@season_starts) AS s WHERE s <= ${d})`;
   }
 }
 
@@ -76,7 +76,7 @@ export class BigQueryWarehouse implements Warehouse {
     this.table = `\`${martsDataset}.fct_revenue_daily\``;
   }
 
-  async revenueSummary(q: RevenueQuery): Promise<RevenueSummaryResponse> {
+  async revenueSummary(q: RevenueQuery, seasons: SeasonCalendar): Promise<RevenueSummaryResponse> {
     const cmp = comparisonRange({ start: q.start, end: q.end }, q.compare);
     const group = GROUP_COLUMN[q.groupBy];
     const params = {
@@ -89,8 +89,9 @@ export class BigQueryWarehouse implements Warehouse {
       cmp_start: cmp?.start ?? q.start,
       cmp_end: cmp?.end ?? q.end,
       shift_days: comparisonShiftDays({ start: q.start, end: q.end }, q.compare) ?? 0,
+      season_starts: seasonStarts(seasons, cmp && cmp.start < q.start ? cmp.start : q.start, q.end),
     };
-    const types = { business_lines: ["STRING"], sources: ["STRING"] };
+    const types = { business_lines: ["STRING"], sources: ["STRING"], season_starts: ["DATE"] };
     // The client sends an empty array parameter as NULL, and ARRAY_LENGTH(NULL)
     // is NULL, so "no filter" must be spelled with COALESCE or every row drops.
     const filters = `
@@ -101,16 +102,20 @@ export class BigQueryWarehouse implements Warehouse {
     const aligned =
       q.compare === "previous_year" ? "DATE_ADD(revenue_date, INTERVAL 1 YEAR)" : "DATE_ADD(revenue_date, INTERVAL @shift_days DAY)";
 
+    // The two periods can overlap (e.g. two years against the year before), so a
+    // day may count in both: tag rows per period rather than choosing one.
     const totalsSql = `
       SELECT
         ${group} AS grp,
-        IF(revenue_date BETWEEN @start AND @end, 'current', 'comparison') AS period,
+        period,
         SUM(gross) AS gross, SUM(discounts) AS discounts, SUM(refunds) AS refunds,
         SUM(fees) AS fees, SUM(transactions) AS transactions
-      FROM ${this.table}
+      FROM ${this.table},
+        UNNEST(ARRAY_CONCAT(
+          IF(revenue_date BETWEEN @start AND @end, ['current'], []),
+          IF(@has_cmp AND revenue_date BETWEEN @cmp_start AND @cmp_end, ['comparison'], [])
+        )) AS period
       WHERE ${filters}
-        AND (revenue_date BETWEEN @start AND @end
-             OR (@has_cmp AND revenue_date BETWEEN @cmp_start AND @cmp_end))
       GROUP BY 1, 2`;
 
     const seriesSql = (dateExpr: string, from: string, to: string) => `
@@ -271,11 +276,13 @@ export class BigQueryWarehouse implements Warehouse {
     filters?: EnrollmentFilters,
   ) {
     const drill = drillParams(filters);
+    // Dates travel as strings; say they're DATEs so date functions accept them.
+    const dates = Object.fromEntries(["prev_cutoff", "cur_start", "prev_start"].filter((k) => k in params).map((k) => [k, "DATE"]));
     return this.bq
       .query({
         query,
         params: { ...params, ...drill.params, business_line: businessLine ?? null },
-        types: { ...drill.types, business_line: "STRING" },
+        types: { ...drill.types, ...dates, business_line: "STRING" },
         location: this.location,
       })
       .then(([rows]) => rows as T[]);
@@ -286,15 +293,15 @@ export class BigQueryWarehouse implements Warehouse {
     return rows.map((r) => ({ season: Number(r.season), enrollments: Number(r.enrollments) }));
   }
 
-  async enrollmentSummary(q: EnrollmentSummaryQuery): Promise<EnrollmentSummaryResponse> {
-    const { asOf, prevCutoff, seasonStart } = enrollmentAsOf(q.season);
+  async enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar): Promise<EnrollmentSummaryResponse> {
+    const { asOf, prevCutoff, seasonStart, prevSeasonStart } = enrollmentAsOf(q.season, seasons);
     const params = { season: q.season, prev_cutoff: prevCutoff };
     const [kpis, weeks, pace] = await Promise.all([
       this.enrollmentQuery<Record<string, unknown>>(enrollmentKpiSql(this.enrollments), params, q.businessLine, q.filters),
       this.enrollmentQuery<{ week: number; enrollments: number }>(byWeekSql(this.enrollments), { season: q.season }, q.businessLine, q.filters),
       this.enrollmentQuery<{ season: number; week_of_season: number; enrollments: number }>(
         paceSql(this.enrollments),
-        { season: q.season },
+        { season: q.season, cur_start: seasonStart, prev_start: prevSeasonStart },
         q.businessLine,
         q.filters,
       ),

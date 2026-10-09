@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { seasonForDate } from "@dash/shared";
+import { campminderCalendar } from "@dash/shared";
 import { pseudonymize } from "../core/privacy.js";
 import { addressKey, homeAddress, zip5, type GeoResult } from "./geocode.js";
 
@@ -129,10 +129,13 @@ const clean = (v: string | undefined) => {
  * (summer camp dominates, so a few fall programs listed in the same report
  * don't move it), else the one most applications fall in.
  */
+/** Campminder's seasons (Labor Day starts the next); a vote, so per-year overrides don't matter here. */
+const CAMPMINDER_SEASONS = campminderCalendar();
+
 export function reportSeason(rows: Array<Record<string, string>>): number | null {
   const votes = new Map<number, number>();
   const vote = (date: string) => {
-    const s = seasonForDate(date);
+    const s = CAMPMINDER_SEASONS.seasonFor(date);
     votes.set(s, (votes.get(s) ?? 0) + 1);
   };
   for (const r of rows) {

@@ -8,8 +8,7 @@ config {
 
 SELECT
   COALESCE(a.business_line, 'unassigned') AS business_line,
-  s.* EXCEPT (record_id),
-  DATE(s.season - 1, ${dataform.projectConfig.vars.season_start_month}, ${dataform.projectConfig.vars.season_start_day}) AS season_start_date
+  s.* EXCEPT (record_id)
 FROM ${ref("stg_campminder_sessions")} AS s
 LEFT JOIN ${ref("business_line_assignments")} AS a
   ON a.source = 'campminder' AND a.assign_key = s.session_group

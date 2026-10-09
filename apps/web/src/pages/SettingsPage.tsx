@@ -10,6 +10,7 @@ import {
   type BusinessLineOrUnassigned,
 } from "@dash/shared";
 import { DataTable, type Column } from "../components/DataTable";
+import { SeasonSettingsCard } from "../components/SeasonSettings";
 import { useAssignments, useMe, useSaveAssignments } from "../lib/api";
 import { formatDate, formatInt, formatUsd } from "../lib/format";
 
@@ -101,7 +102,7 @@ export function SettingsPage() {
     <div className="page">
       <header className="page-header">
         <h1>Settings</h1>
-        <p className="freshness-note">Which business line each location, store, session or pipeline counts toward.</p>
+        <p className="freshness-note">Which business line each location, store, session or pipeline counts toward, and how each line's seasons run.</p>
       </header>
       {me.data?.adminsUnconfigured && (
         <div className="notice">
@@ -143,6 +144,7 @@ export function SettingsPage() {
           }
         />
       )}
+      <SeasonSettingsCard canEdit={me.data?.isAdmin ?? false} />
       <p className="phase-note">
         FareHarbor dashboards and HubSpot pipelines appear here as each platform is connected. Anything new starts as
         “Unassigned” until it's set here.
