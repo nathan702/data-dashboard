@@ -86,7 +86,8 @@ export function useFilters(): [Filters, (patch: Partial<Filters>) => void] {
   const filters: Filters = {
     preset,
     ...range,
-    basis: pick(params.get("basis"), REVENUE_BASES, "booked"),
+    // Program or service date by default, so seasons and comparisons follow when things happen.
+    basis: pick(params.get("basis"), REVENUE_BASES, "service"),
     measure: pick(params.get("measure"), REVENUE_MEASURES, "net"),
     compare: pick(params.get("compare"), COMPARISON_MODES, defaultCompare),
     granularity: pick(params.get("by"), GRANULARITIES, autoGranularity(range.start, range.end)),

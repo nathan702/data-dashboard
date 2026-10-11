@@ -32,7 +32,7 @@ export const revenueQuerySchema = z
   .object({
     start: isoDate,
     end: isoDate,
-    basis: z.enum(REVENUE_BASES).default("booked"),
+    basis: z.enum(REVENUE_BASES).default("service"),
     measure: z.enum(REVENUE_MEASURES).default("net"),
     granularity: z.enum(GRANULARITIES).default("day"),
     compare: z.enum(COMPARISON_MODES).default("previous_year"),

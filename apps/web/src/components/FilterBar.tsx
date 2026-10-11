@@ -4,9 +4,9 @@ import { PRESETS, type Filters } from "../lib/filters";
 import { formatDate } from "../lib/format";
 
 const BASIS_LABEL: Record<RevenueBasis, string> = {
+  service: "Program / service date",
   booked: "Date booked",
   collected: "Date paid",
-  service: "Activity / session date",
 };
 const MEASURE_LABEL: Record<RevenueMeasure, string> = {
   gross: "Gross",

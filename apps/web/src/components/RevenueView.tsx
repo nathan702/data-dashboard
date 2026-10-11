@@ -69,7 +69,8 @@ export function RevenueView({
   const query = {
     start: filters.start,
     end: filters.end,
-    basis: showBasis ? filters.basis : ("booked" as const),
+    // Retail is paid at the time of sale, so all date bases match.
+    basis: showBasis ? filters.basis : ("service" as const),
     measure: filters.measure,
     granularity: filters.granularity,
     compare: filters.compare,
