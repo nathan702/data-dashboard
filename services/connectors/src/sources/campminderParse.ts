@@ -104,7 +104,16 @@ export function parseSessionPrograms(v: string, sessionNames: string[]): Map<str
   const out = new Map<string, string>();
   hits.forEach((h, i) => {
     const from = h.at + h.name.length + 1;
-    const to = i + 1 < hits.length ? hits[i + 1]!.at : v.length;
+    let to = i + 1 < hits.length ? hits[i + 1]!.at : v.length;
+    // Sessions without a program are listed bare ("…/Sampler, Winter Group Lessons and Holiday
+    // Horse Show"): stop at the first other session name that follows a separator.
+    for (const name of sessionNames) {
+      if (name === h.name) continue;
+      for (const sep of [", ", " and "]) {
+        const at = v.indexOf(`${sep}${name}`, from);
+        if (at >= 0 && at < to) to = at;
+      }
+    }
     const program = v.slice(from, to).replace(/(\s*,\s*|\s+and\s+)$/, "").trim();
     if (program) out.set(h.name, program);
   });

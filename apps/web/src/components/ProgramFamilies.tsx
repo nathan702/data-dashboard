@@ -15,6 +15,7 @@ export function ProgramFamiliesCard({ canEdit }: { canEdit: boolean }) {
   const save = useSaveProgramFamilies();
   const [edits, setEdits] = useState<Record<string, Edit | null>>({});
   const [saved, setSaved] = useState(false);
+  const [query, setQuery] = useState("");
   if (error) return <div className="error-banner">Couldn't load program families: {error.message}</div>;
   if (!data) return null;
 
@@ -29,6 +30,12 @@ export function ProgramFamiliesCard({ canEdit }: { canEdit: boolean }) {
     return { family: row.family, branch: row.branch ?? "" };
   };
   const changed = Object.keys(edits).length > 0;
+  // Each family's programs together (A–Z by family, then program); search matches program or family.
+  const q = query.trim().toLowerCase();
+  const shown = data.programs
+    .filter((p) => !q || p.program.toLowerCase().includes(q) || current(p.program).family.toLowerCase().includes(q))
+    // Sorted by the saved family, so a row doesn't jump while its family is being typed.
+    .sort((a, b) => a.family.localeCompare(b.family) || a.program.localeCompare(b.program));
   const submit = async () => {
     const overrides: ProgramFamilySettings["overrides"] = { ...data.overrides };
     for (const [program, e] of Object.entries(edits)) {
@@ -49,6 +56,7 @@ export function ProgramFamiliesCard({ canEdit }: { canEdit: boolean }) {
       <div className="table-toolbar">
         <h2 className="table-title">Program families</h2>
         <div className="table-actions">
+          <input type="search" placeholder="Search programs or families…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search programs" />
           {saved && !changed && <span className="hint">✓ Saved. Reports use it right away.</span>}
           {canEdit && changed && (
             <button type="button" className="button" onClick={() => setEdits({})}>
@@ -80,7 +88,7 @@ export function ProgramFamiliesCard({ canEdit }: { canEdit: boolean }) {
             </tr>
           </thead>
           <tbody>
-            {data.programs.map((p) => {
+            {shown.map((p) => {
               const e = current(p.program);
               const explicit = p.program in edits ? edits[p.program] !== null : p.origin === "explicit";
               return (
@@ -110,10 +118,10 @@ export function ProgramFamiliesCard({ canEdit }: { canEdit: boolean }) {
                 </tr>
               );
             })}
-            {data.programs.length === 0 && (
+            {shown.length === 0 && (
               <tr>
                 <td colSpan={5} className="empty">
-                  No Campminder programs yet.
+                  {data.programs.length ? "No programs match." : "No Campminder programs yet."}
                 </td>
               </tr>
             )}

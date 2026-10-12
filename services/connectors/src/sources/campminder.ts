@@ -45,7 +45,7 @@ export interface CampminderConfig {
 }
 
 /** Bump when parsing changes what's stored, so every sheet is re-read once. */
-const PARSER_VERSION = "3";
+const PARSER_VERSION = "4";
 
 /** A report with far fewer rows than what's stored is probably mid-rewrite. */
 const MIN_FRACTION_OF_PREVIOUS = 0.5;

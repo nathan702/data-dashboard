@@ -41,6 +41,18 @@ describe("campminder parsing", () => {
     ]);
   });
 
+  it("doesn't fold sessions without a program into the previous program", () => {
+    const sessions = ["Week 3", "Winter Group Lessons", "Spring Group Lessons", "Holiday Horse Show", "WV Week", "2022-2023 LIT Mentorship", "Week 9", "Fall Nature Adventures SEPTEMBER", "Fall Nature Adventures NOVEMBER"];
+    const a = parseSessionPrograms("Week 3/Virginia Teen Extreme Sampler, Winter Group Lessons, Spring Group Lessons and Holiday Horse Show", sessions);
+    expect([...a]).toEqual([["Week 3", "Virginia Teen Extreme Sampler"]]);
+    const b = parseSessionPrograms("WV Week/WV Sampler High Adventure and 2022-2023 LIT Mentorship", sessions);
+    expect(b.get("WV Week")).toBe("WV Sampler High Adventure");
+    const c = parseSessionPrograms("Week 9/SUP with THURSDAY CAMPOUT, Fall Nature Adventures SEPTEMBER and Fall Nature Adventures NOVEMBER", sessions);
+    expect(c.get("Week 9")).toBe("SUP with THURSDAY CAMPOUT");
+    // A program name that merely contains "and" is untouched.
+    expect(parseSessionPrograms("Week 3/Sailing and Kayaking", sessions).get("Week 3")).toBe("Sailing and Kayaking");
+  });
+
   it("reads weeks, dates and programs", () => {
     expect(parseWeek("Madeira Weeks 5-6")).toEqual({ group: "Madeira", start: 5, end: 6 });
     expect(parseWeek("Riley's Week 10")).toEqual({ group: "Riley's", start: 10, end: 10 });
