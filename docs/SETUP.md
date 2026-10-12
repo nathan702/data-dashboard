@@ -79,6 +79,18 @@ Numbers are grouped by program or activity date. Campminder's own seasons
 listed there with a different first day. Stored in Firestore at
 `config/seasons`.
 
+## Reports
+
+The **Reports** tab is a report builder: pick a data set (enrollments,
+campers by season, campers by program family, revenue, store sales), up to
+two fields down the side and one across the top, a measure, filters, and a
+table, bar, line or heat-map view. Anyone can save reports, privately or
+shared; owners (and admins) can change or delete them. Four starter reports
+are built in and can be copied. Only vetted fields and measures exist (in
+`packages/shared/src/reports.ts`, SQL in `services/api/src/warehouse/reportSql.ts`),
+so reports can't reach anything else. Saved reports live in Firestore
+(`reports`); program families (Settings) in `config/programFamilies`.
+
 ## Connecting sources
 
 Credentials are stored in Secret Manager and read by the connectors on every

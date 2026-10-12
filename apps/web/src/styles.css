@@ -26,6 +26,9 @@
   --series-3: #1baf7a;
   --series-4: #eda100;
   --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
   --radius: 10px;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -53,6 +56,9 @@
     --series-3: #199e70;
     --series-4: #c98500;
     --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
   }
 }
 :root[data-theme="dark"] {
@@ -77,6 +83,9 @@
   --series-3: #199e70;
   --series-4: #c98500;
   --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 }
 
 * { box-sizing: border-box; }
@@ -116,7 +125,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
 .field-inline { flex-direction: row; align-items: center; gap: 8px; }
-select, input[type="date"], input[type="search"] {
+select, input[type="date"], input[type="search"], input[type="text"] {
   font: inherit; color: var(--text-primary); background: var(--surface-raised);
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; min-height: 34px;
 }
@@ -307,3 +316,21 @@ tbody tr:hover { background: var(--wash); }
 .season-campminder { padding: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
 .year-dates { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .year-date { display: inline-flex; align-items: center; gap: 6px; }
+/* Report builder */
+.report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.report-card { display: flex; flex-direction: column; gap: 6px; }
+.report-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.report-controls { display: flex; flex-direction: column; gap: 12px; }
+.report-view { display: flex; flex-direction: column; gap: 10px; }
+.report-view-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.report-table-details summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; margin-bottom: 8px; }
+.pivot td, .pivot th { white-space: nowrap; }
+.pivot tfoot td { font-weight: 600; border-top: 1px solid var(--border); }
+.pivot .total-cell { font-weight: 500; }
+.pivot-heat td.num { transition: none; }
+.cell-link { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; text-align: inherit; }
+.cell-link:hover, .cell-link:focus-visible { text-decoration: underline; }
+.save-form { display: flex; flex-direction: column; gap: 10px; }
+.save-form input[type="text"] { min-width: 260px; }
+.link-button.danger { color: var(--bad-text); }
+@media (max-width: 600px) { .save-form input[type="text"] { min-width: 0; width: 100%; } }

@@ -20,7 +20,12 @@ import type {
   RetailKpiResponse,
   RetailSource,
   RevenueQuery,
+  ProgramFamilySettings,
+  ReportResult,
+  ReportSpec,
   RevenueSummaryResponse,
+  SavedReport,
+  SavedReportInput,
   SeasonSettings,
   SourceFreshness,
 } from "@dash/shared";
@@ -64,6 +69,18 @@ function useApiWhen<T>(ready: boolean, key: unknown[], path: string, opts: { ref
     // Keep showing the previous numbers while new ones load (no flashing).
     placeholderData: keepPreviousData,
     refetchInterval: opts.refetchInterval,
+    retry: (count, err) => !(err instanceof ApiError && err.status < 500) && count < 2,
+  });
+}
+
+/** A POST that only reads (report runs): cached like a GET, keyed by its body. */
+function usePostQuery<T>(ready: boolean, key: unknown[], path: string, body: unknown) {
+  const { getToken, status } = useAuth();
+  return useQuery({
+    queryKey: key,
+    queryFn: async () => call<T>(path, await getToken(), { method: "POST", body }),
+    enabled: ready && status === "signed_in",
+    placeholderData: keepPreviousData,
     retry: (count, err) => !(err instanceof ApiError && err.status < 500) && count < 2,
   });
 }
@@ -189,4 +206,63 @@ export function useEnrollmentBreakdown(q: EnrollmentScope & { dimension: Enrollm
 export function useEnrollmentMap(q: EnrollmentScope) {
   const qs = enrollmentQs(q);
   return useApiWhen<EnrollmentMapResponse>(!!q.season, ["enrollment-map", qs], `/api/campminder/map?${qs}`);
+}
+
+// ---- Report builder ----
+export type ReportListItem = SavedReport & { canEdit: boolean };
+
+export function useReports() {
+  return useApi<{ reports: ReportListItem[] }>(["reports"], "/api/reports");
+}
+
+export function useSavedReport(id: string | undefined) {
+  return useApiWhen<ReportListItem>(!!id, ["report", id], `/api/reports/${id}`);
+}
+
+export function useRunReport(spec: ReportSpec | null) {
+  return usePostQuery<ReportResult>(!!spec, ["report-run", JSON.stringify(spec)], "/api/reports/run", { spec });
+}
+
+export function useReportValues(spec: ReportSpec, field: string | null) {
+  return usePostQuery<{ field: string; values: Array<{ value: string; count: number }>; truncated: boolean }>(
+    !!field,
+    ["report-values", JSON.stringify(spec), field],
+    "/api/reports/values",
+    { spec, field },
+  );
+}
+
+export function useReportMutations() {
+  const { getToken } = useAuth();
+  const qc = useQueryClient();
+  const done = () => qc.invalidateQueries({ queryKey: ["reports"] });
+  return {
+    create: useMutation({
+      mutationFn: async (body: SavedReportInput) => call<ReportListItem>("/api/reports", await getToken(), { method: "POST", body }),
+      onSuccess: done,
+    }),
+    update: useMutation({
+      mutationFn: async ({ id, body }: { id: string; body: SavedReportInput }) =>
+        call<ReportListItem>(`/api/reports/${id}`, await getToken(), { method: "PUT", body }),
+      onSuccess: (r) => Promise.all([done(), qc.invalidateQueries({ queryKey: ["report", r.id] })]),
+    }),
+    remove: useMutation({
+      mutationFn: async (id: string) => call<{ ok: true }>(`/api/reports/${id}`, await getToken(), { method: "DELETE" }),
+      onSuccess: done,
+    }),
+  };
+}
+
+export type ProgramFamilyRow = { program: string; enrollments: number; family: string; branch: string | null; origin: "explicit" | "draft" };
+
+export function useProgramFamilies() {
+  return useApi<ProgramFamilySettings & { programs: ProgramFamilyRow[] }>(["program-families"], "/api/settings/program-families");
+}
+
+export function useSaveProgramFamilies() {
+  return useApiMutation<ProgramFamilySettings, ProgramFamilySettings>("/api/settings/program-families", [
+    ["program-families"],
+    ["report-run"],
+    ["report-values"],
+  ]);
 }

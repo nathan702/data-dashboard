@@ -5,6 +5,8 @@ import { useAuth } from "./lib/auth";
 import { BusinessLinePage } from "./pages/BusinessLinePage";
 import { Overview } from "./pages/Overview";
 import { PlatformPage } from "./pages/PlatformPage";
+import { ReportBuilder } from "./pages/ReportBuilder";
+import { ReportsPage } from "./pages/ReportsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignIn } from "./pages/SignIn";
 import { Status } from "./pages/Status";
@@ -35,6 +37,9 @@ function Gate() {
         <Route path="bl/:id" element={<BusinessLinePage />} />
         <Route path="line/:line" element={<LegacyLineRedirect />} />
         <Route path="status" element={<Navigate to="/advanced/status" replace />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="reports/new" element={<ReportBuilder />} />
+        <Route path="reports/:id" element={<ReportBuilder />} />
         <Route path="advanced/settings" element={<SettingsPage />} />
         <Route path="advanced/status" element={<AdminOnly><Status /></AdminOnly>} />
         <Route path="advanced/platform/:source" element={<AdminOnly><PlatformPage /></AdminOnly>} />

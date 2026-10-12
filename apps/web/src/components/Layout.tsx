@@ -65,6 +65,7 @@ export function Layout() {
               {BUSINESS_LINE_INFO[id].label}
             </NavLink>
           ))}
+          <NavLink to="/reports">Reports</NavLink>
           <button type="button" className="nav-button" onClick={() => setCustomizing(true)} title="Choose and order your tabs">
             ⚙ Tabs
           </button>

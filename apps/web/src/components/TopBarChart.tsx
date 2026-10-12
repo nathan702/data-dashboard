@@ -10,6 +10,8 @@ interface Props {
   valueLabel: string;
   /** Counts (campers, enrollments) instead of dollars. */
   count?: boolean;
+  /** Overrides the money/count formatting (e.g. averages, percentages). */
+  format?(n: number): string;
   emptyText?: string;
 }
 
@@ -19,9 +21,10 @@ interface TipProps {
   color: string;
   valueLabel: string;
   count?: boolean;
+  format?(n: number): string;
 }
 
-function BarTooltip({ active, payload, color, valueLabel, count }: TipProps) {
+function BarTooltip({ active, payload, color, valueLabel, count, format }: TipProps) {
   const p = payload?.[0]?.payload;
   if (!active || !p) return null;
   return (
@@ -29,7 +32,7 @@ function BarTooltip({ active, payload, color, valueLabel, count }: TipProps) {
       <div className="chart-tooltip-title">{p.key}</div>
       <div className="chart-tooltip-row">
         <span className="line-key" style={{ background: color }} aria-hidden />
-        <strong>{count ? formatInt(p.value) : formatUsd(p.value)}</strong>
+        <strong>{format ? format(p.value) : count ? formatInt(p.value) : formatUsd(p.value)}</strong>
         <span className="muted">{valueLabel}</span>
       </div>
     </div>
@@ -39,7 +42,7 @@ function BarTooltip({ active, payload, color, valueLabel, count }: TipProps) {
 const truncate = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** Horizontal bars for a ranked top-N list. Single series, so no legend. */
-export function TopBarChart({ rows, color, valueLabel, count = false, emptyText = "No sales in this range.", onSelect }: Props) {
+export function TopBarChart({ rows, color, valueLabel, count = false, format, emptyText = "No sales in this range.", onSelect }: Props) {
   if (rows.length === 0) return <div className="empty">{emptyText}</div>;
   const narrow = typeof window !== "undefined" && window.innerWidth < 600;
   const height = rows.length * 34 + 16;
@@ -57,7 +60,7 @@ export function TopBarChart({ rows, color, valueLabel, count = false, emptyText 
             axisLine={{ stroke: "var(--axis)" }}
             tickLine={false}
           />
-          <Tooltip content={<BarTooltip color={color} valueLabel={valueLabel} count={count} />} cursor={{ fill: "var(--wash)" }} />
+          <Tooltip content={<BarTooltip color={color} valueLabel={valueLabel} count={count} format={format} />} cursor={{ fill: "var(--wash)" }} />
           <Bar
             dataKey="value"
             fill={color}
@@ -70,7 +73,7 @@ export function TopBarChart({ rows, color, valueLabel, count = false, emptyText 
             <LabelList
               dataKey="value"
               position="right"
-              formatter={(v: unknown) => (count ? formatInt(Number(v)) : formatUsdCompact(Number(v)))}
+              formatter={(v: unknown) => (format ? format(Number(v)) : count ? formatInt(Number(v)) : formatUsdCompact(Number(v)))}
               style={{ fill: "var(--text-secondary)", fontSize: 12 }}
             />
           </Bar>
