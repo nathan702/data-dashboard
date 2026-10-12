@@ -2,6 +2,14 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { LRUCache } from "lru-cache";
 import {
   assignmentUpdateSchema,
+  draftProgramFamily,
+  programFamilySettingsSchema,
+  REPORT_DATASET_INFO,
+  reportSpecSchema,
+  reportValuesQuerySchema,
+  savedReportInputSchema,
+  STARTER_REPORTS,
+  type SavedReport,
   CALENDAR_YEAR,
   campminderCalendar,
   isBusinessLine,
@@ -30,6 +38,7 @@ import { requireAdmin, requireViewer, type AuthDeps } from "./auth.js";
 import { runSelfCheck } from "./selfCheck.js";
 import type { PreferencesStore } from "./preferences.js";
 import type { SeasonSettingsStore } from "./seasons.js";
+import type { ProgramFamilyStore, ReportStore } from "./reports.js";
 import type { RefreshTrigger } from "./refresh.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
 
@@ -40,6 +49,8 @@ export interface ApiOptions {
   freshness: FreshnessSource;
   preferences: PreferencesStore;
   seasons: SeasonSettingsStore;
+  reports: ReportStore;
+  programFamilies: ProgramFamilyStore;
   refresh: RefreshTrigger;
   corsOrigins: string[];
   cacheTtlSeconds: number;
@@ -194,6 +205,119 @@ export function createApi(opts: ApiOptions) {
   );
   enrollmentRoute("/campminder/map", (q) => enrollmentMapQuerySchema.safeParse(q), (d: EnrollmentMapQuery) => opts.warehouse.enrollmentMap(d));
   enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), (d: EnrollmentBreakdownQuery) => opts.warehouse.enrollmentBreakdown(d));
+
+  // ---- Report builder ----
+  api.post("/reports/run", async (req, res) => {
+    const parsed = reportSpecSchema.safeParse(req.body?.spec);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join("; "), issues: parsed.error.issues });
+      return;
+    }
+    const families = await opts.programFamilies.get();
+    res.json(await cached(`report:${JSON.stringify(parsed.data)}:${JSON.stringify(families)}`, () => opts.warehouse.runReport(parsed.data, families)));
+  });
+
+  // Values of one field under the report's other filters, for the filter picker.
+  api.post("/reports/values", async (req, res) => {
+    const parsed = reportValuesQuerySchema.safeParse(req.body);
+    const info = parsed.success ? REPORT_DATASET_INFO[parsed.data.spec.dataset] : null;
+    if (!parsed.success || !info!.fields.some((f) => f.id === parsed.data.field)) {
+      res.status(400).json({ error: "Invalid field" });
+      return;
+    }
+    const { spec, field } = parsed.data;
+    const others = Object.fromEntries(Object.entries(spec.filters).filter(([k]) => k !== field));
+    const valuesSpec = { ...spec, rows: [field], column: undefined, filters: others, measure: info!.defaultMeasure, percent: "none" as const };
+    const families = await opts.programFamilies.get();
+    const result = await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}`, () => opts.warehouse.runReport(valuesSpec, families));
+    res.json({
+      field,
+      values: result.cells.filter((c) => c.kind === "cell").map((c) => ({ value: c.rows[0]!, count: c.value ?? 0 })),
+      truncated: result.truncated,
+    });
+  });
+
+  const canEditReport = (r: SavedReport, viewer: { email: string; isAdmin: boolean }) =>
+    !r.starter && (r.owner?.toLowerCase() === viewer.email.toLowerCase() || viewer.isAdmin);
+  const visible = (r: SavedReport, email: string) => r.starter || r.shared || r.owner?.toLowerCase() === email.toLowerCase();
+
+  api.get("/reports", async (req, res) => {
+    const viewer = req.viewer!;
+    const saved = (await opts.reports.list()).filter((r) => visible(r, viewer.email));
+    res.json({
+      reports: [...STARTER_REPORTS, ...saved.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))].map((r) => ({
+        ...r,
+        canEdit: canEditReport(r, viewer),
+      })),
+    });
+  });
+
+  api.get("/reports/:id", async (req, res) => {
+    const viewer = req.viewer!;
+    const r = STARTER_REPORTS.find((s) => s.id === req.params.id) ?? (await opts.reports.get(req.params.id));
+    if (!r || !visible(r, viewer.email)) {
+      res.status(404).json({ error: "Report not found" });
+      return;
+    }
+    res.json({ ...r, canEdit: canEditReport(r, viewer) });
+  });
+
+  api.post("/reports", async (req, res) => {
+    const parsed = savedReportInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join("; ") });
+      return;
+    }
+    const r = await opts.reports.create(parsed.data, req.viewer!.email);
+    res.status(201).json({ ...r, canEdit: true });
+  });
+
+  api.put("/reports/:id", async (req, res) => {
+    const existing = await opts.reports.get(req.params.id);
+    if (!existing || !canEditReport(existing, req.viewer!)) {
+      res.status(existing ? 403 : 404).json({ error: existing ? "Only the report's owner can change it" : "Report not found" });
+      return;
+    }
+    const parsed = savedReportInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join("; ") });
+      return;
+    }
+    res.json({ ...(await opts.reports.update(req.params.id, parsed.data)), canEdit: true });
+  });
+
+  api.delete("/reports/:id", async (req, res) => {
+    const existing = await opts.reports.get(req.params.id);
+    if (!existing || !canEditReport(existing, req.viewer!)) {
+      res.status(existing ? 403 : 404).json({ error: existing ? "Only the report's owner can delete it" : "Report not found" });
+      return;
+    }
+    await opts.reports.delete(req.params.id);
+    res.json({ ok: true });
+  });
+
+  api.get("/settings/program-families", async (_req, res) => {
+    const [settings, programs] = await Promise.all([opts.programFamilies.get(), cached("programs", () => opts.warehouse.programList().then((rows) => ({ rows })))]);
+    res.json({
+      overrides: settings.overrides,
+      programs: programs.rows.map((p) => {
+        const o = settings.overrides[p.program];
+        const d = draftProgramFamily(p.program);
+        return { ...p, family: o?.family ?? d.family, branch: o ? o.branch : d.branch, origin: o ? "explicit" : "draft" };
+      }),
+    });
+  });
+
+  api.put("/settings/program-families", requireAdmin, async (req, res) => {
+    const parsed = programFamilySettingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid program families", issues: parsed.error.issues });
+      return;
+    }
+    await opts.programFamilies.set(parsed.data, req.viewer!.email);
+    cache.clear();
+    res.json(parsed.data);
+  });
 
   api.get("/settings/seasons", async (_req, res) => {
     res.json(await opts.seasons.get());

@@ -10,6 +10,9 @@ import {
   type EnrollmentBreakdownQuery,
   type EnrollmentFilters,
   type EnrollmentMapQuery,
+  type ProgramFamilySettings,
+  type ReportResult,
+  type ReportSpec,
   type EnrollmentMapResponse,
   type SeasonCalendar,
   type EnrollmentBreakdownResponse,
@@ -30,6 +33,8 @@ import {
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import { breakdownSql as enrollmentBreakdownSql, byWeekSql, drillParams, kpiSql as enrollmentKpiSql, mapSql, paceSql, seasonsSql } from "./campminderSql.js";
+import { compileReport } from "./reportSql.js";
+import { toReportResult } from "./reportResult.js";
 import { toKpis } from "./retail.js";
 import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, filteredKpiSql, inventorySql, kpiSql, retailDrillParams, saveAssignmentsSql } from "./retailSql.js";
 import { groupKeys } from "./summarize.js";
@@ -356,6 +361,20 @@ export class BigQueryWarehouse implements Warehouse {
         q.dimension,
       ),
     };
+  }
+
+  async runReport(spec: ReportSpec, families: ProgramFamilySettings): Promise<ReportResult> {
+    const { sql, params, types } = compileReport(spec, this.martsDataset, families);
+    const [rows] = await this.bq.query({ query: sql, params, types: types as never, location: this.location });
+    return toReportResult(spec, rows as Array<Record<string, unknown>>);
+  }
+
+  async programList() {
+    const [rows] = await this.bq.query({
+      query: `SELECT program, COUNTIF(status_code = 'EN') AS enrollments FROM ${this.enrollments} WHERE program IS NOT NULL GROUP BY 1 ORDER BY 2 DESC, 1`,
+      location: this.location,
+    });
+    return (rows as Array<{ program: string; enrollments: number }>).map((r) => ({ program: r.program, enrollments: Number(r.enrollments) }));
   }
 
   async referenceTotals(start: string, end: string) {

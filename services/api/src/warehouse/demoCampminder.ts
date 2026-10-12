@@ -19,7 +19,7 @@ import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapRespon
 import { noise } from "./demo.js";
 
 /** Made-up camper-sessions for local development only. */
-interface Row {
+export interface Row {
   businessLine: BusinessLineOrUnassigned;
   season: number;
   camper: string;
@@ -38,32 +38,33 @@ interface Row {
   applicationDate: string;
   homeLat: number | null;
   homeLon: number | null;
+  zip: string;
 }
 
 /** Made-up home areas around DC, weighted roughly like a real camp's families. */
-const AREAS: Array<[number, number, number]> = [
-  [38.9807, -77.1003, 0.22], // Bethesda
-  [38.9296, -77.0628, 0.18], // NW DC
-  [38.8816, -77.091, 0.14], // Arlington
-  [38.9338, -77.1773, 0.1], // McLean
-  [39.0228, -77.0304, 0.1], // Silver Spring
-  [38.8048, -77.0469, 0.09], // Alexandria
-  [39.0184, -77.2086, 0.09], // Potomac
-  [38.8462, -77.3064, 0.08], // Fairfax
+const AREAS: Array<[number, number, number, string]> = [
+  [38.9807, -77.1003, 0.22, "20814"], // Bethesda
+  [38.9296, -77.0628, 0.18, "20016"], // NW DC
+  [38.8816, -77.091, 0.14, "22207"], // Arlington
+  [38.9338, -77.1773, 0.1, "22101"], // McLean
+  [39.0228, -77.0304, 0.1, "20910"], // Silver Spring
+  [38.8048, -77.0469, 0.09, "22301"], // Alexandria
+  [39.0184, -77.2086, 0.09, "20854"], // Potomac
+  [38.8462, -77.3064, 0.08, "22030"], // Fairfax
 ];
 
-function demoHome(camper: string): { homeLat: number | null; homeLon: number | null } {
+function demoHome(camper: string): { homeLat: number | null; homeLon: number | null; zip: string } {
   const n = noise(`${camper}home`);
-  if (n > 0.97) return { homeLat: null, homeLon: null }; // address that didn't geocode
   let acc = 0;
-  const [lat, lon] = AREAS.find(([, , w]) => (acc += w) >= n) ?? AREAS[0]!;
+  const [lat, lon, , zip] = AREAS.find(([, , w]) => (acc += w) >= n) ?? AREAS[0]!;
+  if (noise(`${camper}geo`) > 0.97) return { homeLat: null, homeLon: null, zip }; // address that didn't geocode
   const r = 0.035 * Math.sqrt(noise(`${camper}r`));
   const a = 2 * Math.PI * noise(`${camper}a`);
-  return { homeLat: Math.round((lat + r * Math.sin(a)) * 1e5) / 1e5, homeLon: Math.round((lon + r * 1.3 * Math.cos(a)) * 1e5) / 1e5 };
+  return { homeLat: Math.round((lat + r * Math.sin(a)) * 1e5) / 1e5, homeLon: Math.round((lon + r * 1.3 * Math.cos(a)) * 1e5) / 1e5, zip };
 }
 
 const GROUPS: Array<{ group: string; line: BusinessLineOrUnassigned; weekly: boolean; programs: string[]; size: number }> = [
-  { group: "Farm", line: "camp", weekly: true, programs: ["Explorers", "Explorers - Quest", "Cubs"], size: 300 },
+  { group: "Farm", line: "camp", weekly: true, programs: ["Explorers - Critters and Creatures", "Explorers - Quest", "Cubs"], size: 300 },
   { group: "Riley's", line: "camp", weekly: true, programs: ["Riley's Water Sampler", "Explorers - Great Heights"], size: 230 },
   { group: "Madeira", line: "camp", weekly: true, programs: ["Virginia Sampler", "Sailing with THURSDAY CAMPOUT"], size: 140 },
   { group: "Fraser", line: "camp", weekly: true, programs: ["Rock Climbing with THURSDAY CAMPOUT", "SUP with THURSDAY CAMPOUT"], size: 90 },
@@ -76,6 +77,10 @@ const GRADES = ["K", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9t
 const STATUSES: Array<[string, string, number]> = [["EN", "Enrolled", 0.86], ["CN", "Cancelled", 0.08], ["WD", "Withdrawn", 0.055], ["WL", "Waitlisted", 0.005]];
 
 let cache: Row[] | null = null;
+
+export function demoEnrollmentRows(): Row[] {
+  return rows();
+}
 
 function rows(): Row[] {
   if (cache) return cache;
@@ -96,7 +101,7 @@ function rows(): Row[] {
           out.push({
             businessLine: g.line,
             season,
-            camper: `${season % 2}${camperNo}`,
+            camper: String(camperNo), // same ID every season, like real Campminder IDs
             sessionGroup: g.group,
             sessionName: g.weekly ? `${g.group} Week ${week}` : g.group,
             weekStart: g.weekly ? week : null,
@@ -111,7 +116,7 @@ function rows(): Row[] {
             state: ["MD", "DC", "VA"][Math.floor(noise(`${seed}st`) * 3)]!,
             // Most applications arrive in winter (weeks 16-30 of the season).
             applicationDate: addDays(start, Math.floor(Math.pow(noise(`${seed}d`), 0.8) * 300)),
-            ...demoHome(`${season % 2}${camperNo}`),
+            ...demoHome(String(camperNo)),
           });
         }
       }

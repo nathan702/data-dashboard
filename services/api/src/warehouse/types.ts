@@ -16,6 +16,9 @@ import type {
   RetailKpiQuery,
   RetailKpiResponse,
   RetailSource,
+  ProgramFamilySettings,
+  ReportResult,
+  ReportSpec,
   RevenueQuery,
   RevenueSummaryResponse,
   SeasonCalendar,
@@ -38,6 +41,10 @@ export interface Warehouse {
   enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar): Promise<EnrollmentSummaryResponse>;
   enrollmentMap(q: EnrollmentMapQuery): Promise<EnrollmentMapResponse>;
   enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse>;
+  /** Report builder: run one report (program families decide the family fields). */
+  runReport(spec: ReportSpec, families: ProgramFamilySettings): Promise<ReportResult>;
+  /** Every Campminder program with its enrolled sessions, for Settings → Program families. */
+  programList(): Promise<Array<{ program: string; enrollments: number }>>;
   /** Plain totals straight from the tables, for the deploy self-check. */
   referenceTotals(start: string, end: string): Promise<ReferenceTotals>;
 }

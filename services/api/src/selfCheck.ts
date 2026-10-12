@@ -1,4 +1,13 @@
-import { addDays, CALENDAR_YEAR, campminderCalendar, easternDate, RETAIL_SOURCES, type RetailSource } from "@dash/shared";
+import {
+  addDays,
+  CALENDAR_YEAR,
+  campminderCalendar,
+  easternDate,
+  RETAIL_SOURCES,
+  reportSpecSchema,
+  STARTER_REPORTS,
+  type RetailSource,
+} from "@dash/shared";
 import type { Warehouse } from "./warehouse/types.js";
 
 /**
@@ -99,6 +108,25 @@ export async function runSelfCheck(
     if (sum(breakdown.rows.map((r) => r.enrollments)) !== e.count) return "breakdown differs from table count";
     return null;
   });
+
+  await check("report builder matches tables", async () => {
+    if (!ref) return "no reference";
+    const e = (ref as ReferenceTotals).enrollments;
+    if (!e) return null;
+    const r = await warehouse.runReport(
+      reportSpecSchema.parse({ dataset: "enrollments", measure: "enrollments", filters: { season: [String(e.season)] } }),
+      { overrides: {} },
+    );
+    const total = r.cells.find((c) => c.kind === "total")?.value ?? null;
+    return total === e.count ? null : "report total differs from table count";
+  });
+
+  for (const starter of STARTER_REPORTS) {
+    await check(`starter report runs: ${starter.name}`, async () => {
+      await warehouse.runReport(starter.spec, { overrides: {} });
+      return null;
+    });
+  }
 
   await check("settings assignments load", async () => {
     await warehouse.assignments();

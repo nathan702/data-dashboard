@@ -6,6 +6,7 @@ import { loadConfig } from "./config.js";
 import { MemoryPreferences } from "./preferences.js";
 import { NoopTrigger } from "./refresh.js";
 import { MemorySeasonSettings } from "./seasons.js";
+import { MemoryProgramFamilies, MemoryReports } from "./reports.js";
 import { CALENDAR_YEAR, campminderCalendar, DEFAULT_SEASON_SETTINGS } from "@dash/shared";
 import { DEMO_STREAMS, DemoFreshness, DemoWarehouse, demoRow } from "./warehouse/demo.js";
 import { periodBucket, summarizeRows } from "./warehouse/summarize.js";
@@ -58,6 +59,8 @@ function api(auth: AuthDeps | null = null, refresh = new NoopTrigger()) {
     freshness: new DemoFreshness(),
     preferences: new MemoryPreferences(),
     seasons: new MemorySeasonSettings(),
+    reports: new MemoryReports(),
+    programFamilies: new MemoryProgramFamilies(),
     refresh,
     corsOrigins: ["https://dash.web.app"],
     cacheTtlSeconds: 60,
@@ -435,7 +438,7 @@ describe("campminder endpoints", () => {
   });
 
   it("drills down with filters that all have to match", async () => {
-    const f = encodeURIComponent(JSON.stringify({ program: ["Explorers"], week: ["9"] }));
+    const f = encodeURIComponent(JSON.stringify({ program: ["Explorers - Quest"], week: ["9"] }));
     const all = await request(api()).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200);
     const some = await request(api()).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${f}`).expect(200);
     expect(some.body.current.enrollments).toBeGreaterThan(0);
@@ -445,7 +448,7 @@ describe("campminder endpoints", () => {
     const total = ages.body.rows.reduce((s: number, r: { enrollments: number }) => s + r.enrollments, 0);
     expect(total).toBe(some.body.current.enrollments);
     const programs = await request(api()).get(`/api/campminder/breakdown?season=2026&businessLine=camp&dimension=program&filters=${f}`).expect(200);
-    expect(programs.body.rows.map((r: { key: string }) => r.key)).toEqual(["Explorers"]);
+    expect(programs.body.rows.map((r: { key: string }) => r.key)).toEqual(["Explorers - Quest"]);
   });
 
   it("maps homes with the same filters", async () => {
@@ -484,5 +487,106 @@ describe("campminder endpoints", () => {
     expect(params.f_week).toEqual(["9"]);
     expect(params.f_program).toEqual([]);
     expect(types.f_program).toEqual(["STRING"]);
+  });
+});
+
+describe("report builder", () => {
+  const run = (app: ReturnType<typeof api>, spec: object) => request(app).post("/api/reports/run").send({ spec });
+
+  it("runs every starter report", async () => {
+    const app = api();
+    const list = await request(app).get("/api/reports").expect(200);
+    const starters = list.body.reports.filter((r: { starter: boolean }) => r.starter);
+    expect(starters.length).toBeGreaterThanOrEqual(4);
+    for (const r of starters) {
+      const res = await run(app, r.spec).expect(200);
+      expect(res.body.cells.some((c: { kind: string }) => c.kind === "cell")).toBe(true);
+      expect(r.canEdit).toBe(false);
+    }
+  });
+
+  it("counts distinct campers correctly in totals", async () => {
+    const res = await run(api(), { dataset: "enrollments", rows: ["session_group"], measure: "campers", filters: { season: ["2026"], business_line: ["camp"] } }).expect(200);
+    const cells = res.body.cells.filter((c: { kind: string }) => c.kind === "cell");
+    const total = res.body.cells.find((c: { kind: string }) => c.kind === "total").value;
+    const sum = cells.reduce((t: number, c: { value: number }) => t + c.value, 0);
+    // Campers in several session groups count once in the total.
+    expect(total).toBeLessThan(sum);
+    expect(total).toBeGreaterThan(0);
+  });
+
+  it("answers the example questions", async () => {
+    const app = api();
+    const years = await run(app, { dataset: "camper_seasons", rows: ["years_at_camp"], measure: "avg_sessions", filters: { business_line: ["camp"] } }).expect(200);
+    expect(years.body.cells.filter((c: { kind: string }) => c.kind === "cell").length).toBeGreaterThan(3);
+    const branches = await run(app, { dataset: "program_families", rows: ["branch_combination"], measure: "campers", filters: { program_family: ["Explorers"] } }).expect(200);
+    const combos = branches.body.cells.filter((c: { kind: string }) => c.kind === "cell").map((c: { rows: string[] }) => c.rows[0]);
+    expect(combos).toContain("Critters and Creatures");
+    expect(combos.some((c: string) => c.includes(" + "))).toBe(true);
+    const zip = await run(app, { dataset: "enrollments", rows: ["zip"], column: "week", measure: "enrollments", filters: { zip: ["20016"] }, percent: "row" }).expect(200);
+    const kinds = new Set(zip.body.cells.map((c: { kind: string }) => c.kind));
+    expect([...kinds].sort()).toEqual(["cell", "column_total", "row_total", "total"]);
+    const ret = await run(app, { dataset: "camper_seasons", rows: ["season"], measure: "return_rate" }).expect(200);
+    const s2025 = ret.body.cells.find((c: { rows: string[]; kind: string }) => c.kind === "cell" && c.rows[0] === "2025");
+    expect(s2025.value).toBeGreaterThan(0);
+    expect(s2025.value).toBeLessThan(1);
+  });
+
+  it("rejects specs outside the vetted fields and measures", async () => {
+    const app = api();
+    await run(app, { dataset: "enrollments", rows: ["camper_name"], measure: "campers" }).expect(400);
+    await run(app, { dataset: "camper_seasons", rows: ["age"], measure: "avg_sessions", percent: "row" }).expect(400);
+    await run(app, { dataset: "revenue", rows: ["month"], measure: "net" }).expect(400);
+    await run(app, { dataset: "enrollments", rows: ["age"], column: "age", measure: "campers" }).expect(400);
+  });
+
+  it("only ever passes filter values as parameters", async () => {
+    const { compileReport } = await import("./warehouse/reportSql.js");
+    const evil = "x'); DROP TABLE marts.y; --";
+    const { sql, params } = compileReport(
+      { dataset: "store_sales", rows: ["item"], column: "month", measure: "net", filters: { category: [evil] }, start: "2026-01-01", end: "2026-01-31", chart: "table", percent: "none" },
+      "marts",
+      { overrides: {} },
+    );
+    expect(sql).not.toContain("DROP");
+    expect(params.f0).toEqual([evil]);
+    expect(sql).toContain("GROUPING SETS ((r0, c), (r0), (c), ())");
+  });
+
+  it("lists filter values with counts", async () => {
+    const res = await request(api()).post("/api/reports/values").send({ spec: { dataset: "enrollments", measure: "campers" }, field: "program_family" }).expect(200);
+    expect(res.body.values.map((v: { value: string }) => v.value)).toContain("Explorers");
+  });
+
+  it("keeps private reports private and lets only owners change them", async () => {
+    const people: AuthDeps = {
+      allowedDomains: ["calleva.org"],
+      loadAccessList: async () => ({ allowedEmails: [], admins: ["boss@calleva.org"] }),
+      verifyIdToken: async (t) => ({ ...org, email: `${t}@calleva.org` }),
+    };
+    const app = api(people);
+    const as = (who: string) => ({ Authorization: `Bearer ${who}` });
+    const spec = { dataset: "enrollments", rows: ["age"], measure: "campers" };
+    const mine = await request(app).post("/api/reports").set(as("pat")).send({ name: "Ages", spec }).expect(201);
+    const list = (who: string) => request(app).get("/api/reports").set(as(who)).then((r) => r.body.reports.map((x: { id: string }) => x.id));
+    expect(await list("pat")).toContain(mine.body.id);
+    expect(await list("sam")).not.toContain(mine.body.id);
+    await request(app).put(`/api/reports/${mine.body.id}`).set(as("pat")).send({ name: "Ages", spec, shared: true }).expect(200);
+    expect(await list("sam")).toContain(mine.body.id);
+    await request(app).put(`/api/reports/${mine.body.id}`).set(as("sam")).send({ name: "Mine now", spec }).expect(403);
+    await request(app).delete(`/api/reports/${mine.body.id}`).set(as("sam")).expect(403);
+    await request(app).delete(`/api/reports/${mine.body.id}`).set(as("boss")).expect(200);
+  });
+
+  it("applies program family settings", async () => {
+    const app = api();
+    const before = await request(app).get("/api/settings/program-families").expect(200);
+    expect(before.body.programs.find((p: { program: string }) => p.program === "Explorers - Quest")).toMatchObject({ family: "Explorers", branch: "Quest", origin: "draft" });
+    await request(app)
+      .put("/api/settings/program-families")
+      .send({ overrides: { "Riley's Water Sampler": { family: "Water", branch: "Sampler" } } })
+      .expect(200);
+    const res = await run(app, { dataset: "enrollments", rows: ["program_family"], measure: "enrollments" }).expect(200);
+    expect(res.body.cells.map((c: { rows: string[] }) => c.rows[0])).toContain("Water");
   });
 });

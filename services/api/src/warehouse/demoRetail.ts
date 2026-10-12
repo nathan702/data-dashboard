@@ -62,7 +62,7 @@ const LOCATIONS: Record<string, string[]> = {
   "square|haunted_forest": ["MHF"],
 };
 
-interface DemoLine {
+export interface DemoLine {
   orderKey: string;
   location: string | null;
   channel: string;
@@ -119,6 +119,22 @@ function lineKey(l: DemoLine, d: RetailDimension, source: RetailSource): string 
 
 const lineMatches = (l: DemoLine, f: RetailFilters | undefined, source: RetailSource) =>
   Object.entries(f ?? {}).every(([d, values]) => !values?.length || values.includes(lineKey(l, d as RetailDimension, source)));
+
+/** Every demo line item in a range, for the report builder. */
+export function demoLines(start: string, end: string): Array<{ source: RetailSource; businessLine: BusinessLineOrUnassigned; date: string; line: DemoLine }> {
+  const out: Array<{ source: RetailSource; businessLine: BusinessLineOrUnassigned; date: string; line: DemoLine }> = [];
+  for (const s of DEMO_STREAMS) {
+    if (s.source !== "square" && s.source !== "shopify") continue;
+    eachDay(start, end, (d) => {
+      for (const line of linesForDay(s, d)) out.push({ source: s.source as RetailSource, businessLine: s.businessLine, date: d, line });
+    });
+  }
+  return out;
+}
+
+export function demoLineKey(l: DemoLine, d: RetailDimension, source: RetailSource) {
+  return lineKey(l, d, source);
+}
 
 function eachDay(start: string, end: string, fn: (d: string) => void) {
   for (let d = start; d <= end; d = addDays(d, 1)) fn(d);

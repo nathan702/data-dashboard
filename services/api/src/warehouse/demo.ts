@@ -13,12 +13,15 @@ import {
   type RetailSource,
   type RevenueBasis,
   CALENDAR_YEAR,
+  type ProgramFamilySettings,
+  type ReportSpec,
   type RevenueQuery,
   type SeasonCalendar,
   type Source,
   type SourceFreshness,
 } from "@dash/shared";
-import { DEMO_SESSION_GROUPS, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
+import { demoRunReport } from "./demoReports.js";
+import { DEMO_SESSION_GROUPS, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
 import type { DailyRevenueRow, FreshnessSource, Warehouse } from "./types.js";
@@ -181,6 +184,16 @@ export class DemoWarehouse implements Warehouse {
 
   async enrollmentBreakdown(q: EnrollmentBreakdownQuery) {
     return demoEnrollmentBreakdown(q);
+  }
+
+  async runReport(spec: ReportSpec, families: ProgramFamilySettings) {
+    return demoRunReport(spec, families);
+  }
+
+  async programList() {
+    const counts = new Map<string, number>();
+    for (const r of demoEnrollmentRows()) if (r.program && r.statusCode === "EN") counts.set(r.program, (counts.get(r.program) ?? 0) + 1);
+    return [...counts].map(([program, enrollments]) => ({ program, enrollments })).sort((a, b) => b.enrollments - a.enrollments);
   }
 
   async referenceTotals(start: string, end: string) {
