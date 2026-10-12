@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { useDrill } from "../lib/drill";
+import { FilterChips } from "./FilterChips";
 import {
   RETAIL_DIMENSION_LABEL,
   RETAIL_SOURCE_DIMENSIONS,
+  retailFiltersSchema,
   type BusinessLineOrUnassigned,
   type InventoryRow,
   type RetailBreakdownRow,
@@ -38,6 +41,18 @@ const KPI_TILES: Record<RetailSource, Array<{ key: KpiKey; label: string; money:
     { key: "fees", label: "Fees", money: true, upIsGood: false },
   ],
 };
+
+/** Drill order: where you start → what clicking shows next. */
+const DRILL_ORDER: RetailDimension[] = ["location", "channel", "category", "item", "variant"];
+
+/** While filtered, only what can be split by item. */
+const FILTERED_TILES: Array<{ key: KpiKey; label: string; money: boolean; upIsGood?: boolean }> = [
+  { key: "net", label: "Net sales", money: true },
+  { key: "orders", label: "Orders", money: false },
+  { key: "units", label: "Units sold", money: false },
+  { key: "averageOrderValue", label: "Net per order", money: true },
+  { key: "discounts", label: "Discounts", money: true, upIsGood: false },
+];
 
 function KpiTile({ label, value, previous, money, upIsGood = true, cmpLabel }: {
   label: string;
@@ -81,9 +96,21 @@ export function RetailDetail({
 }) {
   const [filters] = useFilters();
   const dims = RETAIL_SOURCE_DIMENSIONS[source];
-  const [dimension, setDimension] = useState<RetailDimension>(dims[0]!);
-  const kpis = useRetailKpis(source, { start: filters.start, end: filters.end, compare: filters.compare, businessLine });
-  const breakdown = useRetailBreakdown(source, { start: filters.start, end: filters.end, dimension, businessLine });
+  // Each platform keeps its own drill-down in the URL (e.g. ?squaref=…&squaredim=…).
+  const drillState = useDrill<RetailDimension>({
+    filtersKey: `${source}f`,
+    dimKey: `${source}dim`,
+    dimensions: dims,
+    order: DRILL_ORDER,
+    defaultDimension: dims[0]!,
+    schema: retailFiltersSchema,
+  });
+  const { dimension, drill, set, active } = drillState;
+  const drillFilters = drillState.filters;
+  const setDimension = (d: RetailDimension) => set({ dimension: d });
+  const scope = { start: filters.start, end: filters.end, businessLine, filters: drillFilters };
+  const kpis = useRetailKpis(source, { ...scope, compare: filters.compare });
+  const breakdown = useRetailBreakdown(source, { ...scope, dimension });
   const cmpLabel = filters.compare === "none" ? null : filters.compare.startsWith("previous_year") ? "last year" : "previous period";
 
   const columns: Column<RetailBreakdownRow>[] = [
@@ -111,10 +138,22 @@ export function RetailDetail({
   return (
     <section className="page-section" aria-label={title}>
       <h2 className="section-title">{title}</h2>
+      <FilterChips
+        active={active}
+        label={(d) => RETAIL_DIMENSION_LABEL[d]}
+        onRemove={(d) => set({ filters: { ...drillFilters, [d]: [] } }, true)}
+        onClear={() => set({ filters: {}, dimension: dims[0]! }, true)}
+      />
+      {kpis.data?.filtered && (
+        <p className="card-subtitle">
+          Showing sales of the matching items only. Orders count any order that included them. Refunds, tips, fees and customers are
+          whole-order figures, so they're hidden while filtered.
+        </p>
+      )}
       {kpis.error && <div className="error-banner">Couldn't load order stats: {kpis.error.message}</div>}
       {kpis.data && (
         <div className={`tiles${kpis.isPlaceholderData ? " refetching" : ""}`}>
-          {KPI_TILES[source].map((t) => (
+          {(kpis.data.filtered ? FILTERED_TILES : KPI_TILES[source]).map((t) => (
             <KpiTile
               key={t.key}
               label={t.label}
@@ -142,7 +181,7 @@ export function RetailDetail({
         {breakdown.error && <div className="error-banner">Couldn't load breakdown: {breakdown.error.message}</div>}
         {breakdown.data && (
           <div className={breakdown.isPlaceholderData ? "refetching" : undefined}>
-            <TopBarChartSection rows={breakdown.data.rows} color={ACCENT_VAR} />
+            <TopBarChartSection rows={breakdown.data.rows} color={ACCENT_VAR} onSelect={(key) => drill(dimension, key)} />
           </div>
         )}
       </div>
@@ -154,6 +193,8 @@ export function RetailDetail({
           columns={columns}
           rowKey={(r) => r.key}
           exportName={`${source}${businessLine ? `_${businessLine}` : ""}_${dimension}_${filters.start}_${filters.end}`}
+          onRowClick={(r) => drill(dimension, r.key)}
+          rowTitle="Filter to this and drill in"
         />
       )}
 
@@ -162,8 +203,16 @@ export function RetailDetail({
   );
 }
 
-function TopBarChartSection({ rows, color }: { rows: RetailBreakdownRow[]; color: string }) {
-  return <TopBarChart rows={rows.slice(0, 10).map((r) => ({ key: r.key, value: r.net }))} color={color} valueLabel="net sales" />;
+function TopBarChartSection({ rows, color, onSelect }: { rows: RetailBreakdownRow[]; color: string; onSelect(key: string): void }) {
+  return (
+    <TopBarChart
+      rows={rows.slice(0, 10).map((r) => ({ key: r.key, value: r.net }))}
+      color={color}
+      valueLabel="net sales"
+      onSelect={onSelect}
+      emptyText="No sales match."
+    />
+  );
 }
 
 const LOW_STOCK = 5;

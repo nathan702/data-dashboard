@@ -186,7 +186,7 @@ export class DemoWarehouse implements Warehouse {
   async referenceTotals(start: string, end: string) {
     // The demo's own summaries are its reference.
     const s = await this.revenueSummary({ start, end, basis: "booked", measure: "gross", granularity: "week", compare: "none", groupBy: "source" }, CALENDAR_YEAR);
-    const k = async (src: RetailSource) => (await this.retailKpis(src, { start, end, compare: "none" })).current.gross;
+    const k = async (src: RetailSource) => (await this.retailKpis(src, { start, end, compare: "none", filters: {} })).current.gross;
     return {
       revenueGross: s.groups.reduce((t, g) => t + g.current.gross, 0),
       retailGross: { shopify: await k("shopify"), square: await k("square") },

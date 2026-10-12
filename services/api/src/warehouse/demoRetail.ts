@@ -1,11 +1,14 @@
 import {
   addDays,
   comparisonRange,
+  hasFilters,
   type BusinessLineOrUnassigned,
   type InventoryResponse,
   type RetailBreakdownQuery,
   type RetailBreakdownResponse,
   type RetailBreakdownRow,
+  type RetailDimension,
+  type RetailFilters,
   type RetailKpiQuery,
   type RetailKpiResponse,
   type RetailSource,
@@ -98,6 +101,25 @@ function linesForDay(s: DemoStream, date: string): DemoLine[] {
   return out;
 }
 
+/** Same labels as DIMENSION_SQL in retailSql.ts. */
+function lineKey(l: DemoLine, d: RetailDimension, source: RetailSource): string {
+  switch (d) {
+    case "item":
+      return l.it.item;
+    case "variant":
+      return ["", "Default Title", "Regular"].includes(l.it.variant) ? l.it.item : `${l.it.item} — ${l.it.variant}`;
+    case "category":
+      return l.it.category;
+    case "location":
+      return l.location ?? (source === "shopify" ? "Online store" : "Unknown location");
+    case "channel":
+      return l.channel;
+  }
+}
+
+const lineMatches = (l: DemoLine, f: RetailFilters | undefined, source: RetailSource) =>
+  Object.entries(f ?? {}).every(([d, values]) => !values?.length || values.includes(lineKey(l, d as RetailDimension, source)));
+
 function eachDay(start: string, end: string, fn: (d: string) => void) {
   for (let d = start; d <= end; d = addDays(d, 1)) fn(d);
 }
@@ -105,7 +127,24 @@ function eachDay(start: string, end: string, fn: (d: string) => void) {
 export function demoRetailKpis(source: RetailSource, q: RetailKpiQuery): RetailKpiResponse {
   const cmp = comparisonRange({ start: q.start, end: q.end }, q.compare);
   const streams = streamsFor(source, q.businessLine);
-  const sum = (start: string, end: string) => {
+  const filtered = hasFilters(q.filters);
+  const sumFiltered = (start: string, end: string) => {
+    const orders = new Set<string>();
+    let units = 0, gross = 0, discounts = 0;
+    eachDay(start, end, (d) => {
+      for (const s of streams)
+        for (const l of linesForDay(s, d)) {
+          if (!lineMatches(l, q.filters, source)) continue;
+          orders.add(l.orderKey);
+          units += l.quantity;
+          gross += l.gross;
+          discounts += l.discounts;
+        }
+    });
+    // Same order estimate as the demo breakdown, so tiles and table agree.
+    return toKpis({ orders: Math.max(orders.size, Math.round(units * 0.6)), units, gross, discounts });
+  };
+  const sumAll = (start: string, end: string) => {
     let orders = 0, units = 0, gross = 0, discounts = 0, refunds = 0, fees = 0;
     eachDay(start, end, (d) => {
       for (const s of streams) {
@@ -127,11 +166,13 @@ export function demoRetailKpis(source: RetailSource, q: RetailKpiQuery): RetailK
       customers: Math.round(orders * 0.72),
     });
   };
+  const sum = filtered ? sumFiltered : sumAll;
   return {
     source,
     businessLine: q.businessLine ?? null,
     range: { start: q.start, end: q.end },
     comparisonRange: cmp,
+    filtered,
     current: sum(q.start, q.end),
     comparison: cmp ? sum(cmp.start, cmp.end) : null,
   };
@@ -143,12 +184,8 @@ export function demoRetailBreakdown(source: RetailSource, q: RetailBreakdownQuer
   eachDay(q.start, q.end, (d) => {
     for (const s of streams) {
       for (const l of linesForDay(s, d)) {
-        const key =
-          q.dimension === "item" ? l.it.item
-          : q.dimension === "variant" ? (["Default Title", "Regular"].includes(l.it.variant) ? l.it.item : `${l.it.item} — ${l.it.variant}`)
-          : q.dimension === "category" ? l.it.category
-          : q.dimension === "location" ? (l.location ?? "Online store")
-          : l.channel;
+        if (!lineMatches(l, q.filters, source)) continue;
+        const key = lineKey(l, q.dimension, source);
         const detail = q.dimension === "item" ? l.it.category : q.dimension === "variant" ? l.it.sku : null;
         const g = groups.get(key) ?? { key, detail, orders: 0, units: 0, gross: 0, discounts: 0, net: 0, orderKeys: new Set() };
         g.orderKeys.add(l.orderKey);

@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { encodeEnrollmentFilters } from "@dash/shared";
+import { encodeEnrollmentFilters, encodeFilters } from "@dash/shared";
 import type {
   AssignmentsResponse,
   AssignmentUpdate,
@@ -16,6 +16,7 @@ import type {
   Preferences,
   RetailBreakdownResponse,
   RetailDimension,
+  RetailFilters,
   RetailKpiResponse,
   RetailSource,
   RevenueQuery,
@@ -125,7 +126,7 @@ export function useRevenueSummary(q: RevenueQuery) {
   return useApi<RevenueSummaryResponse>(["revenue", qs], `/api/revenue/summary?${qs}`, { refetchInterval: 60_000 });
 }
 
-type RetailScope = { start: string; end: string; businessLine?: BusinessLineOrUnassigned };
+type RetailScope = { start: string; end: string; businessLine?: BusinessLineOrUnassigned; filters?: RetailFilters };
 
 function retailQs(q: Record<string, string | undefined>) {
   const p = new URLSearchParams();
@@ -134,12 +135,12 @@ function retailQs(q: Record<string, string | undefined>) {
 }
 
 export function useRetailKpis(source: RetailSource, q: RetailScope & { compare: ComparisonMode }) {
-  const qs = retailQs(q);
+  const qs = retailQs({ ...q, filters: encodeFilters(q.filters ?? {}) });
   return useApi<RetailKpiResponse>(["retail-kpis", source, qs], `/api/retail/${source}/kpis?${qs}`, { refetchInterval: 60_000 });
 }
 
 export function useRetailBreakdown(source: RetailSource, q: RetailScope & { dimension: RetailDimension }) {
-  const qs = retailQs(q);
+  const qs = retailQs({ ...q, filters: encodeFilters(q.filters ?? {}) });
   return useApi<RetailBreakdownResponse>(["retail-breakdown", source, qs], `/api/retail/${source}/breakdown?${qs}`, {
     refetchInterval: 60_000,
   });

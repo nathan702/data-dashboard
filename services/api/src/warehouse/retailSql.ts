@@ -1,4 +1,4 @@
-import type { RetailDimension } from "@dash/shared";
+import { RETAIL_DIMENSIONS, type RetailDimension, type RetailFilters } from "@dash/shared";
 
 /**
  * SQL for the retail (Shopify, Square) endpoints. Only these fixed strings
@@ -60,6 +60,42 @@ export function kpiSql(dataset: string) {
     LEFT JOIN refunds AS r USING (period)`;
 }
 
+/** Drill-down filters on line items: one clause per dimension, values in @rf_<dimension>. */
+const RETAIL_DRILL = RETAIL_DIMENSIONS.map(
+  (d) => `(COALESCE(ARRAY_LENGTH(@rf_${d}), 0) = 0 OR ${DIMENSION_SQL[d].key} IN UNNEST(@rf_${d}))`,
+).join("\n      AND ");
+
+export function retailDrillParams(filters: RetailFilters | undefined) {
+  const params: Record<string, string[]> = {};
+  const types: Record<string, string[]> = {};
+  for (const d of RETAIL_DIMENSIONS) {
+    params[`rf_${d}`] = filters?.[d] ?? [];
+    types[`rf_${d}`] = ["STRING"];
+  }
+  return { params, types };
+}
+
+/**
+ * KPIs for drilled-down views, from the matching line items: orders that
+ * contain them, units, gross and discounts. Order-wide amounts (refunds, tax,
+ * tips, fees) can't be split by item, so they aren't included.
+ */
+export function filteredKpiSql(dataset: string) {
+  return `
+    SELECT
+      period,
+      COUNT(DISTINCT order_id) AS orders,
+      SUM(quantity) AS units, SUM(gross) AS gross, SUM(discounts) AS discounts
+    FROM \`${dataset}.fct_retail_line_items\`,
+      UNNEST(ARRAY_CONCAT(
+        IF(sale_date BETWEEN @start AND @end, ['current'], []),
+        IF(@has_cmp AND sale_date BETWEEN @cmp_start AND @cmp_end, ['comparison'], [])
+      )) AS period
+    WHERE source = @source AND (@business_line IS NULL OR business_line = @business_line)
+      AND ${RETAIL_DRILL}
+    GROUP BY 1`;
+}
+
 export function breakdownSql(dataset: string, dimension: RetailDimension) {
   const d = DIMENSION_SQL[dimension];
   return `
@@ -74,6 +110,7 @@ export function breakdownSql(dataset: string, dimension: RetailDimension) {
     FROM \`${dataset}.fct_retail_line_items\`
     WHERE source = @source AND (@business_line IS NULL OR business_line = @business_line)
       AND sale_date BETWEEN @start AND @end
+      AND ${RETAIL_DRILL}
     GROUP BY 1
     ORDER BY net DESC, key
     LIMIT @limit_plus_one`;

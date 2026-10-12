@@ -2,6 +2,7 @@ import { z } from "zod";
 import { BUSINESS_LINES_WITH_UNASSIGNED, type BusinessLineOrUnassigned } from "./businessLines.js";
 import { COMPARISON_MODES, daysBetweenInclusive, isIsoDate } from "./dates.js";
 import { MAX_RANGE_DAYS } from "./filters.js";
+import { jsonQueryParam } from "./params.js";
 
 /** Platforms backed by marts.fct_retail_orders / fct_retail_line_items. */
 export const RETAIL_SOURCES = ["shopify", "square"] as const;
@@ -25,9 +26,17 @@ export const RETAIL_DIMENSION_LABEL: Record<RetailDimension, string> = {
 
 export const RETAIL_SOURCE_DIMENSIONS: Record<RetailSource, RetailDimension[]> = {
   // Shopify "category" is the product type; location is the POS location (online orders have none).
-  shopify: ["item", "variant", "category", "channel", "location"],
-  square: ["item", "variant", "category", "location", "channel"],
+  // Category first: the natural drill-down is category → item → variant.
+  shopify: ["category", "item", "variant", "channel", "location"],
+  square: ["category", "item", "variant", "location", "channel"],
 };
+
+/** Drill-down filters: dimension → values; a sale counts when it matches every filtered dimension. */
+export type RetailFilters = Partial<Record<RetailDimension, string[]>>;
+export const retailFiltersSchema = z.partialRecord(z.enum(RETAIL_DIMENSIONS), z.array(z.string().max(300)).max(100));
+const filters = jsonQueryParam(retailFiltersSchema);
+
+export const hasFilters = (f: Record<string, string[] | undefined> | undefined) => Object.values(f ?? {}).some((v) => v && v.length > 0);
 
 const isoDate = z.string().refine(isIsoDate, "Expected a YYYY-MM-DD date");
 
@@ -39,6 +48,7 @@ const rangeFields = {
   end: isoDate,
   compare: z.enum(COMPARISON_MODES).default("previous_year"),
   businessLine,
+  filters,
 };
 
 const validRange = <T extends { start: string; end: string }>(q: T) =>
@@ -53,6 +63,7 @@ export const retailBreakdownQuerySchema = z
     end: isoDate,
     dimension: z.enum(RETAIL_DIMENSIONS).default("item"),
     businessLine,
+    filters,
     limit: z.coerce.number().int().min(1).max(5000).default(1000),
   })
   .refine(validRange, "Invalid date range");
@@ -80,6 +91,11 @@ export interface RetailKpiResponse {
   comparisonRange: { start: string; end: string } | null;
   current: RetailKpis;
   comparison: RetailKpis | null;
+  /**
+   * Drill-down filters applied: figures come from the matching line items, so
+   * order-wide amounts (refunds, tax, tips, fees, customers) are left at 0.
+   */
+  filtered: boolean;
 }
 
 export interface RetailBreakdownRow {

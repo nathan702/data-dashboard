@@ -2,6 +2,7 @@ import { BigQuery } from "@google-cloud/bigquery";
 import {
   comparisonRange,
   comparisonShiftDays,
+  hasFilters,
   seasonStarts,
   type AssignmentRow,
   type AssignmentUpdate,
@@ -30,7 +31,7 @@ import {
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import { breakdownSql as enrollmentBreakdownSql, byWeekSql, drillParams, kpiSql as enrollmentKpiSql, mapSql, paceSql, seasonsSql } from "./campminderSql.js";
 import { toKpis } from "./retail.js";
-import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, inventorySql, kpiSql, saveAssignmentsSql } from "./retailSql.js";
+import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, filteredKpiSql, inventorySql, kpiSql, retailDrillParams, saveAssignmentsSql } from "./retailSql.js";
 import { groupKeys } from "./summarize.js";
 import type { Warehouse } from "./types.js";
 
@@ -160,17 +161,20 @@ export class BigQueryWarehouse implements Warehouse {
   async retailKpis(source: RetailSource, q: RetailKpiQuery): Promise<RetailKpiResponse> {
     const cmp = comparisonRange({ start: q.start, end: q.end }, q.compare);
     const base = this.retailParams(source, q.businessLine);
+    const filtered = hasFilters(q.filters);
+    const drill = retailDrillParams(q.filters);
     const [rows] = await this.bq.query({
-      query: kpiSql(this.martsDataset),
+      query: filtered ? filteredKpiSql(this.martsDataset) : kpiSql(this.martsDataset),
       params: {
         ...base.params,
+        ...drill.params,
         start: q.start,
         end: q.end,
         has_cmp: cmp !== null,
         cmp_start: cmp?.start ?? q.start,
         cmp_end: cmp?.end ?? q.end,
       },
-      types: base.types,
+      types: { ...base.types, ...drill.types },
       location: this.location,
     });
     const find = (p: string) => (rows as Array<Record<string, number> & { period: string }>).find((r) => r.period === p) ?? {};
@@ -179,6 +183,7 @@ export class BigQueryWarehouse implements Warehouse {
       businessLine: q.businessLine ?? null,
       range: { start: q.start, end: q.end },
       comparisonRange: cmp,
+      filtered,
       current: toKpis(find("current")),
       comparison: cmp ? toKpis(find("comparison")) : null,
     };
@@ -188,8 +193,8 @@ export class BigQueryWarehouse implements Warehouse {
     const base = this.retailParams(source, q.businessLine);
     const [rows] = await this.bq.query({
       query: breakdownSql(this.martsDataset, q.dimension),
-      params: { ...base.params, start: q.start, end: q.end, limit_plus_one: q.limit + 1 },
-      types: base.types,
+      params: { ...base.params, ...retailDrillParams(q.filters).params, start: q.start, end: q.end, limit_plus_one: q.limit + 1 },
+      types: { ...base.types, ...retailDrillParams(q.filters).types },
       location: this.location,
     });
     const typed = rows as Array<{ key: string; detail: string | null; orders: number; units: number; gross: number; discounts: number; net: number }>;

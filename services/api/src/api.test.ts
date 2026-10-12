@@ -185,6 +185,23 @@ describe("retail endpoints", () => {
     await request(api()).get("/api/retail/square/kpis?start=2026-07-01&end=2026-07-31&businessLine=nope").expect(400);
   });
 
+  it("drills down: filters narrow both the totals and the breakdown", async () => {
+    const base = "start=2026-07-01&end=2026-07-31&businessLine=farm_store";
+    const cats = await request(api()).get(`/api/retail/square/breakdown?${base}&dimension=category`).expect(200);
+    const top = cats.body.rows[0];
+    const f = encodeURIComponent(JSON.stringify({ category: [top.key] }));
+    const k = await request(api()).get(`/api/retail/square/kpis?${base}&filters=${f}`).expect(200);
+    expect(k.body.filtered).toBe(true);
+    expect(k.body.current.gross).toBeCloseTo(top.gross, 0);
+    expect(k.body.comparison.gross).toBeGreaterThan(0);
+    const items = await request(api()).get(`/api/retail/square/breakdown?${base}&dimension=item&filters=${f}`).expect(200);
+    const sum = items.body.rows.reduce((t: number, r: { gross: number }) => t + r.gross, 0);
+    expect(sum).toBeCloseTo(top.gross, 0);
+    const unfiltered = await request(api()).get(`/api/retail/square/kpis?${base}`).expect(200);
+    expect(unfiltered.body.filtered).toBe(false);
+    await request(api()).get(`/api/retail/square/kpis?${base}&filters=${encodeURIComponent('{"customer":["x"]}')}`).expect(400);
+  });
+
   it("serves the inventory snapshot", async () => {
     const res = await request(api()).get("/api/shopify/inventory").expect(200);
     expect(res.body.rows.length).toBeGreaterThan(0);
@@ -201,6 +218,9 @@ describe("retail SQL", () => {
       expect(sql).toContain("LIMIT @limit_plus_one");
     }
     expect(kpiSql("marts")).toContain("fct_retail_orders");
+    const { filteredKpiSql, retailDrillParams } = await import("./warehouse/retailSql.js");
+    const { params } = retailDrillParams({ item: ["Eggs"] });
+    for (const sql of [filteredKpiSql("marts"), breakdownSql("marts", "item")]) for (const p of Object.keys(params)) expect(sql).toContain(`@${p}`);
   });
 });
 

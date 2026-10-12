@@ -65,13 +65,24 @@ export async function runSelfCheck(
   for (const source of RETAIL_SOURCES) {
     await check(`${source} sales detail matches tables`, async () => {
       const [kpis, breakdown] = await Promise.all([
-        warehouse.retailKpis(source, { start, end, compare: "none" }),
-        warehouse.retailBreakdown(source, { start, end, dimension: "category", limit: 5000 }),
+        warehouse.retailKpis(source, { start, end, compare: "none", filters: {} }),
+        warehouse.retailBreakdown(source, { start, end, dimension: "category", limit: 5000, filters: {} }),
       ]);
       if (!ref) return "no reference";
       const expected = ref.retailGross[source];
       if (!close(kpis.current.gross, expected)) return "order totals differ from table total";
       if (!breakdown.truncated && !close(sum(breakdown.rows.map((r) => r.gross)), expected)) return "breakdown differs from table total";
+      // Drill-down: filtering to the top category must give that category's numbers.
+      const top = breakdown.rows[0];
+      if (top) {
+        const filters = { category: [top.key] };
+        const [fk, fb] = await Promise.all([
+          warehouse.retailKpis(source, { start, end, compare: "none", filters }),
+          warehouse.retailBreakdown(source, { start, end, dimension: "item", limit: 5000, filters }),
+        ]);
+        if (!fk.filtered || !close(fk.current.gross, top.gross)) return "filtered totals differ from the category's row";
+        if (!fb.truncated && !close(sum(fb.rows.map((r) => r.gross)), top.gross)) return "filtered breakdown differs from the category's row";
+      }
       return null;
     });
   }

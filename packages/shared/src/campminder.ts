@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { encodeFilters, jsonQueryParam } from "./params.js";
 import { BUSINESS_LINES_WITH_UNASSIGNED, type BusinessLineOrUnassigned } from "./businessLines.js";
 
 /** Ways to slice Campminder enrollments. */
@@ -32,22 +33,10 @@ export const enrollmentFiltersSchema = z
   .partialRecord(z.enum(ENROLLMENT_DIMENSIONS), z.array(z.string().max(200)).max(100))
   .refine((f) => Object.keys(f).length <= ENROLLMENT_DIMENSIONS.length);
 
-/** Filters travel as one JSON query parameter: ?filters={"week":["9"]}. */
-const filtersParam = z
-  .preprocess((v) => {
-    if (v === undefined || v === "") return {};
-    if (typeof v !== "string") return v;
-    try {
-      return JSON.parse(v);
-    } catch {
-      return v;
-    }
-  }, enrollmentFiltersSchema)
-  .default({});
+const filtersParam = jsonQueryParam(enrollmentFiltersSchema);
 
 export function encodeEnrollmentFilters(f: EnrollmentFilters): string | undefined {
-  const clean = Object.fromEntries(Object.entries(f).filter(([, v]) => v && v.length > 0));
-  return Object.keys(clean).length ? JSON.stringify(clean) : undefined;
+  return encodeFilters(f);
 }
 
 const season = z.coerce.number().int().min(2000).max(2100);

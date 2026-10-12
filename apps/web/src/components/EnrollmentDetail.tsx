@@ -20,7 +20,9 @@ import {
 import { useEnrollmentBreakdown, useEnrollmentMap, useEnrollmentSeasons, useEnrollmentSummary, useSeasonSettings } from "../lib/api";
 import { ACCENT_VAR } from "../lib/colors";
 import { formatDate, formatInt, formatPercent, percentChange } from "../lib/format";
+import { useDrill } from "../lib/drill";
 import { DataTable, type Column } from "./DataTable";
+import { FilterChips } from "./FilterChips";
 import { TopBarChart } from "./TopBarChart";
 
 // The map library is only downloaded when a page shows the map.
@@ -65,39 +67,6 @@ const DRILL_ORDER: EnrollmentDimension[] = ["session_group", "session", "program
 
 const valueLabel = (d: EnrollmentDimension, v: string) => (d === "week" ? `Week ${v}` : v);
 
-/**
- * Drill-down state in the URL (?cf= filters, ?cdim= breakdown), so a view can
- * be shared and Back steps out of the last drill.
- */
-function useDrill() {
-  const [params, setParams] = useSearchParams();
-  let filters: EnrollmentFilters = {};
-  try {
-    const parsed = enrollmentFiltersSchema.safeParse(JSON.parse(params.get("cf") ?? "{}"));
-    if (parsed.success) filters = parsed.data;
-  } catch {
-    // Bad link: show everything.
-  }
-  const cdim = params.get("cdim") as EnrollmentDimension | null;
-  const dimension: EnrollmentDimension = cdim && ENROLLMENT_DIMENSIONS.includes(cdim) ? cdim : "session_group";
-  const set = (next: { filters?: EnrollmentFilters; dimension?: EnrollmentDimension }, push = false) => {
-    const p = new URLSearchParams(params);
-    if (next.filters) {
-      const enc = encodeEnrollmentFilters(next.filters);
-      if (enc) p.set("cf", enc);
-      else p.delete("cf");
-    }
-    if (next.dimension) p.set("cdim", next.dimension);
-    setParams(p, { replace: !push });
-  };
-  const drill = (d: EnrollmentDimension, value: string) => {
-    const f = { ...filters, [d]: [value] };
-    const nextDim = DRILL_ORDER.slice(DRILL_ORDER.indexOf(d) + 1).find((x) => !f[x]?.length) ?? d;
-    set({ filters: f, dimension: nextDim }, true);
-  };
-  return { filters, dimension, set, drill };
-}
-
 /** Which season is shown: ?season= in the URL, else the newest with data. */
 function useSeason(available: number[]) {
   const [params, setParams] = useSearchParams();
@@ -120,13 +89,19 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
   const seasons = useEnrollmentSeasons(businessLine);
   const available = (seasons.data?.seasons ?? []).map((s) => s.season);
   const [season, setSeason] = useSeason(available);
-  const { filters, dimension, set, drill } = useDrill();
+  const { filters, dimension, set, drill, active } = useDrill({
+    filtersKey: "cf",
+    dimKey: "cdim",
+    dimensions: ENROLLMENT_DIMENSIONS,
+    order: DRILL_ORDER,
+    defaultDimension: "session_group",
+    schema: enrollmentFiltersSchema,
+  });
   const setDimension = (d: EnrollmentDimension) => set({ dimension: d });
   const [picking, setPicking] = useState(false);
   const summary = useEnrollmentSummary({ season, businessLine, filters });
   const breakdown = useEnrollmentBreakdown({ season, businessLine, dimension, filters });
   const homes = useEnrollmentMap({ season, businessLine, filters });
-  const active = (Object.entries(filters) as Array<[EnrollmentDimension, string[]]>).filter(([, v]) => v.length > 0);
 
   const header = (
     <div className="card-header">
@@ -191,25 +166,17 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
   return (
     <section className="page-section" aria-label={title}>
       {header}
-      <div className="chips" aria-label="Filters">
-        {active.map(([d, values]) => (
-          <span key={d} className="chip">
-            <span className="chip-label">{ENROLLMENT_DIMENSION_LABEL[d]}:</span> {values.map((v) => valueLabel(d, v)).join(", ")}
-            <button type="button" aria-label={`Remove ${ENROLLMENT_DIMENSION_LABEL[d]} filter`} onClick={() => set({ filters: { ...filters, [d]: [] } }, true)}>
-              ×
-            </button>
-          </span>
-        ))}
+      <FilterChips
+        active={active}
+        label={(d) => ENROLLMENT_DIMENSION_LABEL[d]}
+        valueLabel={valueLabel}
+        onRemove={(d) => set({ filters: { ...filters, [d]: [] } }, true)}
+        onClear={() => set({ filters: {}, dimension: "session_group" }, true)}
+      >
         <button type="button" className="button" onClick={() => setPicking((x) => !x)} aria-expanded={picking}>
           + Filter
         </button>
-        {active.length > 0 && (
-          <button type="button" className="link-button" onClick={() => set({ filters: {}, dimension: "session_group" }, true)}>
-            Clear filters
-          </button>
-        )}
-        {active.length === 0 && <span className="hint">Click any bar or row to drill in.</span>}
-      </div>
+      </FilterChips>
       {picking && season !== undefined && (
         <FilterPicker
           season={season}
