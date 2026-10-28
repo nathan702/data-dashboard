@@ -407,7 +407,8 @@ describe("deploy self-check", () => {
     const broken = Object.create(demo) as DemoWarehouse;
     broken.enrollmentBreakdown = async (q) => ({ ...(await demo.enrollmentBreakdown(q)), rows: [] });
     const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
-    expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["campminder enrollments match tables"]);
+    // The School breakdown is checked against the same table count.
+    expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["campminder enrollments match tables", "school grouping runs"]);
   });
 });
 
