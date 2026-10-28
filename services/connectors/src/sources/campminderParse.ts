@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { campminderCalendar } from "@dash/shared";
+import { campminderCalendar, cleanSchool } from "@dash/shared";
 import { pseudonymize } from "../core/privacy.js";
 import { addressKey, homeAddress, zip5, type GeoResult } from "./geocode.js";
 
@@ -11,6 +11,13 @@ import { addressKey, homeAddress, zip5, type GeoResult } from "./geocode.js";
  * names can themselves contain " and " ("Fall Farm and Forest Cubs"), so the
  * status column is split on the [CODE] markers, never on the word "and".
  */
+
+/**
+ * Bump when parsing changes what's stored: every sheet is re-read once, and
+ * every row is rewritten (the version is part of each row's hash), so no row
+ * keeps a value an older parser stored.
+ */
+export const PARSER_VERSION = "6";
 
 export const STATUS_LABEL: Record<string, string> = {
   EN: "Enrolled",
@@ -207,7 +214,7 @@ export function toSessions(
       ageAtSeason: ageOn(birth, `${season}-06-01`),
       campGrade: clean(r["Camp Grade"]),
       schoolGrade: clean(r["School Grade"]),
-      school: schoolCol ? clean(r[schoolCol])?.replace(/\s+/g, " ") ?? null : null,
+      school: schoolCol ? cleanSchool(r[schoolCol]) : null,
       yearsAsCamper: Number.isFinite(years) && years > 0 ? years : null,
       applicationDate: usDate(r["Child Application Date"]),
       statusPostDate: usDate(r["Child Status Post Date"]),
@@ -232,7 +239,7 @@ export function toSessions(
         statusCode: s.code,
         status: STATUS_LABEL[s.code] ?? s.code,
       };
-      const session = { ...row, rowHash: createHash("sha256").update(JSON.stringify(row)).digest("hex").slice(0, 16) };
+      const session = { ...row, rowHash: createHash("sha256").update(`${PARSER_VERSION}|${JSON.stringify(row)}`).digest("hex").slice(0, 16) };
       // A session listed twice (say cancelled, then re-enrolled) keeps its most current status.
       const id = sessionRecordId(session);
       const prev = out.get(id);

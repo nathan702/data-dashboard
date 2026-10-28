@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveSchools, schoolKey } from "./schools.js";
+import { cleanSchool, resolveSchools, schoolKey } from "./schools.js";
 
 describe("schools", () => {
   it("groups spellings that differ only in form", () => {
@@ -16,6 +16,34 @@ describe("schools", () => {
     // Different levels stay apart.
     expect(schoolKey("Lowell Middle School")).not.toBe(schoolKey("Lowell High School"));
     for (const s of ["N/A", "none", " - ", "", null]) expect(schoolKey(s)).toBeNull();
+  });
+
+  it("drops answers that aren't a school, so they're never stored", () => {
+    for (const bad of [
+      "parent@example.com",
+      "www.someschool.org",
+      "(301) 555-0100",
+      "301.555.0100",
+      "85",
+      "85 lbs",
+      "62 pounds",
+      "4'2\"",
+      "9 years old",
+      "20814",
+      "123 Made Up Lane",
+      "4th grade",
+      "Grade 3",
+      "K",
+      "-",
+      "He has a peanut allergy and needs his inhaler before swimming every day please",
+      "x".repeat(81),
+    ]) {
+      expect(cleanSchool(bad), bad).toBeNull();
+    }
+    for (const good of ["Sidwell Friends School", "PS 321", "St. Albans", "Holton-Arms", "The Barrie School", "Homeschool", "Lowell", "BCC High School"]) {
+      expect(cleanSchool(good), good).toBe(good);
+    }
+    expect(cleanSchool("  The   Lowell School ")).toBe("The Lowell School");
   });
 
   it("names each group by its most common spelling, and Settings wins", () => {

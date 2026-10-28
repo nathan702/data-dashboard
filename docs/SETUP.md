@@ -186,7 +186,10 @@ ignored, and deleting a tab or the whole sheet keeps what was imported.
 runs (and to the past-season tabs, if they can be re-exported). Any column
 named `School`, `School Name`, `Current School`, `Child School` or `Camper
 School` is picked up on the next hourly sync; no change here is needed.
-Spellings are grouped on **Settings → Schools** (admins), where abbreviations
+Answers that aren't a school (an email address, phone number, street
+address, weight, height, age, grade, or a long answer to another question)
+are dropped before anything is stored. Spellings are grouped on **Settings →
+Schools** (admins), where abbreviations
 and nicknames can be pointed at the right school. Reports get the fields
 *School* and *School as entered*.
 

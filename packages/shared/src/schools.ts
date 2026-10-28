@@ -26,6 +26,31 @@ const WORDS: Record<string, string> = {
 /** Entries that mean "no school given". */
 const NOT_A_SCHOOL = new Set(["", "na", "n a", "none", "unknown", "tbd", "no", "x", "other"]);
 
+/**
+ * The school a family entered, or null when the answer isn't a school name at
+ * all. Some families type something else in the box (an email address, the
+ * child's weight, an answer to another question); those are dropped before
+ * anything is stored, so personal details never reach the warehouse.
+ */
+export function cleanSchool(v: string | null | undefined): string | null {
+  const s = (v ?? "").replace(/\s+/g, " ").trim();
+  if (!s || s === "Undefined") return null;
+  const letters = (s.match(/[a-z]/gi) ?? []).length;
+  const digits = (s.match(/\d/g) ?? []).length;
+  const rejected =
+    s.includes("@") || // email address
+    /https?:|www\.|\.(com|org|net|edu|gov|us)\b/i.test(s) || // web address
+    /\d{3}\D{0,2}\d{3}\D{0,2}\d{4}/.test(s) || // phone number
+    letters < 2 || // a number, date or symbol only (weight, ZIP, "-")
+    digits >= 5 ||
+    /\b\d+(\.\d+)?\s*(lbs?|pounds?|kgs?|kilos?|oz|ft|feet|foot|inch(es)?|in|cm|years?|yrs?|y\/?o)\b|\d\s*['"′″]/i.test(s) || // weight, height, age
+    /^\d+\s+\S+.*\b(st|street|ave|avenue|rd|road|dr|drive|ln|lane|ct|court|blvd|way|pl|place|terrace|cir|circle)\b\.?$/i.test(s) || // street address
+    /^(grade\s+\d+|\d+(st|nd|rd|th)(\s+grade)?|k|pre-?k|kindergarten)$/i.test(s) || // a grade, not a school
+    s.length > 80 ||
+    s.split(" ").length > 10; // a sentence answering some other question
+  return rejected ? null : s;
+}
+
 /** Grouping key for a school as entered; null when it isn't a school at all ("N/A", "-"). */
 export function schoolKey(entered: string | null | undefined): string | null {
   const k = (entered ?? "")

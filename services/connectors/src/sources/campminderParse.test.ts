@@ -120,5 +120,9 @@ describe("campminder parsing", () => {
     expect(schoolColumn(["School Grade", "Gender"])).toBeNull();
     expect(toSessions([row({ School: "  The Lowell   School " })], KEY, 2026)[0]!.school).toBe("The Lowell School");
     expect(toSessions([row()], KEY, 2026)[0]!.school).toBeNull();
+    // Something other than a school typed in the box is never stored.
+    const s = toSessions([row({ School: "parent@example.com" })], KEY, 2026);
+    expect(s[0]!.school).toBeNull();
+    expect(JSON.stringify(s)).not.toContain("example.com");
   });
 });

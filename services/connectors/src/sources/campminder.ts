@@ -5,7 +5,7 @@ import { requestJson } from "../core/http.js";
 import { NotConfiguredError, requireSecret, type SecretStore } from "../core/secrets.js";
 import type { Connector, RawRecord, SyncContext } from "../core/types.js";
 import { Firestore } from "@google-cloud/firestore";
-import { reportSeason, sessionRecordId, toSessions } from "./campminderParse.js";
+import { PARSER_VERSION, reportSeason, sessionRecordId, toSessions } from "./campminderParse.js";
 import { CensusGeocoder, FirestoreGeoCache, homeAddress, locateHomes, type GeoCache, type Geocoder, type HomeAddress } from "./geocode.js";
 
 /**
@@ -44,8 +44,6 @@ export interface CampminderConfig {
   serviceAccount?: string;
 }
 
-/** Bump when parsing changes what's stored, so every sheet is re-read once. */
-const PARSER_VERSION = "5";
 
 /** A report with far fewer rows than what's stored is probably mid-rewrite. */
 const MIN_FRACTION_OF_PREVIOUS = 0.5;

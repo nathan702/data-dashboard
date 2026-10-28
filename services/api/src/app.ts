@@ -4,6 +4,7 @@ import {
   assignmentUpdateSchema,
   draftProgramFamily,
   programFamilySettingsSchema,
+  cleanSchool,
   resolveSchools,
   schoolSettingsSchema,
   REPORT_DATASET_INFO,
@@ -210,7 +211,9 @@ export function createApi(opts: ApiOptions) {
   enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), (d: EnrollmentBreakdownQuery) => opts.warehouse.enrollmentBreakdown(d));
 
   // ---- Report builder ----
-  const schoolSpellings = () => cached("schools", () => opts.warehouse.schoolList().then((rows) => ({ rows })));
+  // Rows stored before the import dropped non-school answers (emails…) are never shown.
+  const schoolSpellings = () =>
+    cached("schools", () => opts.warehouse.schoolList().then((rows) => ({ rows: rows.filter((s) => cleanSchool(s.entered) !== null) })));
   /** Every school spelling's grouped name for reports; `key` changes whenever the grouping does. */
   const schoolMap = async () => {
     const [settings, spellings] = await Promise.all([opts.schools.get(), schoolSpellings()]);
