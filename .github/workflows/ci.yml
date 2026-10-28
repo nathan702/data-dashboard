@@ -22,14 +22,12 @@ jobs:
         working-directory: dataform
         run: npx -y @dataform/cli@3.0.70 compile
 
-  # Deploys every push to a deploy branch once the checks pass. Keep the
-  # branch list in sync with DEPLOY_BRANCHES in infra/config.sh: Google
-  # only accepts GitHub sign-ins from those branches.
+  # Only main deploys, once the checks pass; changes reach main through a
+  # reviewed, merged pull request. Google only accepts GitHub sign-ins from
+  # DEPLOY_BRANCHES in infra/config.sh, so keep the two in sync.
   deploy:
     needs: check
-    if: >-
-      github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/ecstatic-maxwell-hh3yl3')
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-production

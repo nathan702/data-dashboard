@@ -55,9 +55,20 @@ Cloud Run → Jobs → dashboard-transform.
 
 ## 5. Deploy
 
-**Automatic:** every push to `main` (or the current development branch) that
-passes the checks is deployed by GitHub Actions (`.github/workflows/ci.yml`).
-Progress and history: GitHub → the repository → **Actions** tab. GitHub signs
+**Automatic, after review:** only `main` deploys. Every change is made on a
+separate branch and opened as a pull request with a summary of what it
+changes; the checks (typecheck, tests, build, Dataform compile) run on the
+pull request. Merging it into `main` deploys it through GitHub Actions
+(`.github/workflows/ci.yml`), and the live self-check runs after each deploy.
+Progress and history: GitHub → the repository → **Actions** tab; every change
+and its description: **Pull requests → Closed**.
+
+**Undoing a change:** open the merged pull request on GitHub and click
+**Revert**. That opens a new pull request that reverses it; merge it to deploy.
+For an emergency, roll back instantly in the Firebase console (**Hosting →
+Release history → Roll back**) and in Cloud Run (`dashboard-api` →
+**Revisions → Manage traffic**), then revert the pull request so the next
+deploy doesn't bring the change back. GitHub signs
 in to Google Cloud as `dashboard-deployer` through workload identity
 federation (no stored keys); `infra/setup.sh` sets this up.
 

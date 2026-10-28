@@ -16,7 +16,7 @@ comes next, in order. Setup and operating steps are in `SETUP.md`.
 | Dashboards | Pre-built pages per business line with filtering, drill-down, CSV export and shareable URLs, plus a self-serve **report builder**. |
 | AI | **No AI inside the app.** Questions the builder can't answer go to the developer (Claude, outside the app), who adds fields, measures or starter reports. |
 | Hosting | Firebase / Google Cloud project `calleva-dashboard`. Target < $50/month. |
-| Maintenance | Hands-off: managed services only, automatic deploys from GitHub with a live self-check, status page. |
+| Maintenance | Hands-off: managed services only, status page. Every change is a GitHub pull request; merging it into `main` deploys it automatically, with a live self-check. Undo = revert the pull request. |
 | Freshness | Square/Shopify webhooks land in seconds; dashboards rebuild every 15 minutes. Campminder sheet checked hourly (it changes daily). |
 | History | Everything each platform can provide. Campminder 2022 onward (history sheet) plus the daily sheet. |
 | Time zone | US Eastern for all reporting dates. |

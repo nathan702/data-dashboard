@@ -9,7 +9,7 @@ ADMIN_EMAILS="nathan@calleva.org"
 PROJECT_NUMBER="679066930064"
 # GitHub repository and branches allowed to deploy automatically.
 GITHUB_REPO="nathan702/data-dashboard"
-DEPLOY_BRANCHES="main claude/ecstatic-maxwell-hh3yl3"
+DEPLOY_BRANCHES="main"
 # Google Sheet the Campminder report automation writes to (share it with the
 # connectors service account as Viewer). The sheet id isn't a secret.
 CAMPMINDER_SHEET_ID="12_XrzB1Qhv9SJH5lZ5uy5sfL-zI6ykGhtmjEomddbCI"
