@@ -39,6 +39,8 @@ export interface Row {
   homeLat: number | null;
   homeLon: number | null;
   zip: string;
+  /** As the family typed it (several spellings per school, like the real data). */
+  school: string | null;
 }
 
 /** Made-up home areas around DC, weighted roughly like a real camp's families. */
@@ -73,6 +75,29 @@ const GROUPS: Array<{ group: string; line: BusinessLineOrUnassigned; weekly: boo
   { group: "Fall Farm and Forest Cubs", line: "school_year", weekly: false, programs: [], size: 15 },
   { group: "Spring Tiny Tots SATURDAY", line: "school_year", weekly: false, programs: [], size: 10 },
 ];
+/** Made-up schools, each with the spellings families might type. */
+const SCHOOLS: Array<[number, string[]]> = [
+  [0.16, ["Maple Grove Elementary", "Maple Grove Elementary School", "maple grove elem."]],
+  [0.13, ["The Hilltop School", "Hilltop", "Hilltop School"]],
+  [0.12, ["Riverbend Day School", "Riverbend Day", "RDS"]],
+  [0.1, ["Oak Hill Middle School", "Oak Hill MS"]],
+  [0.09, ["St. Brigid's", "St Brigids", "Saint Brigid's School"]],
+  [0.09, ["Cedar Park Elementary"]],
+  [0.08, ["Friends Academy", "Friends Academy & Day"]],
+  [0.07, ["Lakeside Montessori", "Lakeside Montessori School"]],
+  [0.06, ["Homeschool", "Home school"]],
+  [0.1, ["N/A", ""]],
+];
+
+function demoSchool(camper: string): string | null {
+  const n = noise(`${camper}school`);
+  let acc = 0;
+  const [, spellings] = SCHOOLS.find(([w]) => (acc += w) >= n) ?? SCHOOLS[0]!;
+  // Mostly the first spelling, sometimes another one.
+  const s = noise(`${camper}spell`) < 0.65 ? spellings[0]! : spellings[Math.floor(noise(`${camper}sp2`) * spellings.length)]!;
+  return s || null;
+}
+
 const GRADES = ["K", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
 const STATUSES: Array<[string, string, number]> = [["EN", "Enrolled", 0.86], ["CN", "Cancelled", 0.08], ["WD", "Withdrawn", 0.055], ["WL", "Waitlisted", 0.005]];
 
@@ -117,6 +142,7 @@ function rows(): Row[] {
             // Most applications arrive in winter (weeks 16-30 of the season).
             applicationDate: addDays(start, Math.floor(Math.pow(noise(`${seed}d`), 0.8) * 300)),
             ...demoHome(String(camperNo)),
+            school: demoSchool(String(camperNo)),
           });
         }
       }

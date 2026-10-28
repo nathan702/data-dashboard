@@ -1,6 +1,9 @@
 import { NONE_VALUE, REPORT_CELL_LIMIT, type ProgramFamilySettings, type ReportDataset, type ReportSpec } from "@dash/shared";
 import { DIMENSION_SQL } from "./retailSql.js";
 
+/** School as entered → grouped school (null: not a school); see resolveSchools. */
+export type SchoolMap = Map<string, string | null>;
+
 /**
  * Turns a report spec into one query. Only the fixed SQL fragments below are
  * ever interpolated; field and measure ids are checked against these maps
@@ -21,16 +24,22 @@ interface DatasetSql {
 
 const ENROLLMENTS = (marts: string) => `\`${marts}.fct_campminder_enrollments\``;
 
-/** Program families: Settings overrides (@pf), else the part of the name before " - " (see draftProgramFamily). */
+/**
+ * Program families: Settings overrides (@pf), else the part of the name before " - " (see draftProgramFamily).
+ * Schools: every spelling's grouped name (@schools, from resolveSchools); a spelling newer than that list shows as entered.
+ */
 const ENR_BASE = (marts: string) => `
   pfmap AS (SELECT program, family, branch FROM UNNEST(@pf)),
+  schoolmap AS (SELECT entered, school FROM UNNEST(@schools)),
   enr_base AS (
     SELECT
       e.*,
+      IF(sm.entered IS NULL, e.school, sm.school) AS school_group,
       IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, TRIM(SUBSTR(e.program, 1, STRPOS(e.program, ' - ') - 1)), TRIM(e.program)), pf.family) AS program_family,
       IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, NULLIF(TRIM(SUBSTR(e.program, STRPOS(e.program, ' - ') + 3)), ''), NULL), pf.branch) AS program_branch
     FROM ${ENROLLMENTS(marts)} AS e
     LEFT JOIN pfmap AS pf ON pf.program = e.program
+    LEFT JOIN schoolmap AS sm ON sm.entered = e.school
   )`;
 
 /** Per camper (and season, business line …) attributes; the same names in every Campminder data set. */
@@ -42,6 +51,8 @@ const CAMPER_FIELDS = {
   new_or_returning: "CASE WHEN years_as_camper = 1 THEN 'New' WHEN years_as_camper > 1 THEN 'Returning' END",
   age: "CAST(age_at_season AS STRING)",
   grade: "school_grade",
+  school: "school_group",
+  school_as_entered: "school",
   gender: "gender",
   state: "home_state",
   zip: "home_zip",
@@ -52,6 +63,8 @@ const CAMPER_ROLLUP = `
       MAX(years_as_camper) AS years_as_camper,
       MAX(age_at_season) AS age_at_season,
       ANY_VALUE(school_grade) AS school_grade,
+      ANY_VALUE(school) AS school,
+      ANY_VALUE(school_group) AS school_group,
       ANY_VALUE(gender) AS gender,
       ANY_VALUE(home_state) AS home_state,
       ANY_VALUE(home_zip) AS home_zip`;
@@ -216,7 +229,7 @@ export function effectiveFilters(spec: ReportSpec): Record<string, string[]> {
   return filters;
 }
 
-export function compileReport(spec: ReportSpec, marts: string, families: ProgramFamilySettings) {
+export function compileReport(spec: ReportSpec, marts: string, families: ProgramFamilySettings, schools: SchoolMap = new Map()) {
   const filters = effectiveFilters(spec);
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters;
   const ds = datasetSql(spec.dataset, marts, usesWeek);
@@ -246,6 +259,8 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   if (CAMPMINDER.includes(spec.dataset)) {
     params.pf = Object.entries(families.overrides).map(([program, v]) => ({ program, family: v.family, branch: v.branch }));
     types.pf = [{ program: "STRING", family: "STRING", branch: "STRING" }];
+    params.schools = [...schools].map(([entered, school]) => ({ entered, school }));
+    types.schools = [{ entered: "STRING", school: "STRING" }];
   }
 
   const rowAliases = spec.rows.map((_, i) => `r${i}`);

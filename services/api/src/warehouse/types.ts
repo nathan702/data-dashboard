@@ -17,6 +17,7 @@ import type {
   RetailKpiResponse,
   RetailSource,
   ProgramFamilySettings,
+  SchoolSpelling,
   ReportResult,
   ReportSpec,
   RevenueQuery,
@@ -25,6 +26,7 @@ import type {
   Source,
   SourceFreshness,
 } from "@dash/shared";
+import type { SchoolMap } from "./reportSql.js";
 import type { ReferenceTotals } from "../selfCheck.js";
 
 export interface Warehouse {
@@ -42,9 +44,11 @@ export interface Warehouse {
   enrollmentMap(q: EnrollmentMapQuery): Promise<EnrollmentMapResponse>;
   enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse>;
   /** Report builder: run one report (program families decide the family fields). */
-  runReport(spec: ReportSpec, families: ProgramFamilySettings): Promise<ReportResult>;
+  runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap): Promise<ReportResult>;
   /** Every Campminder program with its enrolled sessions, for Settings → Program families. */
   programList(): Promise<Array<{ program: string; enrollments: number }>>;
+  /** Every school spelling with its enrolled campers (all seasons), for Settings → Schools and report grouping. */
+  schoolList(): Promise<SchoolSpelling[]>;
   /** Plain totals straight from the tables, for the deploy self-check. */
   referenceTotals(start: string, end: string): Promise<ReferenceTotals>;
 }

@@ -73,7 +73,7 @@ unmatched is "Unassigned" and flagged.
   program family, revenue, store sales) are computed at query time from the
   marts, so they need no extra tables.
 - **Firestore**: sync state and cursors, `config/access`, `config/seasons`,
-  `config/programFamilies`, saved `reports`, per-person tab order, and the
+  `config/programFamilies`, `config/schools`, saved `reports`, per-person tab order, and the
   geocode cache (`campminder_geocodes`, not readable from the app).
 - **Deploys**: every push to the branch deploys automatically; a self-check
   compares the API's numbers with plain table totals (revenue, store sales,
@@ -93,21 +93,25 @@ unmatched is "Unassigned" and flagged.
 - **Seasons per business line**, same-weekday comparisons, service-date default.
 - **Report builder** (Reports tab): five data sets, vetted fields and measures,
   rows/columns/measure/filters, table, bar, line and heat map, click-to-filter,
-  private or shared saved reports, four starter reports (sessions by years at
-  camp, Explorers branches, ZIP by week, retention). Program families on Settings.
+  private or shared saved reports, five starter reports (sessions by years at
+  camp, Explorers branches, ZIP by week, schools, retention). Program families
+  and schools on Settings.
+- **Camper schools**: imported as entered, spellings grouped automatically and
+  on Settings → Schools; waiting on a School column in the Campminder report.
 
 ## Roadmap (in order)
 
 1. ~~Seasons per business line~~ ✅
 2. ~~Advanced analysis and drill-down~~ ✅ report builder, starter reports, store
    drill-down. FareHarbor and HubSpot get the same drill-down when connected.
-3. **Camper schools** ← *next*. Import the school as entered; group spellings
-   automatically where safe (case, punctuation, "The", "School", "&"/"and");
-   a Settings → Schools section to confirm groupings and add aliases ("SFS" →
-   Sidwell Friends School); report fields *School* and *School as entered*.
-   *Needs:* the school column name in the Campminder report (or added to the
-   automation), 2022–2025 history re-exported with it, and who may edit groupings.
-4. **Parent occupations**: same grouping approach, into categories ("attorney" /
+3. **Camper schools** ✅ built; fills in once the Campminder report has a
+   School column. The school is imported as entered; spellings are grouped
+   automatically where safe (case, punctuation, "The", "School", "&"/"and",
+   St./Elem./MS/HS); Settings → Schools (admins) confirms groupings and adds
+   aliases ("SFS" → Sidwell Friends School); report fields *School* and
+   *School as entered*, plus a starter report. *Needs:* the School column added
+   to the Campminder report, and 2022–2025 history re-exported with it.
+4. **Parent occupations** ← *next*: same grouping approach, into categories ("attorney" /
    "lawyer" → Legal). Adds parent information to what's stored, so it needs
    sign-off first.
 5. **Campminder financials**: from the separate report produced by the other
@@ -154,7 +158,7 @@ unmatched is "Unassigned" and flagged.
 - Check program families against the real program list (Settings).
 - Add Haunted Forest's 2027 end date when known (Settings → Seasons).
 - Add admins to Firestore `config/access` (until then everyone is an admin).
-- Item 3: school column details (see above).
+- Item 3: add a School column to the Campminder report (and the history tabs).
 - Item 12: FareHarbor documentation and samples (see above).
 
 ## Notes

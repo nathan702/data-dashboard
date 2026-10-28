@@ -21,6 +21,8 @@ import type {
   RetailSource,
   RevenueQuery,
   ProgramFamilySettings,
+  SchoolRow,
+  SchoolSettings,
   ReportResult,
   ReportSpec,
   RevenueSummaryResponse,
@@ -265,4 +267,12 @@ export function useSaveProgramFamilies() {
     ["report-run"],
     ["report-values"],
   ]);
+}
+
+export function useSchools() {
+  return useApi<SchoolSettings & { spellings: SchoolRow[] }>(["schools"], "/api/settings/schools");
+}
+
+export function useSaveSchools() {
+  return useApiMutation<SchoolSettings, SchoolSettings>("/api/settings/schools", [["schools"], ["report-run"], ["report-values"]]);
 }

@@ -121,6 +121,14 @@ export async function runSelfCheck(
     return total === e.count ? null : "report total differs from table count";
   });
 
+  await check("school grouping runs", async () => {
+    const spellings = await warehouse.schoolList();
+    const map = new Map<string, string | null>(spellings.slice(0, 50).map((s) => [s.entered, s.entered]));
+    map.set("(self-check: not a school)", null);
+    await warehouse.runReport(reportSpecSchema.parse({ dataset: "camper_seasons", rows: ["school"], measure: "campers" }), { overrides: {} }, map);
+    return null;
+  });
+
   for (const starter of STARTER_REPORTS) {
     await check(`starter report runs: ${starter.name}`, async () => {
       await warehouse.runReport(starter.spec, { overrides: {} });

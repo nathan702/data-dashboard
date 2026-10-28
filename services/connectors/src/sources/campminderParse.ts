@@ -41,6 +41,8 @@ export interface CampminderSession {
   ageAtSeason: number | null;
   campGrade: string | null;
   schoolGrade: string | null;
+  /** School as the family entered it (grouped for reports in the API; see schools.ts). */
+  school: string | null;
   yearsAsCamper: number | null;
   applicationDate: string | null;
   statusPostDate: string | null;
@@ -162,6 +164,17 @@ export function reportSeason(rows: Array<Record<string, string>>): number | null
 }
 
 /**
+ * The report column holding the camper's school, if the report has one.
+ * Campminder names it differently depending on how the report was built, so
+ * any "School", "School Name", "Current School", "Child School"… header
+ * counts (never "School Grade").
+ */
+export function schoolColumn(headers: Iterable<string>): string | null {
+  for (const h of headers) if (/^\s*(child\s+|camper\s+)?(current\s+)?school(\s+name|\s+attending)?\s*$/i.test(h)) return h;
+  return null;
+}
+
+/**
  * Convert report rows (header → value) into camper-session rows. Only the
  * fields listed on CampminderSession leave this function.
  */
@@ -177,6 +190,7 @@ export function toSessions(
   const dates = new Map<string, { start: string; end: string }>();
   for (const r of rows) for (const [k, v] of parseSessionDates(r["Enrolled Child Sessions With Dates (columnar)"] ?? "")) dates.set(k, v);
 
+  const schoolCol = schoolColumn(Object.keys(rows[0] ?? {}));
   const out = new Map<string, CampminderSession>();
   for (const r of rows) {
     const personId = clean(r["PersonID"]);
@@ -193,6 +207,7 @@ export function toSessions(
       ageAtSeason: ageOn(birth, `${season}-06-01`),
       campGrade: clean(r["Camp Grade"]),
       schoolGrade: clean(r["School Grade"]),
+      school: schoolCol ? clean(r[schoolCol])?.replace(/\s+/g, " ") ?? null : null,
       yearsAsCamper: Number.isFinite(years) && years > 0 ? years : null,
       applicationDate: usDate(r["Child Application Date"]),
       statusPostDate: usDate(r["Child Status Post Date"]),

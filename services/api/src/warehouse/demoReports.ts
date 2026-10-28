@@ -6,7 +6,7 @@ import {
   type ReportResult,
   type ReportSpec,
 } from "@dash/shared";
-import { effectiveFilters } from "./reportSql.js";
+import { effectiveFilters, type SchoolMap } from "./reportSql.js";
 import { toReportResult } from "./reportResult.js";
 import { DEMO_STREAMS, demoRow } from "./demo.js";
 import { demoEnrollmentRows } from "./demoCampminder.js";
@@ -34,7 +34,7 @@ function familyOf(program: string | null, pf: ProgramFamilySettings) {
   return pf.overrides[program] ?? draftProgramFamily(program);
 }
 
-function enrollmentRecords(pf: ProgramFamilySettings, explodeWeeks: boolean): Rec[] {
+function enrollmentRecords(pf: ProgramFamilySettings, schools: SchoolMap, explodeWeeks: boolean): Rec[] {
   const out: Rec[] = [];
   for (const r of demoEnrollmentRows()) {
     const fam = familyOf(r.program, pf);
@@ -48,6 +48,8 @@ function enrollmentRecords(pf: ProgramFamilySettings, explodeWeeks: boolean): Re
       new_or_returning: r.years === 1 ? "New" : "Returning",
       age: String(r.age),
       grade: r.grade,
+      school: r.school === null ? null : schools.has(r.school) ? schools.get(r.school) : r.school,
+      school_as_entered: r.school,
       gender: r.gender,
       state: r.state,
       zip: r.zip,
@@ -69,9 +71,9 @@ function enrollmentRecords(pf: ProgramFamilySettings, explodeWeeks: boolean): Re
 
 const EN = (r: Rec) => r.status_code === "EN";
 
-function camperGroups(pf: ProgramFamilySettings, byFamily: boolean): Rec[] {
+function camperGroups(pf: ProgramFamilySettings, schools: SchoolMap, byFamily: boolean): Rec[] {
   const groups = new Map<string, Rec[]>();
-  for (const r of enrollmentRecords(pf, false)) {
+  for (const r of enrollmentRecords(pf, schools, false)) {
     if (!EN(r) || (byFamily && !r.program_family)) continue;
     const k = [r.season, r.business_line, r.camper_id, byFamily ? r.program_family : ""].join("|");
     groups.set(k, [...(groups.get(k) ?? []), r]);
@@ -82,8 +84,8 @@ function camperGroups(pf: ProgramFamilySettings, byFamily: boolean): Rec[] {
   });
 }
 
-function camperSeasonRecords(pf: ProgramFamilySettings): Rec[] {
-  const recs: Rec[] = camperGroups(pf, false).map((g): Rec => {
+function camperSeasonRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec[] {
+  const recs: Rec[] = camperGroups(pf, schools, false).map((g): Rec => {
     const rs = g.rs as Rec[];
     const weekly = rs.filter((r) => r.week_start !== null);
     return {
@@ -106,8 +108,8 @@ function camperSeasonRecords(pf: ProgramFamilySettings): Rec[] {
   });
 }
 
-function familyRecords(pf: ProgramFamilySettings): Rec[] {
-  return camperGroups(pf, true).map((g) => {
+function familyRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec[] {
+  return camperGroups(pf, schools, true).map((g) => {
     const branches = [...new Set((g.rs as Rec[]).map((r) => (r.program_branch as string | null) ?? "(base program)"))].sort();
     return { ...g, branches_n: branches.length, branches: String(branches.length), branch_combination: branches.join(" + ") };
   });
@@ -158,11 +160,11 @@ function storeRecords(start: string, end: string): Rec[] {
   }));
 }
 
-function dataset(spec: ReportSpec, pf: ProgramFamilySettings, usesWeek: boolean): { recs: Rec[]; measures: Record<string, Measure> } {
+function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap, usesWeek: boolean): { recs: Rec[]; measures: Record<string, Measure> } {
   switch (spec.dataset) {
     case "enrollments":
       return {
-        recs: enrollmentRecords(pf, usesWeek),
+        recs: enrollmentRecords(pf, schools, usesWeek),
         measures: {
           enrollments: (rs) => rs.filter(EN).length,
           campers: (rs) => distinct(rs, "camper_id", EN),
@@ -175,7 +177,7 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, usesWeek: boolean)
       };
     case "camper_seasons":
       return {
-        recs: camperSeasonRecords(pf),
+        recs: camperSeasonRecords(pf, schools),
         measures: {
           campers: (rs) => distinct(rs, "camper_id"),
           avg_sessions: (rs) => avg(rs, "sessions_n"),
@@ -187,7 +189,7 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, usesWeek: boolean)
       };
     case "program_families":
       return {
-        recs: familyRecords(pf),
+        recs: familyRecords(pf, schools),
         measures: { campers: (rs) => distinct(rs, "camper_id"), avg_branches: (rs) => avg(rs, "branches_n") },
       };
     case "revenue":
@@ -214,10 +216,10 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, usesWeek: boolean)
   }
 }
 
-export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings): ReportResult {
+export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap = new Map()): ReportResult {
   const filters = effectiveFilters(spec);
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters;
-  const { recs, measures } = dataset(spec, pf, usesWeek);
+  const { recs, measures } = dataset(spec, pf, schools, usesWeek);
   const val = (r: Rec, id: string) => str(r[id]) ?? NONE_VALUE;
   const picked = recs.filter((r) => Object.entries(filters).every(([id, values]) => values.includes(val(r, id))));
   const measure = measures[spec.measure]!;

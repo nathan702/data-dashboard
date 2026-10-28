@@ -10,3 +10,4 @@ export * from "./campminder.js";
 export * from "./seasons.js";
 export * from "./params.js";
 export * from "./reports.js";
+export * from "./schools.js";

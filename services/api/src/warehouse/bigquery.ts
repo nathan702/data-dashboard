@@ -33,7 +33,7 @@ import {
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import { breakdownSql as enrollmentBreakdownSql, byWeekSql, drillParams, kpiSql as enrollmentKpiSql, mapSql, paceSql, seasonsSql } from "./campminderSql.js";
-import { compileReport } from "./reportSql.js";
+import { compileReport, type SchoolMap } from "./reportSql.js";
 import { toReportResult } from "./reportResult.js";
 import { toKpis } from "./retail.js";
 import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, filteredKpiSql, inventorySql, kpiSql, retailDrillParams, saveAssignmentsSql } from "./retailSql.js";
@@ -363,8 +363,8 @@ export class BigQueryWarehouse implements Warehouse {
     };
   }
 
-  async runReport(spec: ReportSpec, families: ProgramFamilySettings): Promise<ReportResult> {
-    const { sql, params, types } = compileReport(spec, this.martsDataset, families);
+  async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap): Promise<ReportResult> {
+    const { sql, params, types } = compileReport(spec, this.martsDataset, families, schools);
     const [rows] = await this.bq.query({ query: sql, params, types: types as never, location: this.location });
     return toReportResult(spec, rows as Array<Record<string, unknown>>);
   }
@@ -375,6 +375,14 @@ export class BigQueryWarehouse implements Warehouse {
       location: this.location,
     });
     return (rows as Array<{ program: string; enrollments: number }>).map((r) => ({ program: r.program, enrollments: Number(r.enrollments) }));
+  }
+
+  async schoolList() {
+    const [rows] = await this.bq.query({
+      query: `SELECT school AS entered, COUNT(DISTINCT IF(status_code = 'EN', camper_hash, NULL)) AS campers FROM ${this.enrollments} WHERE school IS NOT NULL GROUP BY 1 ORDER BY 2 DESC, 1`,
+      location: this.location,
+    });
+    return (rows as Array<{ entered: string; campers: number }>).map((r) => ({ entered: r.entered, campers: Number(r.campers) }));
   }
 
   async referenceTotals(start: string, end: string) {

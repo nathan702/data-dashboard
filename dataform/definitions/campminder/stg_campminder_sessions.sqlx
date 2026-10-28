@@ -25,6 +25,7 @@ SELECT
   SAFE_CAST(JSON_VALUE(payload, '$.ageAtSeason') AS INT64) AS age_at_season,
   JSON_VALUE(payload, '$.campGrade') AS camp_grade,
   JSON_VALUE(payload, '$.schoolGrade') AS school_grade,
+  JSON_VALUE(payload, '$.school') AS school,
   SAFE_CAST(JSON_VALUE(payload, '$.yearsAsCamper') AS INT64) AS years_as_camper,
   SAFE_CAST(JSON_VALUE(payload, '$.applicationDate') AS DATE) AS application_date,
   SAFE_CAST(JSON_VALUE(payload, '$.statusPostDate') AS DATE) AS status_post_date,

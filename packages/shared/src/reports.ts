@@ -61,6 +61,8 @@ const CAMPER_FIELDS = [
   f("new_or_returning", "New or returning", "New = first year at camp that season."),
   f("age", "Age", "Age on June 1 of the season.", "numeric"),
   f("grade", "School grade", "School grade that season.", "grade"),
+  f("school", "School", "School that season, with spellings grouped (Settings → Schools)."),
+  f("school_as_entered", "School as entered", "School exactly as the family typed it."),
   f("gender", "Gender", "As recorded in Campminder."),
   f("state", "Home state", "Primary household's state."),
   f("zip", "Home ZIP", "Primary household's 5-digit ZIP code."),
@@ -345,6 +347,12 @@ export const STARTER_REPORTS: SavedReport[] = [
     "When in the summer campers from each ZIP attend",
     "Share of each ZIP's camp enrollments in each week of summer. Filter to one season or ZIP to focus.",
     { dataset: "enrollments", rows: ["zip"], column: "week", measure: "enrollments", filters: { business_line: ["camp"] }, percent: "row", chart: "heatmap" },
+  ),
+  starter(
+    "schools",
+    "Which schools campers come from",
+    "Campers from each school, per season, with spellings grouped (Settings → Schools). Filter by business line or grade to focus.",
+    { dataset: "camper_seasons", rows: ["school"], column: "season", measure: "campers", filters: { business_line: ["camp"] } },
   ),
   starter(
     "retention",

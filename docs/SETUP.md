@@ -85,11 +85,12 @@ The **Reports** tab is a report builder: pick a data set (enrollments,
 campers by season, campers by program family, revenue, store sales), up to
 two fields down the side and one across the top, a measure, filters, and a
 table, bar, line or heat-map view. Anyone can save reports, privately or
-shared; owners (and admins) can change or delete them. Four starter reports
+shared; owners (and admins) can change or delete them. Five starter reports
 are built in and can be copied. Only vetted fields and measures exist (in
 `packages/shared/src/reports.ts`, SQL in `services/api/src/warehouse/reportSql.ts`),
 so reports can't reach anything else. Saved reports live in Firestore
-(`reports`); program families (Settings) in `config/programFamilies`.
+(`reports`); program families and schools (Settings) in
+`config/programFamilies` and `config/schools`.
 
 ## Connecting sources
 
@@ -154,8 +155,8 @@ skips it when nothing changed.
    (weekly groups default to Camp).
 
 What's stored: for each camper-session, only the season, session, program,
-status, dates, gender, age on June 1, grades, years at camp, home state, home
-ZIP and the home's map coordinates. People are keyed by a one-way hash of
+status, dates, gender, age on June 1, grades, school, years at camp, home
+state, home ZIP and the home's map coordinates. People are keyed by a one-way hash of
 their Campminder id. Names, birth dates, street addresses, parents and
 medical details are never written to the warehouse.
 
@@ -180,6 +181,14 @@ secret and delete that secret's versions once it isn't needed.
 sync, and again only when it changes. A tab whose sessions belong to a
 different year is refused. Tabs for the daily sheet's season or later are
 ignored, and deleting a tab or the whole sheet keeps what was imported.
+
+**Schools.** Add the camper's school to the Campminder report the automation
+runs (and to the past-season tabs, if they can be re-exported). Any column
+named `School`, `School Name`, `Current School`, `Child School` or `Camper
+School` is picked up on the next hourly sync; no change here is needed.
+Spellings are grouped on **Settings → Schools** (admins), where abbreviations
+and nicknames can be pointed at the right school. Reports get the fields
+*School* and *School as entered*.
 
 **Safety.** If a report arrives with fewer than half the camper-sessions
 already stored for its season, it's treated as a half-written sheet: nothing

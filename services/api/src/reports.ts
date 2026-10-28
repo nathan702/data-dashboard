@@ -3,6 +3,8 @@ import type { Firestore } from "firebase-admin/firestore";
 import {
   programFamilySettingsSchema,
   reportSpecSchema,
+  schoolSettingsSchema,
+  type SchoolSettings,
   type ProgramFamilySettings,
   type SavedReport,
   type SavedReportInput,
@@ -115,6 +117,41 @@ export class MemoryProgramFamilies implements ProgramFamilyStore {
     return this.value;
   }
   async set(settings: ProgramFamilySettings) {
+    this.value = settings;
+  }
+}
+
+/** School spelling → school overrides (Settings), in Firestore at config/schools. */
+export interface SchoolStore {
+  get(): Promise<SchoolSettings>;
+  set(settings: SchoolSettings, by: string): Promise<void>;
+}
+
+export class FirestoreSchools implements SchoolStore {
+  private cache: { at: number; value: SchoolSettings } | null = null;
+  constructor(private readonly db: Firestore) {}
+  private doc() {
+    return this.db.collection("config").doc("schools");
+  }
+  async get() {
+    if (this.cache && Date.now() - this.cache.at < 60_000) return this.cache.value;
+    const parsed = schoolSettingsSchema.safeParse((await this.doc().get()).data()?.settings);
+    const value = parsed.success ? parsed.data : { overrides: {} };
+    this.cache = { at: Date.now(), value };
+    return value;
+  }
+  async set(settings: SchoolSettings, by: string) {
+    await this.doc().set({ settings, updatedBy: by, updatedAt: new Date().toISOString() });
+    this.cache = { at: Date.now(), value: settings };
+  }
+}
+
+export class MemorySchools implements SchoolStore {
+  private value: SchoolSettings = { overrides: {} };
+  async get() {
+    return this.value;
+  }
+  async set(settings: SchoolSettings) {
     this.value = settings;
   }
 }

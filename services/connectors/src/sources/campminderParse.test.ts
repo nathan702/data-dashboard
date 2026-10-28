@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSessionDates, parseSessionPrograms, parseSessionStatuses, parseWeek, reportSeason, toSessions, usDate } from "./campminderParse.js";
+import { parseSessionDates, parseSessionPrograms, parseSessionStatuses, parseWeek, reportSeason, schoolColumn, toSessions, usDate } from "./campminderParse.js";
 
 // Entirely made-up people; shaped like Campminder's export.
 const row = (over: Record<string, string> = {}): Record<string, string> => ({
@@ -112,5 +112,13 @@ describe("campminder parsing", () => {
     const c = toSessions([row({ "Child Session/Status": "Farm Week 3[WD]" })], KEY, 2026)[0]!;
     expect(b.rowHash).toBe(a.rowHash);
     expect(c.rowHash).not.toBe(a.rowHash);
+  });
+
+  it("keeps the school as entered, from whichever school column the report has", () => {
+    expect(schoolColumn(["PersonID", "School Grade", "School Name"])).toBe("School Name");
+    expect(schoolColumn(["Current School"])).toBe("Current School");
+    expect(schoolColumn(["School Grade", "Gender"])).toBeNull();
+    expect(toSessions([row({ School: "  The Lowell   School " })], KEY, 2026)[0]!.school).toBe("The Lowell School");
+    expect(toSessions([row()], KEY, 2026)[0]!.school).toBeNull();
   });
 });

@@ -6,7 +6,7 @@ import { loadConfig } from "./config.js";
 import { MemoryPreferences } from "./preferences.js";
 import { NoopTrigger } from "./refresh.js";
 import { MemorySeasonSettings } from "./seasons.js";
-import { MemoryProgramFamilies, MemoryReports } from "./reports.js";
+import { MemoryProgramFamilies, MemoryReports, MemorySchools } from "./reports.js";
 import { CALENDAR_YEAR, campminderCalendar, DEFAULT_SEASON_SETTINGS } from "@dash/shared";
 import { DEMO_STREAMS, DemoFreshness, DemoWarehouse, demoRow } from "./warehouse/demo.js";
 import { periodBucket, summarizeRows } from "./warehouse/summarize.js";
@@ -61,6 +61,7 @@ function api(auth: AuthDeps | null = null, refresh = new NoopTrigger()) {
     seasons: new MemorySeasonSettings(),
     reports: new MemoryReports(),
     programFamilies: new MemoryProgramFamilies(),
+    schools: new MemorySchools(),
     refresh,
     corsOrigins: ["https://dash.web.app"],
     cacheTtlSeconds: 60,
@@ -588,5 +589,20 @@ describe("report builder", () => {
       .expect(200);
     const res = await run(app, { dataset: "enrollments", rows: ["program_family"], measure: "enrollments" }).expect(200);
     expect(res.body.cells.map((c: { rows: string[] }) => c.rows[0])).toContain("Water");
+  });
+
+  it("groups school spellings, and Settings → Schools overrides them", async () => {
+    const app = api();
+    const before = await request(app).get("/api/settings/schools").expect(200);
+    const row = (entered: string) => before.body.spellings.find((s: { entered: string }) => s.entered === entered);
+    expect(row("Hilltop")).toMatchObject({ school: "The Hilltop School", origin: "grouped" });
+    expect(row("N/A")).toMatchObject({ school: null });
+    const schools = async () =>
+      (await run(app, { dataset: "camper_seasons", rows: ["school"], measure: "campers" }).expect(200)).body.cells.map((c: { rows: string[] }) => c.rows[0]);
+    expect(await schools()).not.toContain("Hilltop");
+    expect(await schools()).toContain("RDS"); // an abbreviation needs Settings
+    await request(app).put("/api/settings/schools").send({ overrides: { RDS: "Riverbend Day School" } }).expect(200);
+    expect(await schools()).toContain("Riverbend Day School");
+    expect(await schools()).not.toContain("RDS");
   });
 });

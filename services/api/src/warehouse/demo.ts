@@ -21,6 +21,7 @@ import {
   type SourceFreshness,
 } from "@dash/shared";
 import { demoRunReport } from "./demoReports.js";
+import type { SchoolMap } from "./reportSql.js";
 import { DEMO_SESSION_GROUPS, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
@@ -186,8 +187,19 @@ export class DemoWarehouse implements Warehouse {
     return demoEnrollmentBreakdown(q);
   }
 
-  async runReport(spec: ReportSpec, families: ProgramFamilySettings) {
-    return demoRunReport(spec, families);
+  async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap) {
+    return demoRunReport(spec, families, schools);
+  }
+
+  async schoolList() {
+    const campers = new Map<string, Set<string>>();
+    for (const r of demoEnrollmentRows()) {
+      if (r.school === null) continue;
+      const set = campers.get(r.school) ?? new Set<string>();
+      if (r.statusCode === "EN") set.add(r.camper);
+      campers.set(r.school, set);
+    }
+    return [...campers].map(([entered, s]) => ({ entered, campers: s.size })).sort((a, b) => b.campers - a.campers || a.entered.localeCompare(b.entered));
   }
 
   async programList() {

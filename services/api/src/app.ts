@@ -4,6 +4,8 @@ import {
   assignmentUpdateSchema,
   draftProgramFamily,
   programFamilySettingsSchema,
+  resolveSchools,
+  schoolSettingsSchema,
   REPORT_DATASET_INFO,
   reportSpecSchema,
   reportValuesQuerySchema,
@@ -38,7 +40,7 @@ import { requireAdmin, requireViewer, type AuthDeps } from "./auth.js";
 import { runSelfCheck } from "./selfCheck.js";
 import type { PreferencesStore } from "./preferences.js";
 import type { SeasonSettingsStore } from "./seasons.js";
-import type { ProgramFamilyStore, ReportStore } from "./reports.js";
+import type { ProgramFamilyStore, ReportStore, SchoolStore } from "./reports.js";
 import type { RefreshTrigger } from "./refresh.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
 
@@ -51,6 +53,7 @@ export interface ApiOptions {
   seasons: SeasonSettingsStore;
   reports: ReportStore;
   programFamilies: ProgramFamilyStore;
+  schools: SchoolStore;
   refresh: RefreshTrigger;
   corsOrigins: string[];
   cacheTtlSeconds: number;
@@ -207,14 +210,25 @@ export function createApi(opts: ApiOptions) {
   enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), (d: EnrollmentBreakdownQuery) => opts.warehouse.enrollmentBreakdown(d));
 
   // ---- Report builder ----
+  const schoolSpellings = () => cached("schools", () => opts.warehouse.schoolList().then((rows) => ({ rows })));
+  /** Every school spelling's grouped name for reports; `key` changes whenever the grouping does. */
+  const schoolMap = async () => {
+    const [settings, spellings] = await Promise.all([opts.schools.get(), schoolSpellings()]);
+    return { map: resolveSchools(spellings.rows, settings.overrides), key: `${spellings.rows.length}:${JSON.stringify(settings.overrides)}` };
+  };
+
   api.post("/reports/run", async (req, res) => {
     const parsed = reportSpecSchema.safeParse(req.body?.spec);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join("; "), issues: parsed.error.issues });
       return;
     }
-    const families = await opts.programFamilies.get();
-    res.json(await cached(`report:${JSON.stringify(parsed.data)}:${JSON.stringify(families)}`, () => opts.warehouse.runReport(parsed.data, families)));
+    const [families, schools] = await Promise.all([opts.programFamilies.get(), schoolMap()]);
+    res.json(
+      await cached(`report:${JSON.stringify(parsed.data)}:${JSON.stringify(families)}:${schools.key}`, () =>
+        opts.warehouse.runReport(parsed.data, families, schools.map),
+      ),
+    );
   });
 
   // Values of one field under the report's other filters, for the filter picker.
@@ -228,8 +242,10 @@ export function createApi(opts: ApiOptions) {
     const { spec, field } = parsed.data;
     const others = Object.fromEntries(Object.entries(spec.filters).filter(([k]) => k !== field));
     const valuesSpec = { ...spec, rows: [field], column: undefined, filters: others, measure: info!.defaultMeasure, percent: "none" as const };
-    const families = await opts.programFamilies.get();
-    const result = await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}`, () => opts.warehouse.runReport(valuesSpec, families));
+    const [families, schools] = await Promise.all([opts.programFamilies.get(), schoolMap()]);
+    const result = await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}:${schools.key}`, () =>
+      opts.warehouse.runReport(valuesSpec, families, schools.map),
+    );
     res.json({
       field,
       values: result.cells.filter((c) => c.kind === "cell").map((c) => ({ value: c.rows[0]!, count: c.value ?? 0 })),
@@ -315,6 +331,26 @@ export function createApi(opts: ApiOptions) {
       return;
     }
     await opts.programFamilies.set(parsed.data, req.viewer!.email);
+    cache.clear();
+    res.json(parsed.data);
+  });
+
+  api.get("/settings/schools", async (_req, res) => {
+    const [settings, spellings] = await Promise.all([opts.schools.get(), schoolSpellings()]);
+    const resolved = resolveSchools(spellings.rows, settings.overrides);
+    res.json({
+      overrides: settings.overrides,
+      spellings: spellings.rows.map((s) => ({ ...s, school: resolved.get(s.entered) ?? null, origin: s.entered in settings.overrides ? "explicit" : "grouped" })),
+    });
+  });
+
+  api.put("/settings/schools", requireAdmin, async (req, res) => {
+    const parsed = schoolSettingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid schools", issues: parsed.error.issues });
+      return;
+    }
+    await opts.schools.set(parsed.data, req.viewer!.email);
     cache.clear();
     res.json(parsed.data);
   });

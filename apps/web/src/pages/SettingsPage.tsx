@@ -11,6 +11,7 @@ import {
 } from "@dash/shared";
 import { DataTable, type Column } from "../components/DataTable";
 import { ProgramFamiliesCard } from "../components/ProgramFamilies";
+import { SchoolsCard } from "../components/Schools";
 import { SeasonSettingsCard } from "../components/SeasonSettings";
 import { useAssignments, useMe, useSaveAssignments } from "../lib/api";
 import { formatDate, formatInt, formatUsd } from "../lib/format";
@@ -147,6 +148,7 @@ export function SettingsPage() {
       )}
       <SeasonSettingsCard canEdit={me.data?.isAdmin ?? false} />
       <ProgramFamiliesCard canEdit={me.data?.isAdmin ?? false} />
+      <SchoolsCard canEdit={me.data?.isAdmin ?? false} />
       <p className="phase-note">
         FareHarbor dashboards and HubSpot pipelines appear here as each platform is connected. Anything new starts as
         “Unassigned” until it's set here.
