@@ -32,7 +32,16 @@ import {
   type Source,
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
-import { breakdownSql as enrollmentBreakdownSql, byWeekSql, drillParams, kpiSql as enrollmentKpiSql, mapSql, paceSql, seasonsSql } from "./campminderSql.js";
+import {
+  breakdownSql as enrollmentBreakdownSql,
+  byWeekSql,
+  drillParams,
+  enrollmentsWithSchools,
+  kpiSql as enrollmentKpiSql,
+  mapSql,
+  paceSql,
+  seasonsSql,
+} from "./campminderSql.js";
 import { compileReport, type SchoolMap } from "./reportSql.js";
 import { toReportResult } from "./reportResult.js";
 import { toKpis } from "./retail.js";
@@ -279,13 +288,19 @@ export class BigQueryWarehouse implements Warehouse {
     return `\`${this.martsDataset}.fct_campminder_enrollments\``;
   }
 
+  /** Enrollments with grouped schools; queries over it need drillParams' @schools. */
+  private get enrollmentsView() {
+    return enrollmentsWithSchools(this.enrollments);
+  }
+
   private enrollmentQuery<T>(
     query: string,
     params: Record<string, unknown>,
     businessLine: BusinessLineOrUnassigned | undefined,
     filters?: EnrollmentFilters,
+    schools?: SchoolMap,
   ) {
-    const drill = drillParams(filters);
+    const drill = drillParams(filters, schools);
     // Dates travel as strings; say they're DATEs so date functions accept them.
     const dates = Object.fromEntries(["prev_cutoff", "cur_start", "prev_start"].filter((k) => k in params).map((k) => [k, "DATE"]));
     return this.bq
@@ -299,21 +314,22 @@ export class BigQueryWarehouse implements Warehouse {
   }
 
   async enrollmentSeasons(businessLine: BusinessLineOrUnassigned | undefined): Promise<EnrollmentSeason[]> {
-    const rows = await this.enrollmentQuery<{ season: number; enrollments: number }>(seasonsSql(this.enrollments), {}, businessLine);
+    const rows = await this.enrollmentQuery<{ season: number; enrollments: number }>(seasonsSql(this.enrollmentsView), {}, businessLine);
     return rows.map((r) => ({ season: Number(r.season), enrollments: Number(r.enrollments) }));
   }
 
-  async enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar): Promise<EnrollmentSummaryResponse> {
+  async enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar, schools?: SchoolMap): Promise<EnrollmentSummaryResponse> {
     const { asOf, prevCutoff, seasonStart, prevSeasonStart } = enrollmentAsOf(q.season, seasons);
     const params = { season: q.season, prev_cutoff: prevCutoff };
     const [kpis, weeks, pace] = await Promise.all([
-      this.enrollmentQuery<Record<string, unknown>>(enrollmentKpiSql(this.enrollments), params, q.businessLine, q.filters),
-      this.enrollmentQuery<{ week: number; enrollments: number }>(byWeekSql(this.enrollments), { season: q.season }, q.businessLine, q.filters),
+      this.enrollmentQuery<Record<string, unknown>>(enrollmentKpiSql(this.enrollmentsView), params, q.businessLine, q.filters, schools),
+      this.enrollmentQuery<{ week: number; enrollments: number }>(byWeekSql(this.enrollmentsView), { season: q.season }, q.businessLine, q.filters, schools),
       this.enrollmentQuery<{ season: number; week_of_season: number; enrollments: number }>(
-        paceSql(this.enrollments),
+        paceSql(this.enrollmentsView),
         { season: q.season, cur_start: seasonStart, prev_start: prevSeasonStart },
         q.businessLine,
         q.filters,
+        schools,
       ),
     ]);
     const cmp = kpis.find((r) => r.period === "comparison");
@@ -328,22 +344,24 @@ export class BigQueryWarehouse implements Warehouse {
     };
   }
 
-  async enrollmentMap(q: EnrollmentMapQuery): Promise<EnrollmentMapResponse> {
+  async enrollmentMap(q: EnrollmentMapQuery, schools?: SchoolMap): Promise<EnrollmentMapResponse> {
     const rows = await this.enrollmentQuery<{ lat: number | null; lon: number | null; campers: number; enrollments: number; families: number }>(
-      mapSql(this.enrollments),
+      mapSql(this.enrollmentsView),
       { season: q.season },
       q.businessLine,
       q.filters,
+      schools,
     );
     return toMapResponse(q.season, rows);
   }
 
-  async enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse> {
+  async enrollmentBreakdown(q: EnrollmentBreakdownQuery, schools?: SchoolMap): Promise<EnrollmentBreakdownResponse> {
     const rows = await this.enrollmentQuery<Record<string, unknown>>(
-      enrollmentBreakdownSql(this.enrollments, q.dimension),
+      enrollmentBreakdownSql(this.enrollmentsView, q.dimension),
       { season: q.season },
       q.businessLine,
       q.filters,
+      schools,
     );
     return {
       season: q.season,

@@ -126,6 +126,12 @@ export async function runSelfCheck(
     const map = new Map<string, string | null>(spellings.slice(0, 50).map((s) => [s.entered, s.entered]));
     map.set("(self-check: not a school)", null);
     await warehouse.runReport(reportSpecSchema.parse({ dataset: "camper_seasons", rows: ["school"], measure: "campers" }), { overrides: {} }, map);
+    const e = (ref as ReferenceTotals | null)?.enrollments;
+    if (e) {
+      // The Camp dashboard's School breakdown covers every enrollment, grouped or not.
+      const b = await warehouse.enrollmentBreakdown({ season: e.season, dimension: "school", filters: {} }, map);
+      if (sum(b.rows.map((r) => r.enrollments)) !== e.count) return "school breakdown differs from table count";
+    }
     return null;
   });
 

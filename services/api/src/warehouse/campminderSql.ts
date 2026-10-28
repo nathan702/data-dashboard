@@ -1,4 +1,5 @@
 import { ENROLLMENT_DIMENSIONS, UNKNOWN_KEY, type EnrollmentDimension, type EnrollmentFilters } from "@dash/shared";
+import type { SchoolMap } from "./reportSql.js";
 
 /**
  * SQL for Campminder enrollments (marts.fct_campminder_enrollments). Only
@@ -12,6 +13,7 @@ const KEY_SQL: Record<Exclude<EnrollmentDimension, "week">, string> = {
   program: "program",
   age: "CAST(age_at_season AS STRING)",
   grade: "school_grade",
+  school: "school_group",
   gender: "gender",
   years: "CAST(years_as_camper AS STRING)",
   state: "home_state",
@@ -28,14 +30,29 @@ const DRILL = ENROLLMENT_DIMENSIONS.map((d) =>
     : `(COALESCE(ARRAY_LENGTH(@f_${d}), 0) = 0 OR COALESCE(${KEY_SQL[d]}, '${UNKNOWN_KEY}') IN UNNEST(@f_${d}))`,
 ).join("\n      AND ");
 
-/** Parameters and types for the drill-down clauses. */
-export function drillParams(filters: EnrollmentFilters | undefined) {
-  const params: Record<string, string[]> = {};
-  const types: Record<string, string[]> = {};
+/**
+ * The enrollments table with each camper's school grouped as on Settings →
+ * Schools (@schools: spelling → school, see resolveSchools); a spelling newer
+ * than that list shows as entered.
+ */
+export function enrollmentsWithSchools(table: string) {
+  return `(
+      SELECT e.*, IF(sm.entered IS NULL, e.school, sm.school) AS school_group
+      FROM ${table} AS e
+      LEFT JOIN UNNEST(@schools) AS sm ON sm.entered = e.school
+    )`;
+}
+
+/** Parameters and types for the drill-down clauses (and the school grouping they read). */
+export function drillParams(filters: EnrollmentFilters | undefined, schools: SchoolMap = new Map()) {
+  const params: Record<string, unknown> = {};
+  const types: Record<string, unknown> = {};
   for (const d of ENROLLMENT_DIMENSIONS) {
     params[`f_${d}`] = filters?.[d] ?? [];
     types[`f_${d}`] = ["STRING"];
   }
+  params.schools = [...schools].map(([entered, school]) => ({ entered, school }));
+  types.schools = [{ entered: "STRING", school: "STRING" }];
   return { params, types };
 }
 

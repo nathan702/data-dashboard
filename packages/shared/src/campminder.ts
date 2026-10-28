@@ -3,7 +3,7 @@ import { encodeFilters, jsonQueryParam } from "./params.js";
 import { BUSINESS_LINES_WITH_UNASSIGNED, type BusinessLineOrUnassigned } from "./businessLines.js";
 
 /** Ways to slice Campminder enrollments. */
-export const ENROLLMENT_DIMENSIONS = ["session_group", "session", "program", "week", "age", "grade", "gender", "years", "state", "status"] as const;
+export const ENROLLMENT_DIMENSIONS = ["session_group", "session", "program", "week", "age", "grade", "school", "gender", "years", "state", "status"] as const;
 export type EnrollmentDimension = (typeof ENROLLMENT_DIMENSIONS)[number];
 
 export const ENROLLMENT_DIMENSION_LABEL: Record<EnrollmentDimension, string> = {
@@ -13,6 +13,7 @@ export const ENROLLMENT_DIMENSION_LABEL: Record<EnrollmentDimension, string> = {
   week: "Week",
   age: "Age",
   grade: "School grade",
+  school: "School",
   gender: "Gender",
   years: "Years at camp",
   state: "Home state",

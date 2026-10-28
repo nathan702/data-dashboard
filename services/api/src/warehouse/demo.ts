@@ -175,16 +175,16 @@ export class DemoWarehouse implements Warehouse {
     return demoEnrollmentSeasons(bl);
   }
 
-  async enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar) {
-    return demoEnrollmentSummary(q, seasons);
+  async enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar, schools?: SchoolMap) {
+    return demoEnrollmentSummary(q, seasons, schools);
   }
 
-  async enrollmentMap(q: EnrollmentMapQuery) {
-    return demoEnrollmentMap(q);
+  async enrollmentMap(q: EnrollmentMapQuery, schools?: SchoolMap) {
+    return demoEnrollmentMap(q, schools);
   }
 
-  async enrollmentBreakdown(q: EnrollmentBreakdownQuery) {
-    return demoEnrollmentBreakdown(q);
+  async enrollmentBreakdown(q: EnrollmentBreakdownQuery, schools?: SchoolMap) {
+    return demoEnrollmentBreakdown(q, schools);
   }
 
   async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap) {

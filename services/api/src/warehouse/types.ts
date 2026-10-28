@@ -40,9 +40,10 @@ export interface Warehouse {
   saveAssignments(changes: AssignmentUpdate["changes"], by: string): Promise<void>;
   enrollmentSeasons(businessLine: BusinessLineOrUnassigned | undefined): Promise<EnrollmentSeason[]>;
   /** `seasons` is Campminder's calendar (where each season starts, for pace and comparisons). */
-  enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar): Promise<EnrollmentSummaryResponse>;
-  enrollmentMap(q: EnrollmentMapQuery): Promise<EnrollmentMapResponse>;
-  enrollmentBreakdown(q: EnrollmentBreakdownQuery): Promise<EnrollmentBreakdownResponse>;
+  /** `schools` groups school spellings (Settings → Schools) for the School breakdown and filter. */
+  enrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar, schools?: SchoolMap): Promise<EnrollmentSummaryResponse>;
+  enrollmentMap(q: EnrollmentMapQuery, schools?: SchoolMap): Promise<EnrollmentMapResponse>;
+  enrollmentBreakdown(q: EnrollmentBreakdownQuery, schools?: SchoolMap): Promise<EnrollmentBreakdownResponse>;
   /** Report builder: run one report (program families decide the family fields). */
   runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap): Promise<ReportResult>;
   /** Every Campminder program with its enrolled sessions, for Settings → Program families. */

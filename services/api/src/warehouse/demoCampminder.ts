@@ -17,6 +17,7 @@ import {
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import { noise } from "./demo.js";
+import type { SchoolMap } from "./reportSql.js";
 
 /** Made-up camper-sessions for local development only. */
 export interface Row {
@@ -152,7 +153,8 @@ function rows(): Row[] {
   return out;
 }
 
-function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week">): string {
+function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week">, schools: SchoolMap): string {
+  if (d === "school") return (r.school === null ? null : schools.has(r.school) ? schools.get(r.school) : r.school) ?? UNKNOWN_KEY;
   return {
     session_group: r.sessionGroup, session: r.sessionName, program: r.program ?? UNKNOWN_KEY, age: String(r.age),
     grade: r.grade, gender: r.gender, years: String(r.years), state: r.state, status: r.status,
@@ -160,18 +162,18 @@ function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week">): string {
 }
 
 /** Same rule as the SQL: every filtered dimension must match. */
-function matches(r: Row, f: EnrollmentFilters | undefined) {
+function matches(r: Row, f: EnrollmentFilters | undefined, schools: SchoolMap) {
   for (const [d, values] of Object.entries(f ?? {}) as Array<[EnrollmentDimension, string[]]>) {
     if (!values.length) continue;
     if (d === "week") {
       if (r.weekStart === null || !values.some((w) => Number(w) >= r.weekStart! && Number(w) <= r.weekEnd!)) return false;
-    } else if (!values.includes(keyOf(r, d))) return false;
+    } else if (!values.includes(keyOf(r, d, schools))) return false;
   }
   return true;
 }
 
-const scoped = (bl: BusinessLineOrUnassigned | undefined, f?: EnrollmentFilters) =>
-  rows().filter((r) => (!bl || r.businessLine === bl) && matches(r, f));
+const scoped = (bl: BusinessLineOrUnassigned | undefined, f?: EnrollmentFilters, schools: SchoolMap = new Map()) =>
+  rows().filter((r) => (!bl || r.businessLine === bl) && matches(r, f, schools));
 
 function counts(rs: Row[]) {
   const en = rs.filter((r) => r.statusCode === "EN");
@@ -193,9 +195,9 @@ export function demoEnrollmentSeasons(bl: BusinessLineOrUnassigned | undefined):
   return [...m.entries()].sort((a, b) => b[0] - a[0]).map(([season, enrollments]) => ({ season, enrollments }));
 }
 
-export function demoEnrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar): EnrollmentSummaryResponse {
+export function demoEnrollmentSummary(q: EnrollmentSummaryQuery, seasons: SeasonCalendar, schools?: SchoolMap): EnrollmentSummaryResponse {
   const { asOf, prevCutoff, seasonStart } = enrollmentAsOf(q.season, seasons);
-  const all = scoped(q.businessLine, q.filters);
+  const all = scoped(q.businessLine, q.filters, schools);
   const cur = all.filter((r) => r.season === q.season);
   const prev = all.filter((r) => r.season === q.season - 1 && r.applicationDate <= prevCutoff);
   const weeks = new Map<number, number>();
@@ -221,8 +223,8 @@ export function demoEnrollmentSummary(q: EnrollmentSummaryQuery, seasons: Season
   };
 }
 
-export function demoEnrollmentBreakdown(q: EnrollmentBreakdownQuery): EnrollmentBreakdownResponse {
-  const cur = scoped(q.businessLine, q.filters).filter((r) => r.season === q.season);
+export function demoEnrollmentBreakdown(q: EnrollmentBreakdownQuery, schools: SchoolMap = new Map()): EnrollmentBreakdownResponse {
+  const cur = scoped(q.businessLine, q.filters, schools).filter((r) => r.season === q.season);
   const groups = new Map<string, Row[]>();
   const add = (k: string, r: Row) => groups.set(k, [...(groups.get(k) ?? []), r]);
   for (const r of cur) {
@@ -230,7 +232,7 @@ export function demoEnrollmentBreakdown(q: EnrollmentBreakdownQuery): Enrollment
       if (r.weekStart !== null) for (let w = r.weekStart; w <= r.weekEnd!; w++) add(String(w), r);
       continue;
     }
-    add(keyOf(r, q.dimension), r);
+    add(keyOf(r, q.dimension, schools), r);
   }
   const out: EnrollmentBreakdownRow[] = [...groups.entries()].map(([key, rs]) => {
     const c = counts(rs);
@@ -247,9 +249,9 @@ export const DEMO_SESSION_GROUPS = GROUPS.map((g) => ({
   activity: rows().filter((r) => r.sessionGroup === g.group && r.season === 2026 && r.statusCode === "EN").length,
 }));
 
-export function demoEnrollmentMap(q: EnrollmentMapQuery): EnrollmentMapResponse {
+export function demoEnrollmentMap(q: EnrollmentMapQuery, schools?: SchoolMap): EnrollmentMapResponse {
   const statusFiltered = (q.filters?.status ?? []).length > 0;
-  const cur = scoped(q.businessLine, q.filters).filter((r) => r.season === q.season && (statusFiltered || r.statusCode === "EN"));
+  const cur = scoped(q.businessLine, q.filters, schools).filter((r) => r.season === q.season && (statusFiltered || r.statusCode === "EN"));
   const homes = new Map<string, { lat: number | null; lon: number | null; campers: Set<string>; enrollments: number }>();
   for (const r of cur) {
     const k = `${r.homeLat},${r.homeLon}`;

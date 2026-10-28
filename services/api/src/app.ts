@@ -191,26 +191,6 @@ export function createApi(opts: ApiOptions) {
     res.json(await cached("inventory:shopify", () => opts.warehouse.shopifyInventory()));
   });
 
-  const enrollmentRoute = <T extends { success: boolean }>(path: string, parse: (q: unknown) => T, run: (data: never) => Promise<object>) =>
-    api.get(path, async (req, res) => {
-      const parsed = parse(req.query) as unknown as { success: boolean; data?: unknown; error?: { issues: unknown } };
-      if (!parsed.success) {
-        res.status(400).json({ error: "Invalid query", issues: parsed.error?.issues });
-        return;
-      }
-      res.json(await cached(`${path}:${JSON.stringify(parsed.data)}`, () => run(parsed.data as never)));
-    });
-
-  enrollmentRoute("/campminder/seasons", (q) => enrollmentSeasonsQuerySchema.safeParse(q), (d: { businessLine?: BusinessLineOrUnassigned }) =>
-    opts.warehouse.enrollmentSeasons(d.businessLine).then((seasons) => ({ seasons })),
-  );
-  enrollmentRoute("/campminder/summary", (q) => enrollmentSummaryQuerySchema.safeParse(q), (d: EnrollmentSummaryQuery) =>
-    opts.seasons.get().then((s) => opts.warehouse.enrollmentSummary(d, campminderCalendar(s.campminderStarts))),
-  );
-  enrollmentRoute("/campminder/map", (q) => enrollmentMapQuerySchema.safeParse(q), (d: EnrollmentMapQuery) => opts.warehouse.enrollmentMap(d));
-  enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), (d: EnrollmentBreakdownQuery) => opts.warehouse.enrollmentBreakdown(d));
-
-  // ---- Report builder ----
   // Rows stored before the import dropped non-school answers (emails…) are never shown.
   const schoolSpellings = () =>
     cached("schools", () => opts.warehouse.schoolList().then((rows) => ({ rows: rows.filter((s) => cleanSchool(s.entered) !== null) })));
@@ -219,6 +199,33 @@ export function createApi(opts: ApiOptions) {
     const [settings, spellings] = await Promise.all([opts.schools.get(), schoolSpellings()]);
     return { map: resolveSchools(spellings.rows, settings.overrides), key: `${spellings.rows.length}:${JSON.stringify(settings.overrides)}` };
   };
+
+  const enrollmentRoute = <T extends { success: boolean }>(path: string, parse: (q: unknown) => T, run: (data: never) => Promise<object>) =>
+    api.get(path, async (req, res) => {
+      const parsed = parse(req.query) as unknown as { success: boolean; data?: unknown; error?: { issues: unknown } };
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query", issues: parsed.error?.issues });
+        return;
+      }
+      const schoolsKey = path === "/campminder/seasons" ? "" : (await schoolMap()).key;
+      res.json(await cached(`${path}:${JSON.stringify(parsed.data)}:${schoolsKey}`, () => run(parsed.data as never)));
+    });
+
+  enrollmentRoute("/campminder/seasons", (q) => enrollmentSeasonsQuerySchema.safeParse(q), (d: { businessLine?: BusinessLineOrUnassigned }) =>
+    opts.warehouse.enrollmentSeasons(d.businessLine).then((seasons) => ({ seasons })),
+  );
+  enrollmentRoute("/campminder/summary", (q) => enrollmentSummaryQuerySchema.safeParse(q), async (d: EnrollmentSummaryQuery) => {
+    const [s, schools] = await Promise.all([opts.seasons.get(), schoolMap()]);
+    return opts.warehouse.enrollmentSummary(d, campminderCalendar(s.campminderStarts), schools.map);
+  });
+  enrollmentRoute("/campminder/map", (q) => enrollmentMapQuerySchema.safeParse(q), async (d: EnrollmentMapQuery) =>
+    opts.warehouse.enrollmentMap(d, (await schoolMap()).map),
+  );
+  enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), async (d: EnrollmentBreakdownQuery) =>
+    opts.warehouse.enrollmentBreakdown(d, (await schoolMap()).map),
+  );
+
+  // ---- Report builder ----
 
   api.post("/reports/run", async (req, res) => {
     const parsed = reportSpecSchema.safeParse(req.body?.spec);

@@ -452,6 +452,22 @@ describe("campminder endpoints", () => {
     expect(programs.body.rows.map((r: { key: string }) => r.key)).toEqual(["Explorers - Quest"]);
   });
 
+  it("breaks down and filters by school, with spellings grouped", async () => {
+    const app = api();
+    const bySchool = await request(app).get("/api/campminder/breakdown?season=2026&businessLine=camp&dimension=school").expect(200);
+    const keys = bySchool.body.rows.map((r: { key: string }) => r.key);
+    expect(keys).toContain("The Hilltop School");
+    expect(keys).not.toContain("Hilltop");
+    const hilltop = bySchool.body.rows.find((r: { key: string }) => r.key === "The Hilltop School");
+    const f = encodeURIComponent(JSON.stringify({ school: ["The Hilltop School"] }));
+    const some = await request(app).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${f}`).expect(200);
+    expect(some.body.current.enrollments).toBe(hilltop.enrollments);
+    // A Settings change regroups right away.
+    await request(app).put("/api/settings/schools").send({ overrides: { RDS: "Riverbend Day School" } }).expect(200);
+    const after = await request(app).get("/api/campminder/breakdown?season=2026&businessLine=camp&dimension=school").expect(200);
+    expect(after.body.rows.map((r: { key: string }) => r.key)).not.toContain("RDS");
+  });
+
   it("maps homes with the same filters", async () => {
     const all = await request(api()).get("/api/campminder/map?season=2026&businessLine=camp").expect(200);
     const f = encodeURIComponent(JSON.stringify({ week: ["9"], program: ["Rock Climbing with THURSDAY CAMPOUT"] }));
@@ -482,7 +498,8 @@ describe("campminder endpoints", () => {
       expect(s).not.toMatch(/\b(WITH|FROM|AS)\s+rows\b/i);
     }
     const { params, types } = sql.drillParams({ week: ["9"] });
-    for (const s of [sql.kpiSql("t"), sql.byWeekSql("t"), sql.paceSql("t"), sql.breakdownSql("t", "age")]) {
+    const t = sql.enrollmentsWithSchools("t"); // the school grouping reads @schools
+    for (const s of [sql.kpiSql(t), sql.byWeekSql(t), sql.paceSql(t), sql.breakdownSql(t, "age"), sql.mapSql(t)]) {
       for (const p of Object.keys(params)) expect(s).toContain(`@${p}`);
     }
     expect(params.f_week).toEqual(["9"]);
