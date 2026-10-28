@@ -7,7 +7,8 @@ import { z } from "zod";
  * grouped automatically; Settings → Schools handles the rest ("SFS" →
  * Sidwell Friends School) and can split anything grouped wrongly. Common
  * abbreviations count as the same word (St. = Saint, Elem. = Elementary,
- * MS = Middle, HS = High).
+ * MS = Middle, HS = High), filler words ("of", "School") and plurals don't
+ * matter, and a name without its level joins the one school by that name.
  */
 
 /** Abbreviations families commonly type, as whole words. */
@@ -51,11 +52,23 @@ export function cleanSchool(v: string | null | undefined): string | null {
   return rejected ? null : s;
 }
 
-/** Grouping key for a school as entered; null when it isn't a school at all ("N/A", "-"). */
-export function schoolKey(entered: string | null | undefined): string | null {
-  const k = (entered ?? "")
+/** Words that don't tell schools apart ("Burnsville School of Science and Art" = "Burnsville Science and Arts"). */
+const FILLER = new Set(["the", "of", "and", "school", "schools", "for", "at", "a"]);
+
+/** School levels, when they end the name ("Carderock Springs ES" → Carderock Springs, elementary). */
+const LEVELS = new Set(["elementary", "middle", "high"]);
+
+/** Plural → singular, so "Arts" = "Art" ("Lewis", "Holy Cross", "Campus" stay). */
+const singular = (w: string) => (w.length > 3 && w.endsWith("s") && !/(ss|us|is)$/.test(w) ? w.slice(0, -1) : w);
+
+/**
+ * A school name reduced to what identifies it: the distinctive words (base)
+ * and its level when the name ends in one. Null when it isn't a school ("N/A").
+ */
+export function schoolParts(entered: string | null | undefined): { base: string; level: string } | null {
+  const plain = (entered ?? "")
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/&/g, " and ")
     .replace(/['’`]/g, "")
@@ -64,11 +77,21 @@ export function schoolKey(entered: string | null | undefined): string | null {
     .split(" ")
     .map((w) => WORDS[w] ?? w)
     .join(" ")
-    .replace(/\bhome school(ed|ing)?\b/g, "homeschool")
-    .replace(/^the\s+/, "")
-    .replace(/\s+school$/, "")
-    .trim();
-  return NOT_A_SCHOOL.has(k) ? null : k;
+    .replace(/\bhome school(ed|ing)?\b/g, "homeschool");
+  if (NOT_A_SCHOOL.has(plain)) return null;
+  const words = plain
+    .split(" ")
+    .filter((w) => w && !FILLER.has(w))
+    .map(singular);
+  const level = words.length > 1 && LEVELS.has(words[words.length - 1]!) ? words.pop()! : "";
+  const base = words.join(" ");
+  return !base || NOT_A_SCHOOL.has(base) ? null : { base, level };
+}
+
+/** Grouping key for a school as entered (spellings with the same key are one school); null when it isn't a school. */
+export function schoolKey(entered: string | null | undefined): string | null {
+  const p = schoolParts(entered);
+  return p ? `${p.base}|${p.level}` : null;
 }
 
 export interface SchoolSpelling {
@@ -79,22 +102,33 @@ export interface SchoolSpelling {
 
 /**
  * School name for every spelling: the Settings override if there is one,
- * else the most common spelling among those with the same key (ties: the
- * longest, so "The Lowell School" beats "Lowell"). Spellings that aren't a
- * school map to null.
+ * else the most common spelling in its group (ties: the longest, so "The
+ * Lowell School" beats "Lowell"). Spellings with the same key are a group;
+ * a name without a level ("Burning Tree") joins its school's group when only
+ * one level exists for that name ("Burning Tree Elementary"), and stays apart
+ * when it's ambiguous (both "X Elementary" and "X Middle"). Spellings that
+ * aren't a school map to null.
  */
 export function resolveSchools(spellings: SchoolSpelling[], overrides: Record<string, string>): Map<string, string | null> {
+  const parts = new Map(spellings.map((s) => [s.entered, schoolParts(s.entered)]));
+  const levels = new Map<string, Set<string>>();
+  for (const p of parts.values()) if (p?.level) levels.set(p.base, (levels.get(p.base) ?? new Set()).add(p.level));
+  const groupOf = (p: { base: string; level: string }) => {
+    const only = levels.get(p.base);
+    return `${p.base}|${p.level || (only?.size === 1 ? [...only][0] : "")}`;
+  };
   const best = new Map<string, SchoolSpelling>();
   for (const s of spellings) {
-    const k = schoolKey(s.entered);
-    if (k === null) continue;
-    const b = best.get(k);
-    if (!b || s.campers > b.campers || (s.campers === b.campers && s.entered.length > b.entered.length)) best.set(k, s);
+    const p = parts.get(s.entered);
+    if (!p) continue;
+    const g = groupOf(p);
+    const b = best.get(g);
+    if (!b || s.campers > b.campers || (s.campers === b.campers && s.entered.length > b.entered.length)) best.set(g, s);
   }
   const out = new Map<string, string | null>();
   for (const s of spellings) {
-    const k = schoolKey(s.entered);
-    out.set(s.entered, overrides[s.entered] ?? (k === null ? null : best.get(k)!.entered));
+    const p = parts.get(s.entered);
+    out.set(s.entered, overrides[s.entered] ?? (p ? best.get(groupOf(p))!.entered : null));
   }
   return out;
 }

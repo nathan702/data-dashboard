@@ -3,7 +3,7 @@ import { cleanSchool, resolveSchools, schoolKey } from "./schools.js";
 
 describe("schools", () => {
   it("groups spellings that differ only in form", () => {
-    for (const s of ["Lowell", "The Lowell School", "lowell school", "LOWELL"]) expect(schoolKey(s)).toBe("lowell");
+    for (const s of ["Lowell", "The Lowell School", "lowell school", "LOWELL"]) expect(schoolKey(s)).toBe("lowell|");
     expect(schoolKey("St. Albans")).toBe(schoolKey("St Albans"));
     expect(schoolKey("Burgundy Farm Country Day School")).toBe(schoolKey("Burgundy Farm Country Day"));
     expect(schoolKey("Holton-Arms")).toBe(schoolKey("Holton Arms School"));
@@ -12,7 +12,11 @@ describe("schools", () => {
     expect(schoolKey("maple grove elem.")).toBe(schoolKey("Maple Grove Elementary School"));
     expect(schoolKey("Oak Hill MS")).toBe(schoolKey("Oak Hill Middle School"));
     expect(schoolKey("Home school")).toBe(schoolKey("Homeschool"));
-    expect(schoolKey("Homeschooled")).toBe("homeschool");
+    expect(schoolKey("Homeschooled")).toBe("homeschool|");
+    expect(schoolKey("Burnsville school of science and art")).toBe(schoolKey("Burnsville science and arts"));
+    expect(schoolKey("Carderock Springs ES")).toBe(schoolKey("Carderock Springs Elementary"));
+    // "High" starting a name isn't a level.
+    expect(schoolKey("High Point Elementary")).toBe("high point|elementary");
     // Different levels stay apart.
     expect(schoolKey("Lowell Middle School")).not.toBe(schoolKey("Lowell High School"));
     for (const s of ["N/A", "none", " - ", "", null]) expect(schoolKey(s)).toBeNull();
@@ -44,6 +48,29 @@ describe("schools", () => {
       expect(cleanSchool(good), good).toBe(good);
     }
     expect(cleanSchool("  The   Lowell School ")).toBe("The Lowell School");
+  });
+
+  it("lets a name without its level join the one school by that name", () => {
+    const m = resolveSchools(
+      [
+        { entered: "Burning Tree Elementary", campers: 10 },
+        { entered: "Burning Tree", campers: 4 },
+        { entered: "Carderock Springs Elementary", campers: 8 },
+        { entered: "Carderock Springs", campers: 3 },
+        { entered: "Carderock Springs ES", campers: 2 },
+        { entered: "Lowell Middle School", campers: 5 },
+        { entered: "Lowell High School", campers: 5 },
+        { entered: "Lowell", campers: 2 },
+      ],
+      {},
+    );
+    expect(m.get("Burning Tree")).toBe("Burning Tree Elementary");
+    expect(m.get("Carderock Springs")).toBe("Carderock Springs Elementary");
+    expect(m.get("Carderock Springs ES")).toBe("Carderock Springs Elementary");
+    // Ambiguous: two Lowells with different levels, so plain "Lowell" is left for Settings.
+    expect(m.get("Lowell Middle School")).toBe("Lowell Middle School");
+    expect(m.get("Lowell High School")).toBe("Lowell High School");
+    expect(m.get("Lowell")).toBe("Lowell");
   });
 
   it("names each group by its most common spelling, and Settings wins", () => {
