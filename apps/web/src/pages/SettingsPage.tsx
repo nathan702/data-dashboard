@@ -34,7 +34,10 @@ export function SettingsPage() {
   const isAdmin = me.data?.isAdmin ?? false;
   const nav = useRef<HTMLElement>(null);
   // On a narrow screen the open tab may be scrolled out of sight.
-  useEffect(() => nav.current?.querySelector(".active")?.scrollIntoView({ block: "nearest", inline: "nearest" }), [tab, data]);
+  // (Braces matter: newer browsers return a promise from scrollIntoView, and an effect may only return a cleanup function.)
+  useEffect(() => {
+    nav.current?.querySelector(".active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab, data]);
 
   // A platform gets a tab once it has something to assign.
   const platforms = SOURCES.filter((s) => data?.rows.some((r) => r.source === s));
