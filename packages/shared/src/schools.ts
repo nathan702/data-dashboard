@@ -75,6 +75,8 @@ export interface OfficialSchool {
   city: string | null;
   /** Earlier names (e.g. Wilson High School before it became Jackson-Reed). */
   formerNames?: string[];
+  /** In a county most camp families come from (see scripts/fetch_official_schools.py). */
+  nearby?: boolean;
 }
 
 /** A school added on Settings → Schools: not in the official directory (preschools, schools elsewhere). */
@@ -282,21 +284,28 @@ export function resolveSchoolSpellings(spellings: SchoolSpelling[], official: Of
   const weights = new WordWeights(
     weightNames.map((n) => parseSchool(n)?.tokens).filter((t): t is string[] => !!t),
   );
+  const nearbyIds = new Set(official.filter((o) => o.nearby).map((o) => o.id));
   const formerNames = new Map<string, string[]>([...official.map((o) => [o.id, o.formerNames ?? []] as const), ...BUILTIN_SCHOOLS.map((b) => [b.id, b.aliases] as const)]);
   const matcherFor = () => {
     const aliases = new Map<string, string[]>();
+    const likely = new Map<string, string[]>();
     const campers = new Map<string, number>();
     for (const r of resolved.values()) {
       if (!r.schoolId || (r.status !== "confirmed" && r.status !== "auto")) continue;
-      aliases.set(r.schoolId, [...(aliases.get(r.schoolId) ?? []), r.entered]);
+      const into = r.status === "confirmed" ? aliases : likely;
+      into.set(r.schoolId, [...(into.get(r.schoolId) ?? []), r.entered]);
       campers.set(r.schoolId, (campers.get(r.schoolId) ?? 0) + r.campers);
     }
     const candidates: SchoolCandidate[] = [...info.values()].map((s) => ({
       id: s.id,
       name: s.name,
       level: s.level,
-      aliases: [...(formerNames.get(s.id) ?? []), ...(aliases.get(s.id) ?? [])],
+      aliases: aliases.get(s.id) ?? [],
+      likelyAliases: likely.get(s.id) ?? [],
+      formerNames: formerNames.get(s.id) ?? [],
       campers: campers.get(s.id) ?? 0,
+      // Only official schools can be "far" (when the list marks any as nearby); added and built-in ones are local.
+      nearby: s.source !== "official" || !nearbyIds.size || nearbyIds.has(s.id),
     }));
     return new SchoolMatcher(candidates, weights);
   };
@@ -318,12 +327,15 @@ export function resolveSchoolSpellings(spellings: SchoolSpelling[], official: Of
   const groups = groupLookAlikes(left, weights);
   const review: SchoolReviewItem[] = groups.map((g) => {
     const top = g[0]!;
-    // The suggestion: the best actual school any spelling in the group points to.
-    let best: SchoolMatch | null = null;
+    // The suggestion: the actual school the group's campers point to most (then the surest).
+    const votes = new Map<string, { campers: number; m: SchoolMatch }>();
     for (const s of g) {
       const m = matches.get(s.entered);
-      if (m?.id && m.confidence >= SUGGEST && (!best || m.confidence > best.confidence)) best = m;
+      if (!m?.id || m.confidence < SUGGEST) continue;
+      const v = votes.get(m.id);
+      votes.set(m.id, { campers: (v?.campers ?? 0) + s.campers, m: !v || m.confidence > v.m.confidence ? m : v.m });
     }
+    const best = [...votes.values()].sort((a, b) => b.campers - a.campers || b.m.confidence - a.m.confidence)[0]?.m ?? null;
     const items: ResolvedSpelling[] = g.map((s) => ({
       ...s,
       status: "review",
@@ -382,7 +394,7 @@ const GROUP = 0.85;
  * "Key") can't chain different schools together.
  */
 function groupLookAlikes(spellings: SchoolSpelling[], weights: WordWeights): SchoolSpelling[][] {
-  const matcher = new SchoolMatcher(spellings.map((s) => ({ id: s.entered, name: s.entered, campers: s.campers })), weights);
+  const matcher = new SchoolMatcher(spellings.map((s) => ({ id: s.entered, name: s.entered, campers: s.campers })), weights, true);
   const parsed = new Map(spellings.map((s) => [s.entered, parseSchool(s.entered)]));
   const groups = new Map<string, SchoolSpelling[]>();
   for (const s of spellings) {
@@ -396,7 +408,7 @@ function groupLookAlikes(spellings: SchoolSpelling[], weights: WordWeights): Sch
         const l = parsed.get(c.id)!;
         // "The Potomac School" and "Potomac Elementary" are different schools.
         if ((p.named && l.level) || (p.level && l.named)) continue;
-        const both = Math.min(c.score, nameScore(l, p, weights));
+        const both = Math.min(c.score, nameScore(l, p, weights, true));
         if (both >= GROUP && both > best) [leader, best] = [c.id, both];
       }
     }

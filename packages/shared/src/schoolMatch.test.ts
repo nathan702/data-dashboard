@@ -104,4 +104,39 @@ describe("school matching", () => {
     expect(parseSchool("High Point Elementary")).toMatchObject({ tokens: ["high", "point"], level: "elementary" });
     expect(parseSchool("Taylor Elementary now/Dorothy Hamm for 6th grade")).toMatchObject({ tokens: ["taylor"], multi: true });
   });
+
+  it("doesn't guess on the traps found in real answers", () => {
+    const t = new SchoolMatcher([
+      { id: "lamb", name: "Latin American Montessori Bilingual PCS" },
+      { id: "lamb-of-god", name: "The Lamb of God School" },
+      { id: "bayne", name: "John H. Bayne Elementary" },
+      { id: "mysa", name: "Mysa School" },
+      { id: "mpsa", name: "Montessori Public School of Arlington" },
+      { id: "whitman-ms", name: "Whitman Middle" },
+      { id: "walt-whitman", name: "Walt Whitman High", campers: 30 },
+      { id: "deal", name: "Deal MS" },
+      { id: "deal-island", name: "Deal Island School", nearby: false },
+      { id: "innovation", name: "Innovation Elementary", formerNames: ["Arlington Science Focus Elementary"] },
+      { id: "asfs", name: "Arlington Science Focus School", level: "elementary" },
+    ]);
+    const sure = (e: string) => {
+      const r = t.match(e);
+      return r.confidence >= AUTO_MATCH ? r.id : null;
+    };
+    // Capitals are read as initials first, and never as a misspelled word.
+    expect(t.match("LAMB").id).toBe("lamb");
+    expect(t.match("LAMB PCS").id).toBe("lamb");
+    expect(t.match("MPSA").id).toBe("mpsa");
+    // One short word with a typo might be another name.
+    expect(sure("Bayles")).toBeNull();
+    // A close runner-up that far more campers attend sends it to review.
+    expect(sure("Whitman")).toBeNull();
+    // A same-named school far away doesn't compete; a former name doesn't tie a current one.
+    expect(sure("Deal")).toBe("deal");
+    // A first name the official list leaves off still points to the school (automatic on the real list's word weights).
+    expect(t.match("Alice Deal Middle School").id).toBe("deal");
+    expect(sure("Arlington Science Focus School")).toBe("asfs");
+    // A country isn't a school.
+    expect(t.match("Germany").id).toBeNull();
+  });
 });

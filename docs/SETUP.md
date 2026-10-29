@@ -204,7 +204,7 @@ question) are dropped before anything is stored.
 
 Each spelling is then matched to an actual school: the official directory
 (`services/api/data/official-schools.json`, from the U.S. Department of
-Education; see below) or a school added on **Settings → Schools**. The
+Education) or a school added on **Settings → Schools**. The
 matcher (`packages/shared/src/schoolMatch.ts`) allows for typos, sound-alike
 spellings, missing or extra words, abbreviations and initials; it matches
 automatically when it's at least 90% sure and otherwise puts the spelling in
@@ -216,6 +216,20 @@ next sync on, and the hourly sync removes them from older stored rows once a
 day (rows from the current day can't be changed until BigQuery settles them).
 Reports get *School*, *School as entered*, *School type*, *School state* and
 *School county*; the Camp pages can break down and filter by school.
+
+**Official school list.** `services/api/data/official-schools.json` holds every
+open public and private school in DC, Maryland and Virginia (about 5,600),
+with type, state, county and city, built by
+`python3 scripts/fetch_official_schools.py` from the Department of
+Education's public data (public schools: Common Core of Data via
+educationdata.urban.org; private schools: the Private School Universe
+Survey on nces.ed.gov, combined across survey years since 2013–14 because
+each year's public file only has the schools that answered). Re-run it about
+once a year, when new data is out, and open a pull request with the result.
+Private schools appear once however many campuses they have, and a charter
+with up to three campuses ("Mundo Verde Bilingual PCS") is one school. Schools
+in the counties families mostly come from are marked "nearby", which the
+matcher prefers when two schools share a name; the list is in the script.
 
 **Safety.** If a report arrives with fewer than half the camper-sessions
 already stored for its season, it's treated as a half-written sheet: nothing
