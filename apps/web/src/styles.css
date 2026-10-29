@@ -334,3 +334,13 @@ tbody tr:hover { background: var(--wash); }
 .save-form input[type="text"] { min-width: 260px; }
 .link-button.danger { color: var(--bad-text); }
 @media (max-width: 600px) { .save-form input[type="text"] { min-width: 0; width: 100%; } }
+
+/* Settings sections: one tab each, underlined when open; scrolls sideways on narrow screens. */
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 20px; overflow-x: auto; }
+.settings-tabs a {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; white-space: nowrap;
+  color: var(--text-secondary); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.settings-tabs a:hover { color: var(--text-primary); }
+.settings-tabs a.active { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 500; }
+.tab-badge { font-size: 11px; font-weight: 600; min-width: 18px; padding: 1px 6px; border-radius: 999px; text-align: center; background: var(--status-warning); color: #fff; }
