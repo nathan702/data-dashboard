@@ -29,6 +29,13 @@ const str = (v: unknown) => (v === null || v === undefined || v === "" ? null : 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const weekday = (d: string) => WEEKDAYS[new Date(`${d}T00:00:00Z`).getUTCDay()]!;
 
+/** Same rule as the SQL: the resolved school, or the spelling itself when it isn't in the map. */
+function demoSchoolFields(entered: string | null, schools: SchoolMap) {
+  const s = entered === null ? null : schools.has(entered) ? schools.get(entered)! : { name: entered, type: null, state: null, county: null };
+  const label = { public: "Public", private: "Private", other: "Other" } as const;
+  return { school: s?.name ?? null, school_type: s?.type ? label[s.type] : null, school_state: s?.state ?? null, school_county: s?.county ?? null };
+}
+
 function familyOf(program: string | null, pf: ProgramFamilySettings) {
   if (!program) return { family: null, branch: null };
   return pf.overrides[program] ?? draftProgramFamily(program);
@@ -48,7 +55,7 @@ function enrollmentRecords(pf: ProgramFamilySettings, schools: SchoolMap, explod
       new_or_returning: r.years === 1 ? "New" : "Returning",
       age: String(r.age),
       grade: r.grade,
-      school: r.school === null ? null : schools.has(r.school) ? schools.get(r.school) : r.school,
+      ...demoSchoolFields(r.school, schools),
       school_as_entered: r.school,
       gender: r.gender,
       state: r.state,

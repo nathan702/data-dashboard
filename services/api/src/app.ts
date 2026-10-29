@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { LRUCache } from "lru-cache";
 import {
@@ -5,8 +6,15 @@ import {
   draftProgramFamily,
   programFamilySettingsSchema,
   cleanSchool,
-  resolveSchools,
-  schoolSettingsSchema,
+  applySchoolAction,
+  BUILTIN_SCHOOLS,
+  EMPTY_SCHOOL_SETTINGS,
+  readSchoolSettings,
+  resolveSchoolSpellings,
+  schoolActionSchema,
+  SchoolMatcher,
+  type OfficialSchool,
+  type SchoolResolution,
   REPORT_DATASET_INFO,
   reportSpecSchema,
   reportValuesQuerySchema,
@@ -55,6 +63,8 @@ export interface ApiOptions {
   reports: ReportStore;
   programFamilies: ProgramFamilyStore;
   schools: SchoolStore;
+  /** The official school directory (empty until fetched). */
+  officialSchools: OfficialSchool[];
   refresh: RefreshTrigger;
   corsOrigins: string[];
   cacheTtlSeconds: number;
@@ -191,13 +201,38 @@ export function createApi(opts: ApiOptions) {
     res.json(await cached("inventory:shopify", () => opts.warehouse.shopifyInventory()));
   });
 
+  // ---- Schools (Settings → Schools; used by reports and the Campminder breakdowns) ----
   // Rows stored before the import dropped non-school answers (emails…) are never shown.
   const schoolSpellings = () =>
     cached("schools", () => opts.warehouse.schoolList().then((rows) => ({ rows: rows.filter((s) => cleanSchool(s.entered) !== null) })));
-  /** Every school spelling's grouped name for reports; `key` changes whenever the grouping does. */
+  const schoolSettings = async () => readSchoolSettings(await opts.schools.get(), opts.officialSchools) ?? EMPTY_SCHOOL_SETTINGS;
+  // Resolving takes a moment against the whole directory, so it's redone only when the spellings or settings change.
+  let resolution: { key: string; value: SchoolResolution } | null = null;
+  const schoolResolution = async () => {
+    const [settings, spellings] = await Promise.all([schoolSettings(), schoolSpellings()]);
+    const key = createHash("sha1").update(JSON.stringify(spellings.rows)).update(JSON.stringify(settings)).digest("hex").slice(0, 16);
+    if (resolution?.key !== key) resolution = { key, value: resolveSchoolSpellings(spellings.rows, opts.officialSchools, settings) };
+    return resolution;
+  };
+  /** Every school spelling's school for reports; `key` changes whenever any of them does. */
   const schoolMap = async () => {
-    const [settings, spellings] = await Promise.all([opts.schools.get(), schoolSpellings()]);
-    return { map: resolveSchools(spellings.rows, settings.overrides), key: `${spellings.rows.length}:${JSON.stringify(settings.overrides)}` };
+    const r = await schoolResolution();
+    return { map: r.value.bySpelling, key: r.key };
+  };
+  // Directory search for "choose a school": official schools and those added on Settings.
+  let directory: { key: string; matcher: SchoolMatcher; info: Map<string, object> } | null = null;
+  const schoolDirectory = async () => {
+    const settings = await schoolSettings();
+    const key = JSON.stringify(settings.schools);
+    if (directory?.key !== key) {
+      const all = [
+        ...opts.officialSchools.map((o) => ({ id: o.id, name: o.name, level: o.level, city: o.city, state: o.state, type: o.type, aliases: o.formerNames })),
+        ...Object.entries(settings.schools).map(([id, c]) => ({ id, name: c.name, level: "" as const, city: null, state: c.state, type: c.type, aliases: [] })),
+        ...BUILTIN_SCHOOLS.map((b) => ({ id: b.id, name: b.name, level: "" as const, city: null, state: null, type: b.type, aliases: b.aliases })),
+      ];
+      directory = { key, matcher: new SchoolMatcher(all), info: new Map(all.map(({ aliases: _a, ...s }) => [s.id, s])) };
+    }
+    return directory;
   };
 
   const enrollmentRoute = <T extends { success: boolean }>(path: string, parse: (q: unknown) => T, run: (data: never) => Promise<object>) =>
@@ -346,23 +381,33 @@ export function createApi(opts: ApiOptions) {
   });
 
   api.get("/settings/schools", async (_req, res) => {
-    const [settings, spellings] = await Promise.all([opts.schools.get(), schoolSpellings()]);
-    const resolved = resolveSchools(spellings.rows, settings.overrides);
-    res.json({
-      overrides: settings.overrides,
-      spellings: spellings.rows.map((s) => ({ ...s, school: resolved.get(s.entered) ?? null, origin: s.entered in settings.overrides ? "explicit" : "grouped" })),
-    });
+    const r = (await schoolResolution()).value;
+    res.json({ schools: r.schools, review: r.review, notSchools: r.notSchools, officialCount: opts.officialSchools.length });
   });
 
-  api.put("/settings/schools", requireAdmin, async (req, res) => {
-    const parsed = schoolSettingsSchema.safeParse(req.body);
+  api.get("/settings/schools/search", async (req, res) => {
+    const q = String(req.query.q ?? "").slice(0, 120);
+    const d = await schoolDirectory();
+    res.json({ results: d.matcher.scores(q).slice(0, 15).map((m) => d.info.get(m.id)) });
+  });
+
+  api.post("/settings/schools/actions", requireAdmin, async (req, res) => {
+    const parsed = schoolActionSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid schools", issues: parsed.error.issues });
+      res.status(400).json({ error: "Invalid change", issues: parsed.error.issues });
       return;
     }
-    await opts.schools.set(parsed.data, req.viewer!.email);
+    const a = parsed.data;
+    const settings = await schoolSettings();
+    const known = (id: string) => id in settings.schools || opts.officialSchools.some((o) => o.id === id) || BUILTIN_SCHOOLS.some((b) => b.id === id);
+    const target = a.action === "assign" ? a.schoolId : a.action === "merge" ? a.into : null;
+    if (target && !known(target)) {
+      res.status(400).json({ error: "No such school" });
+      return;
+    }
+    await opts.schools.set(applySchoolAction(settings, a), req.viewer!.email);
     cache.clear();
-    res.json(parsed.data);
+    res.json({ ok: true });
   });
 
   api.get("/settings/seasons", async (_req, res) => {

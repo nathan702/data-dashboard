@@ -8,6 +8,7 @@ import {
   STARTER_REPORTS,
   type RetailSource,
 } from "@dash/shared";
+import type { SchoolMap } from "./warehouse/reportSql.js";
 import type { Warehouse } from "./warehouse/types.js";
 
 /**
@@ -123,9 +124,11 @@ export async function runSelfCheck(
 
   await check("school grouping runs", async () => {
     const spellings = await warehouse.schoolList();
-    const map = new Map<string, string | null>(spellings.slice(0, 50).map((s) => [s.entered, s.entered]));
+    const map: SchoolMap = new Map(
+      spellings.slice(0, 50).map((s, i) => [s.entered, { name: s.entered, type: i % 2 ? "public" : null, state: "DC", county: null }]),
+    );
     map.set("(self-check: not a school)", null);
-    await warehouse.runReport(reportSpecSchema.parse({ dataset: "camper_seasons", rows: ["school"], measure: "campers" }), { overrides: {} }, map);
+    await warehouse.runReport(reportSpecSchema.parse({ dataset: "camper_seasons", rows: ["school", "school_type"], column: "school_county", measure: "campers" }), { overrides: {} }, map);
     const e = (ref as ReferenceTotals | null)?.enrollments;
     if (e) {
       // The Camp dashboard's School breakdown covers every enrollment, grouped or not.

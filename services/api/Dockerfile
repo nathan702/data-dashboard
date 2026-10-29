@@ -18,5 +18,6 @@ COPY --from=build /app/packages/shared/package.json packages/shared/
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/services/api/package.json services/api/
 COPY --from=build /app/services/api/dist services/api/dist
+COPY --from=build /app/services/api/data services/api/data
 USER node
 CMD ["node", "services/api/dist/server.js"]

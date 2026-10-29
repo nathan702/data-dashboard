@@ -1,27 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { cleanSchool, resolveSchools, schoolKey } from "./schools.js";
+import {
+  applySchoolAction,
+  cleanSchool,
+  EMPTY_SCHOOL_SETTINGS,
+  isNoSchool,
+  NOT_A_SCHOOL,
+  readSchoolSettings,
+  resolveSchoolSpellings,
+  type OfficialSchool,
+} from "./schools.js";
+
+const official = (id: string, name: string, extra: Partial<OfficialSchool> = {}): OfficialSchool => ({
+  id,
+  name,
+  level: "",
+  type: "public",
+  state: "MD",
+  county: "Montgomery County",
+  city: null,
+  ...extra,
+});
+// Official-style names for the test.
+const OFFICIAL = [
+  official("bannockburn", "Bannockburn Elementary School", { level: "elementary" }),
+  official("bradley", "Bradley Hills Elementary School", { level: "elementary" }),
+  official("pyle", "Thomas W. Pyle Middle School", { level: "middle" }),
+  official("gds", "Georgetown Day School", { type: "private", state: "DC", county: "District of Columbia" }),
+  official("jackson-reed", "Jackson-Reed High School", { level: "high", state: "DC", formerNames: ["Wilson High School"] }),
+];
+const spell = (entered: string, campers = 1) => ({ entered, campers });
 
 describe("schools", () => {
-  it("groups spellings that differ only in form", () => {
-    for (const s of ["Lowell", "The Lowell School", "lowell school", "LOWELL"]) expect(schoolKey(s)).toBe("lowell|");
-    expect(schoolKey("St. Albans")).toBe(schoolKey("St Albans"));
-    expect(schoolKey("Burgundy Farm Country Day School")).toBe(schoolKey("Burgundy Farm Country Day"));
-    expect(schoolKey("Holton-Arms")).toBe(schoolKey("Holton Arms School"));
-    expect(schoolKey("Sidwell Friends & Co")).toBe(schoolKey("Sidwell Friends and Co"));
-    expect(schoolKey("St Brigids")).toBe(schoolKey("Saint Brigid's School"));
-    expect(schoolKey("maple grove elem.")).toBe(schoolKey("Maple Grove Elementary School"));
-    expect(schoolKey("Oak Hill MS")).toBe(schoolKey("Oak Hill Middle School"));
-    expect(schoolKey("Home school")).toBe(schoolKey("Homeschool"));
-    expect(schoolKey("Homeschooled")).toBe("homeschool|");
-    expect(schoolKey("Burnsville school of science and art")).toBe(schoolKey("Burnsville science and arts"));
-    expect(schoolKey("Carderock Springs ES")).toBe(schoolKey("Carderock Springs Elementary"));
-    // "High" starting a name isn't a level.
-    expect(schoolKey("High Point Elementary")).toBe("high point|elementary");
-    // Different levels stay apart.
-    expect(schoolKey("Lowell Middle School")).not.toBe(schoolKey("Lowell High School"));
-    for (const s of ["N/A", "none", " - ", "", null]) expect(schoolKey(s)).toBeNull();
-  });
-
   it("drops answers that aren't a school, so they're never stored", () => {
     for (const bad of [
       "parent@example.com",
@@ -41,6 +50,8 @@ describe("schools", () => {
       "-",
       "He has a peanut allergy and needs his inhaler before swimming every day please",
       "x".repeat(81),
+      "first.last",
+      "abc_smith",
     ]) {
       expect(cleanSchool(bad), bad).toBeNull();
     }
@@ -50,41 +61,74 @@ describe("schools", () => {
     expect(cleanSchool("  The   Lowell School ")).toBe("The Lowell School");
   });
 
-  it("lets a name without its level join the one school by that name", () => {
-    const m = resolveSchools(
-      [
-        { entered: "Burning Tree Elementary", campers: 10 },
-        { entered: "Burning Tree", campers: 4 },
-        { entered: "Carderock Springs Elementary", campers: 8 },
-        { entered: "Carderock Springs", campers: 3 },
-        { entered: "Carderock Springs ES", campers: 2 },
-        { entered: "Lowell Middle School", campers: 5 },
-        { entered: "Lowell High School", campers: 5 },
-        { entered: "Lowell", campers: 2 },
-      ],
-      {},
-    );
-    expect(m.get("Burning Tree")).toBe("Burning Tree Elementary");
-    expect(m.get("Carderock Springs")).toBe("Carderock Springs Elementary");
-    expect(m.get("Carderock Springs ES")).toBe("Carderock Springs Elementary");
-    // Ambiguous: two Lowells with different levels, so plain "Lowell" is left for Settings.
-    expect(m.get("Lowell Middle School")).toBe("Lowell Middle School");
-    expect(m.get("Lowell High School")).toBe("Lowell High School");
-    expect(m.get("Lowell")).toBe("Lowell");
+  it("knows answers that mean no school", () => {
+    for (const s of ["N/A", "TBD", "Not sure", "None", "Daycare", "Not yet known (will know in March)", "Middle School"]) expect([s, isNoSchool(s)]).toEqual([s, true]);
+    for (const s of ["Homeschool", "Lowell", "School Without Walls"]) expect([s, isNoSchool(s)]).toEqual([s, false]);
   });
 
-  it("names each group by its most common spelling, and Settings wins", () => {
-    const spellings = [
-      { entered: "Lowell", campers: 3 },
-      { entered: "The Lowell School", campers: 9 },
-      { entered: "SFS", campers: 2 },
-      { entered: "Sidwell Friends School", campers: 20 },
-      { entered: "N/A", campers: 4 },
-    ];
-    const m = resolveSchools(spellings, { SFS: "Sidwell Friends School" });
-    expect(m.get("Lowell")).toBe("The Lowell School");
-    expect(m.get("SFS")).toBe("Sidwell Friends School");
-    expect(m.get("N/A")).toBeNull();
-    expect(resolveSchools(spellings, { Lowell: "Lowell (DC)" }).get("Lowell")).toBe("Lowell (DC)");
+  it("matches spellings to actual schools, and groups the rest for review", () => {
+    const r = resolveSchoolSpellings(
+      [
+        spell("Bannockburn", 44),
+        spell("Bannockbrun ES"),
+        spell("Bradley Hlls ES"),
+        spell("Bradley Hills Elementary School", 19),
+        spell("Pyle", 36),
+        spell("GDS", 42),
+        spell("Georgetown Day School", 64),
+        spell("Wilson HS", 2),
+        spell("NCRC", 37),
+        spell("Ncrc", 2),
+        spell("N/A", 15),
+        spell("Homeschooled", 10),
+        spell("Home", 8),
+      ],
+      OFFICIAL,
+      EMPTY_SCHOOL_SETTINGS,
+    );
+    const school = (id: string) => r.schools.find((s) => s.id === id)?.spellings.map((x) => x.entered).sort();
+    expect(school("bannockburn")).toEqual(["Bannockbrun ES", "Bannockburn"]);
+    expect(school("bradley")).toEqual(["Bradley Hills Elementary School", "Bradley Hlls ES"]);
+    expect(school("pyle")).toEqual(["Pyle"]);
+    // Initials are matched in the second pass, once Georgetown Day has campers.
+    expect(school("gds")).toEqual(["GDS", "Georgetown Day School"]);
+    expect(school("jackson-reed")).toEqual(["Wilson HS"]);
+    // Home-schooled campers count as a school of their own.
+    expect(school("homeschool")).toEqual(["Home", "Homeschooled"]);
+    // Not in the directory: one review item for both spellings, under the more common.
+    expect(r.review.map((x) => [x.name, x.spellings.map((s) => s.entered)])).toEqual([["NCRC", ["NCRC", "Ncrc"]]]);
+    expect(r.notSchools.map((x) => x.entered)).toEqual(["N/A"]);
+    expect(r.bySpelling.get("Pyle")).toEqual({ name: "Thomas W. Pyle Middle School", type: "public", state: "MD", county: "Montgomery County" });
+    expect(r.bySpelling.get("Ncrc")?.name).toBe("NCRC");
+    expect(r.bySpelling.get("N/A")).toBeNull();
+  });
+
+  it("applies admin decisions, which always win", () => {
+    let settings = applySchoolAction(EMPTY_SCHOOL_SETTINGS, {
+      action: "create",
+      spellings: ["NCRC", "NCRC Preschool"],
+      school: { name: "National Child Research Center", type: "private", state: "DC", county: null },
+    });
+    settings = applySchoolAction(settings, { action: "assign", spellings: ["Pyle"], schoolId: "bradley" });
+    settings = applySchoolAction(settings, { action: "not-a-school", spellings: ["kathryn mendelsohn"] });
+    const r = resolveSchoolSpellings([spell("NCRC", 37), spell("NCRC Preschool", 2), spell("Pyle", 36), spell("kathryn mendelsohn")], OFFICIAL, settings);
+    const ncrc = r.schools.find((s) => s.source === "custom")!;
+    expect([ncrc.name, ncrc.campers, ncrc.spellings.every((s) => s.status === "confirmed")]).toEqual(["National Child Research Center", 39, true]);
+    expect(r.schools.find((s) => s.id === "bradley")?.spellings.map((s) => s.entered)).toEqual(["Pyle"]);
+    expect(r.notSchools.map((s) => [s.entered, s.status])).toEqual([["kathryn mendelsohn", "not-a-school"]]);
+    expect(settings.assignments["kathryn mendelsohn"]).toBe(NOT_A_SCHOOL);
+    // Merging an added school into an official one moves its spellings.
+    const merged = applySchoolAction(settings, { action: "merge", from: ncrc.id, into: "gds" });
+    expect([merged.schools[ncrc.id], merged.assignments.NCRC]).toEqual([undefined, "gds"]);
+    // Reset puts a spelling back on automatic matching.
+    expect(applySchoolAction(settings, { action: "reset", spellings: ["Pyle"] }).assignments.Pyle).toBeUndefined();
+  });
+
+  it("reads the first version of the settings", () => {
+    const s = readSchoolSettings({ overrides: { SFS: "Sidwell Friends School", "Georgetown Day": "georgetown day school" } }, OFFICIAL)!;
+    expect(s.assignments["Georgetown Day"]).toBe("gds");
+    const sfs = s.assignments.SFS!;
+    expect(s.schools[sfs]?.name).toBe("Sidwell Friends School");
+    expect(readSchoolSettings({ nonsense: true }, OFFICIAL)).toBeNull();
   });
 });

@@ -90,6 +90,7 @@ const SCHOOLS: Array<[number, string[]]> = [
   [0.1, ["N/A", ""]],
 ];
 
+
 function demoSchool(camper: string): string | null {
   const n = noise(`${camper}school`);
   let acc = 0;
@@ -154,7 +155,7 @@ function rows(): Row[] {
 }
 
 function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week">, schools: SchoolMap): string {
-  if (d === "school") return (r.school === null ? null : schools.has(r.school) ? schools.get(r.school) : r.school) ?? UNKNOWN_KEY;
+  if (d === "school") return (r.school === null ? null : schools.has(r.school) ? schools.get(r.school)?.name : r.school) ?? UNKNOWN_KEY;
   return {
     session_group: r.sessionGroup, session: r.sessionName, program: r.program ?? UNKNOWN_KEY, age: String(r.age),
     grade: r.grade, gender: r.gender, years: String(r.years), state: r.state, status: r.status,
