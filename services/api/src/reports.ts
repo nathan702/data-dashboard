@@ -3,7 +3,6 @@ import type { Firestore } from "firebase-admin/firestore";
 import {
   programFamilySettingsSchema,
   reportSpecSchema,
-  schoolSettingsSchema,
   type SchoolSettings,
   type ProgramFamilySettings,
   type SavedReport,
@@ -121,22 +120,25 @@ export class MemoryProgramFamilies implements ProgramFamilyStore {
   }
 }
 
-/** School spelling → school overrides (Settings), in Firestore at config/schools. */
+/**
+ * Settings → Schools decisions, in Firestore at config/schools. Returned as
+ * stored (either version); readSchoolSettings makes sense of it. The
+ * connectors service reads the same document for answers marked not a school.
+ */
 export interface SchoolStore {
-  get(): Promise<SchoolSettings>;
+  get(): Promise<unknown>;
   set(settings: SchoolSettings, by: string): Promise<void>;
 }
 
 export class FirestoreSchools implements SchoolStore {
-  private cache: { at: number; value: SchoolSettings } | null = null;
+  private cache: { at: number; value: unknown } | null = null;
   constructor(private readonly db: Firestore) {}
   private doc() {
     return this.db.collection("config").doc("schools");
   }
   async get() {
     if (this.cache && Date.now() - this.cache.at < 60_000) return this.cache.value;
-    const parsed = schoolSettingsSchema.safeParse((await this.doc().get()).data()?.settings);
-    const value = parsed.success ? parsed.data : { overrides: {} };
+    const value: unknown = (await this.doc().get()).data()?.settings ?? null;
     this.cache = { at: Date.now(), value };
     return value;
   }
@@ -147,7 +149,7 @@ export class FirestoreSchools implements SchoolStore {
 }
 
 export class MemorySchools implements SchoolStore {
-  private value: SchoolSettings = { overrides: {} };
+  private value: unknown = null;
   async get() {
     return this.value;
   }

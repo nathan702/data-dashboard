@@ -191,6 +191,8 @@ export function toSessions(
   season: number,
   /** Home coordinates by addressKey(); see geocode.ts. */
   homes: Map<string, GeoResult> = new Map(),
+  /** School answers an admin marked "not a school" (Settings → Schools): never stored. */
+  notSchools: ReadonlySet<string> = new Set(),
 ): CampminderSession[] {
   // Session dates are the same for every camper; collect them across the report
   // so cancelled sessions (not in a camper's own dates column) get dates too.
@@ -214,7 +216,7 @@ export function toSessions(
       ageAtSeason: ageOn(birth, `${season}-06-01`),
       campGrade: clean(r["Camp Grade"]),
       schoolGrade: clean(r["School Grade"]),
-      school: schoolCol ? cleanSchool(r[schoolCol]) : null,
+      school: keepSchool(schoolCol ? cleanSchool(r[schoolCol]) : null, notSchools),
       yearsAsCamper: Number.isFinite(years) && years > 0 ? years : null,
       applicationDate: usDate(r["Child Application Date"]),
       statusPostDate: usDate(r["Child Status Post Date"]),
@@ -248,6 +250,8 @@ export function toSessions(
   }
   return [...out.values()];
 }
+
+const keepSchool = (school: string | null, notSchools: ReadonlySet<string>) => (school && !notSchools.has(school) ? school : null);
 
 /** Lower wins: attended beats waiting, which beats cancelled or withdrawn. */
 const STATUS_RANK = ["EN", "LE", "DM", "WL", "AP"];

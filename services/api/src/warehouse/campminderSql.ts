@@ -1,5 +1,5 @@
 import { ENROLLMENT_DIMENSIONS, UNKNOWN_KEY, type EnrollmentDimension, type EnrollmentFilters } from "@dash/shared";
-import type { SchoolMap } from "./reportSql.js";
+import { schoolParams, type SchoolMap } from "./reportSql.js";
 
 /**
  * SQL for Campminder enrollments (marts.fct_campminder_enrollments). Only
@@ -32,7 +32,7 @@ const DRILL = ENROLLMENT_DIMENSIONS.map((d) =>
 
 /**
  * The enrollments table with each camper's school grouped as on Settings →
- * Schools (@schools: spelling → school, see resolveSchools); a spelling newer
+ * Schools (@schools: spelling → school, see schoolParams); a spelling newer
  * than that list shows as entered.
  */
 export function enrollmentsWithSchools(table: string) {
@@ -51,8 +51,9 @@ export function drillParams(filters: EnrollmentFilters | undefined, schools: Sch
     params[`f_${d}`] = filters?.[d] ?? [];
     types[`f_${d}`] = ["STRING"];
   }
-  params.schools = [...schools].map(([entered, school]) => ({ entered, school }));
-  types.schools = [{ entered: "STRING", school: "STRING" }];
+  const sp = schoolParams(schools);
+  Object.assign(params, sp.params);
+  Object.assign(types, sp.types);
   return { params, types };
 }
 

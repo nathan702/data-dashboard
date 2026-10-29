@@ -21,8 +21,10 @@ import type {
   RetailSource,
   RevenueQuery,
   ProgramFamilySettings,
-  SchoolRow,
-  SchoolSettings,
+  ResolvedSchool,
+  ResolvedSpelling,
+  SchoolAction,
+  SchoolReviewItem,
   ReportResult,
   ReportSpec,
   RevenueSummaryResponse,
@@ -269,10 +271,37 @@ export function useSaveProgramFamilies() {
   ]);
 }
 
+export type SchoolsResponse = {
+  schools: ResolvedSchool[];
+  review: SchoolReviewItem[];
+  notSchools: ResolvedSpelling[];
+  /** Schools in the official directory (0 until it's loaded). */
+  officialCount: number;
+};
+
 export function useSchools() {
-  return useApi<SchoolSettings & { spellings: SchoolRow[] }>(["schools"], "/api/settings/schools");
+  return useApi<SchoolsResponse>(["schools"], "/api/settings/schools");
 }
 
-export function useSaveSchools() {
-  return useApiMutation<SchoolSettings, SchoolSettings>("/api/settings/schools", [["schools"], ["report-run"], ["report-values"]]);
+export type SchoolSearchResult = { id: string; name: string; level: string; city: string | null; state: string | null; type: string | null };
+
+/** Official and added schools matching what's typed (two letters or more). */
+export function useSchoolSearch(q: string) {
+  const term = q.trim();
+  return useApiWhen<{ results: SchoolSearchResult[] }>(term.length >= 2, ["school-search", term], `/api/settings/schools/search?q=${encodeURIComponent(term)}`);
+}
+
+/** One change on Settings → Schools; everything that shows schools refreshes. */
+export function useSchoolAction() {
+  const { getToken } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (action: SchoolAction) => call<{ ok: true }>("/api/settings/schools/actions", await getToken(), { method: "POST", body: action }),
+    onSuccess: () =>
+      Promise.all(
+        [["schools"], ["school-search"], ["report-run"], ["report-values"], ["enrollment-summary"], ["enrollment-breakdown"], ["enrollment-map"]].map((key) =>
+          qc.invalidateQueries({ queryKey: key }),
+        ),
+      ),
+  });
 }

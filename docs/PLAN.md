@@ -96,21 +96,26 @@ unmatched is "Unassigned" and flagged.
   private or shared saved reports, five starter reports (sessions by years at
   camp, Explorers branches, ZIP by week, schools, retention). Program families
   and schools on Settings.
-- **Camper schools**: imported as entered, spellings grouped automatically and
-  on Settings → Schools; waiting on a School column in the Campminder report.
+- **Camper schools**: imported as entered and matched to actual schools
+  (official directory or added on Settings) with typo-, abbreviation- and
+  initials-tolerant matching; a review list for the unsure ones; School,
+  School type, state and county in reports; School breakdown and filter on
+  the Camp pages.
+- **Settings tabs**: one tab per platform's assignments, Seasons, Program
+  families, Schools.
 
 ## Roadmap (in order)
 
 1. ~~Seasons per business line~~ ✅
 2. ~~Advanced analysis and drill-down~~ ✅ report builder, starter reports, store
    drill-down. FareHarbor and HubSpot get the same drill-down when connected.
-3. **Camper schools** ✅ built; fills in once the Campminder report has a
-   School column. The school is imported as entered; spellings are grouped
-   automatically where safe (case, punctuation, "The", "School", "&"/"and",
-   St./Elem./MS/HS); Settings → Schools (admins) confirms groupings and adds
-   aliases ("SFS" → Sidwell Friends School); report fields *School* and
-   *School as entered*, plus a starter report. *Needs:* the School column added
-   to the Campminder report, and 2022–2025 history re-exported with it.
+3. **Camper schools** ✅ The school is imported as entered and matched to the
+   official U.S. Department of Education school list (DC, MD, VA) or a school
+   added on Settings → Schools: confident matches (≥ 90%) automatically, the
+   rest grouped in a review list. Reports get School, School type, state and
+   county; the Camp pages break down and filter by school. Answers marked
+   "not a school" are kept out of the data. *Needs:* 2022–2025 history
+   re-exported with the School column.
 4. **Parent occupations** ← *next*: same grouping approach, into categories ("attorney" /
    "lawyer" → Legal). Adds parent information to what's stored, so it needs
    sign-off first.

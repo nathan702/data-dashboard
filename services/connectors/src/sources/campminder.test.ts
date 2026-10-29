@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MemoryRawWriter, MemoryRunLog, MemoryStateStore } from "../core/memory.js";
 import { runSync } from "../core/runner.js";
 import { EnvSecretStore } from "../core/secrets.js";
-import { CampminderConnector, type CampminderConfig, type CurrentRows, type SheetReader } from "./campminder.js";
+import { CampminderConnector, type CampminderConfig, type CurrentRows, type SchoolExclusions, type SheetReader } from "./campminder.js";
 
 const HEADER = ["PersonID", "Gender", "Birth Date", "Child Application Date", "Child Session/Status", "Enrolled Child Sessions With Dates (columnar)", "Primary Childhood ID"];
 const camper = (id: string, status: string, year = 2026) => [id, "Male", "5/5/2015", `1/2/${year}`, status, `Farm Week 1 (06/15/${year}-06/19/${year})`, `F${id}`];
@@ -35,7 +35,20 @@ class StoredRows implements CurrentRows {
   }
 }
 
-function setup(values: string[][], env: Record<string, string> = {}, historySheetId?: string, geo?: CampminderConfig["geo"]) {
+/** The not-a-school list as Settings → Schools would keep it; records each cleanup. */
+class FakeExclusions implements SchoolExclusions {
+  purged: string[][] = [];
+  constructor(public values: string[] = []) {}
+  async list() {
+    return this.values;
+  }
+  async purge(values: string[]) {
+    this.purged.push(values);
+    return values.length;
+  }
+}
+
+function setup(values: string[][], env: Record<string, string> = {}, historySheetId?: string, geo?: CampminderConfig["geo"], schools?: SchoolExclusions) {
   const writer = new MemoryRawWriter();
   const deps = { writer, state: new MemoryStateStore(), runLog: new MemoryRunLog() };
   const sheet = new FakeSheet(values);
@@ -46,6 +59,7 @@ function setup(values: string[][], env: Record<string, string> = {}, historyShee
     tab: "Sheet1",
     historySheetId,
     geo,
+    schools,
   });
   return { c, deps, writer, sheet };
 }
@@ -218,5 +232,27 @@ describe("campminder connector", () => {
     const live = new StoredRows(writer);
     expect((await live.load(2027)).size).toBe(0);
     expect((await live.load(2026)).size).toBe(4);
+  });
+
+  it("never stores answers marked not a school, and cleans them out of older rows once a day", async () => {
+    const header = [...HEADER, "School"];
+    const rows = many(4).map((r, i) => [...r, i === 0 ? "kathryn mendelsohn" : "Lowell School"]);
+    const exclusions = new FakeExclusions();
+    const { c, deps, writer } = setup([header, ...rows], {}, undefined, undefined, exclusions);
+    const schools = () => writer.rows.slice(-4).map((r) => (r.record.payload as { school: string | null }).school);
+    await runSync(c, deps, "incremental");
+    expect(schools()).toEqual(["kathryn mendelsohn", "Lowell School", "Lowell School", "Lowell School"]);
+    expect(exclusions.purged).toEqual([]);
+
+    // Marked on Settings → Schools: the unchanged sheet is read again and the answer dropped.
+    exclusions.values = ["kathryn mendelsohn"];
+    await runSync(c, deps, "incremental");
+    const latest = writer.rows.at(-1)!.record.payload as { school: string | null };
+    expect(latest.school).toBeNull();
+    expect(JSON.stringify(writer.rows.slice(4))).not.toContain("kathryn");
+    expect(exclusions.purged).toEqual([["kathryn mendelsohn"]]);
+    // Same list, same day: no second cleanup.
+    await runSync(c, deps, "incremental");
+    expect(exclusions.purged).toHaveLength(1);
   });
 });

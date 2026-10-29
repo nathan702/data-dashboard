@@ -5,6 +5,7 @@ import { requestJson } from "../core/http.js";
 import { NotConfiguredError, requireSecret, type SecretStore } from "../core/secrets.js";
 import type { Connector, RawRecord, SyncContext } from "../core/types.js";
 import { Firestore } from "@google-cloud/firestore";
+import { NOT_A_SCHOOL } from "@dash/shared";
 import { PARSER_VERSION, reportSeason, sessionRecordId, toSessions } from "./campminderParse.js";
 import { CensusGeocoder, FirestoreGeoCache, homeAddress, locateHomes, type GeoCache, type Geocoder, type HomeAddress } from "./geocode.js";
 
@@ -30,6 +31,17 @@ export interface CurrentRows {
   load(season: number): Promise<Map<string, string>>;
 }
 
+/**
+ * School answers an admin marked "not a school" on Settings → Schools (a
+ * parent's name, a username…). They're left out of every import, and older
+ * stored copies are cleaned out.
+ */
+export interface SchoolExclusions {
+  list(): Promise<string[]>;
+  /** Remove these answers from stored rows; returns how many rows changed. */
+  purge(values: string[]): Promise<number>;
+}
+
 export interface CampminderConfig {
   secrets: SecretStore;
   sheet: SheetReader;
@@ -41,6 +53,8 @@ export interface CampminderConfig {
   historySheetId?: string;
   /** Places homes on the map; without it, coordinates are left empty. */
   geo?: { cache: GeoCache; geocoder: Geocoder };
+  /** Answers marked "not a school"; without it, nothing is excluded. */
+  schools?: SchoolExclusions;
   serviceAccount?: string;
 }
 
@@ -82,6 +96,36 @@ export class GoogleSheetReader implements SheetReader {
   }
 }
 
+/** Reads the list from the same Firestore document the API writes (config/schools). */
+export class FirestoreSchoolExclusions implements SchoolExclusions {
+  constructor(
+    private readonly db: Firestore,
+    private readonly bq: BigQuery,
+  ) {}
+  async list() {
+    const assignments = (await this.db.collection("config").doc("schools").get()).data()?.settings?.assignments;
+    if (!assignments || typeof assignments !== "object") return [];
+    return Object.entries(assignments as Record<string, unknown>)
+      .filter(([, v]) => v === NOT_A_SCHOOL)
+      .map(([k]) => k)
+      .sort();
+  }
+  async purge(values: string[]) {
+    // Today's rows may still be in BigQuery's streaming buffer, which can't be changed yet; tomorrow's run gets them.
+    const [job] = await this.bq.createQueryJob({
+      query: `
+        UPDATE \`raw_campminder.sessions\`
+        SET payload = JSON_REMOVE(payload, '$.school')
+        WHERE JSON_VALUE(payload, '$.school') IN UNNEST(@values)
+          AND ingested_at < TIMESTAMP(CURRENT_DATE())`,
+      params: { values },
+    });
+    await job.getQueryResults();
+    const [meta] = await job.getMetadata();
+    return Number(meta.statistics?.query?.numDmlAffectedRows ?? 0);
+  }
+}
+
 export class BigQueryCurrentRows implements CurrentRows {
   constructor(private readonly bq: BigQuery) {}
   async load(season: number) {
@@ -109,6 +153,7 @@ export function campminderConfigFromEnv(env: NodeJS.ProcessEnv, secrets: SecretS
     tab: env.CAMPMINDER_SHEET_TAB?.trim() || "Sheet1",
     historySheetId: env.CAMPMINDER_HISTORY_SHEET_ID?.trim() || undefined,
     geo: { cache: new FirestoreGeoCache(new Firestore({ projectId: project })), geocoder: new CensusGeocoder() },
+    schools: new FirestoreSchoolExclusions(new Firestore({ projectId: project }), new BigQuery({ projectId: project })),
     serviceAccount: sa,
   };
 }
@@ -123,6 +168,10 @@ export class CampminderConnector implements Connector {
     const key = await requireSecret(this.cfg.secrets, PSEUDONYMIZATION_SECRET, "Campminder");
 
     const override = Number(await this.cfg.secrets.get(CAMPMINDER_SEASON_SECRET));
+    const notSchools = (await this.cfg.schools?.list()) ?? [];
+    const exclude = new Set(notSchools);
+    // Marking another answer "not a school" re-reads every sheet, so stored rows lose it.
+    const excludeHash = notSchools.length ? createHash("sha256").update(JSON.stringify(notSchools)).digest("hex").slice(0, 12) : "";
     const values = await this.cfg.sheet.read(sheetId, this.cfg.tab);
     const current = await this.importSeason(ctx, key, values, {
       cursor: "sheet_hash",
@@ -131,10 +180,33 @@ export class CampminderConnector implements Connector {
       // The daily sheet only moves forward (2026 → 2027); going back means the earlier season was misread.
       retireEarlierMisfile: true,
       // Changing the season setting re-reads an unchanged sheet.
-      hashExtra: String(override || ""),
+      hashExtra: `${override || ""}|${excludeHash}`,
+      exclude,
     });
 
-    if (this.cfg.historySheetId) await this.importHistory(ctx, key, this.cfg.historySheetId, current);
+    try {
+      if (this.cfg.historySheetId) await this.importHistory(ctx, key, this.cfg.historySheetId, current, exclude, excludeHash);
+    } finally {
+      await this.purgeNotSchools(ctx, notSchools, excludeHash);
+    }
+  }
+
+  /**
+   * Clean answers marked "not a school" out of older stored rows, once a day
+   * per list (rows from today can't be changed until BigQuery settles them).
+   */
+  private async purgeNotSchools(ctx: SyncContext, notSchools: string[], excludeHash: string) {
+    if (!notSchools.length || !this.cfg.schools) return;
+    const stamp = `${excludeHash}|${new Date().toISOString().slice(0, 10)}`;
+    if (ctx.state.cursors.school_purge === stamp) return;
+    try {
+      const rows = await this.cfg.schools.purge(notSchools);
+      ctx.log("campminder not-a-school answers removed from stored rows", { answers: notSchools.length, rows });
+      await ctx.saveCursor("school_purge", stamp);
+    } catch (err) {
+      // Not worth failing the sync over; the next run tries again.
+      ctx.log("campminder not-a-school cleanup will retry", { error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   /**
@@ -143,7 +215,14 @@ export class CampminderConnector implements Connector {
    * leaves its season as imported. The daily sheet owns its own season and
    * anything later, so a history tab can never overwrite it.
    */
-  private async importHistory(ctx: SyncContext, key: string, sheetId: string, currentSeason: number | null) {
+  private async importHistory(
+    ctx: SyncContext,
+    key: string,
+    sheetId: string,
+    currentSeason: number | null,
+    exclude: ReadonlySet<string>,
+    excludeHash: string,
+  ) {
     const tabs = (await this.cfg.sheet.tabs(sheetId)).filter((t) => /^\d{4}$/.test(t.trim()));
     const problems: string[] = [];
     for (const tab of tabs.sort()) {
@@ -165,6 +244,8 @@ export class CampminderConnector implements Connector {
             }
             return season;
           },
+          hashExtra: excludeHash,
+          exclude,
         });
       } catch (err) {
         problems.push(err instanceof Error ? err.message : String(err));
@@ -185,6 +266,7 @@ export class CampminderConnector implements Connector {
       season: (rows: Array<Record<string, string>>) => number | null;
       retireEarlierMisfile?: boolean;
       hashExtra?: string;
+      exclude?: ReadonlySet<string>;
     },
   ): Promise<number | null> {
     // The parser version is part of the hash, so a parsing change re-reads unchanged sheets.
@@ -217,7 +299,7 @@ export class CampminderConnector implements Connector {
           { ...this.cfg.geo, outOfTime: ctx.outOfTime, log: ctx.log },
         )
       : undefined;
-    const sessions = toSessions(rows, key, season, located?.homes);
+    const sessions = toSessions(rows, key, season, located?.homes, opts.exclude);
     const previous = await this.cfg.current.load(season);
     if (previous.size > 0 && sessions.length < previous.size * MIN_FRACTION_OF_PREVIOUS) {
       throw new Error(

@@ -7,6 +7,7 @@ import { MemoryPreferences } from "./preferences.js";
 import { NoopTrigger } from "./refresh.js";
 import { MemorySeasonSettings } from "./seasons.js";
 import { MemoryProgramFamilies, MemoryReports, MemorySchools } from "./reports.js";
+import { DEMO_OFFICIAL_SCHOOLS } from "./warehouse/demoSchools.js";
 import { CALENDAR_YEAR, campminderCalendar, DEFAULT_SEASON_SETTINGS } from "@dash/shared";
 import { DEMO_STREAMS, DemoFreshness, DemoWarehouse, demoRow } from "./warehouse/demo.js";
 import { periodBucket, summarizeRows } from "./warehouse/summarize.js";
@@ -62,6 +63,7 @@ function api(auth: AuthDeps | null = null, refresh = new NoopTrigger()) {
     reports: new MemoryReports(),
     programFamilies: new MemoryProgramFamilies(),
     schools: new MemorySchools(),
+    officialSchools: DEMO_OFFICIAL_SCHOOLS,
     refresh,
     corsOrigins: ["https://dash.web.app"],
     cacheTtlSeconds: 60,
@@ -464,7 +466,7 @@ describe("campminder endpoints", () => {
     const some = await request(app).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${f}`).expect(200);
     expect(some.body.current.enrollments).toBe(hilltop.enrollments);
     // A Settings change regroups right away.
-    await request(app).put("/api/settings/schools").send({ overrides: { RDS: "Riverbend Day School" } }).expect(200);
+    await request(app).post("/api/settings/schools/actions").send({ action: "assign", spellings: ["RDS"], schoolId: "nces-demo-3" }).expect(200);
     const after = await request(app).get("/api/campminder/breakdown?season=2026&businessLine=camp&dimension=school").expect(200);
     expect(after.body.rows.map((r: { key: string }) => r.key)).not.toContain("RDS");
   });
@@ -609,18 +611,42 @@ describe("report builder", () => {
     expect(res.body.cells.map((c: { rows: string[] }) => c.rows[0])).toContain("Water");
   });
 
-  it("groups school spellings, and Settings → Schools overrides them", async () => {
+  it("matches school spellings to actual schools, and Settings → Schools settles the rest", async () => {
     const app = api();
-    const before = await request(app).get("/api/settings/schools").expect(200);
-    const row = (entered: string) => before.body.spellings.find((s: { entered: string }) => s.entered === entered);
-    expect(row("Hilltop")).toMatchObject({ school: "The Hilltop School", origin: "grouped" });
-    expect(row("N/A")).toMatchObject({ school: null });
+    const get = async () => (await request(app).get("/api/settings/schools").expect(200)).body;
+    const before = await get();
+    const school = (body: { schools: Array<{ id: string; name: string; spellings: Array<{ entered: string; status: string }> }> }, id: string) =>
+      body.schools.find((s) => s.id === id);
+    // Spellings of directory schools are matched automatically.
+    expect(school(before, "nces-demo-2")!.spellings.map((s) => s.entered).sort()).toEqual(["Hilltop", "Hilltop School", "The Hilltop School"]);
+    // Schools that aren't in the directory wait for review, grouped with their look-alikes.
+    const brigid = before.review.find((r: { name: string }) => r.name === "St. Brigid's");
+    expect(brigid.spellings.map((s: { entered: string }) => s.entered).sort()).toEqual(["Saint Brigid's School", "St Brigids", "St. Brigid's"]);
+    expect(before.notSchools.map((s: { entered: string }) => s.entered)).toContain("N/A");
+
     const schools = async () =>
       (await run(app, { dataset: "camper_seasons", rows: ["school"], measure: "campers" }).expect(200)).body.cells.map((c: { rows: string[] }) => c.rows[0]);
+    expect(await schools()).toContain("The Hilltop School");
     expect(await schools()).not.toContain("Hilltop");
-    expect(await schools()).toContain("RDS"); // an abbreviation needs Settings
-    await request(app).put("/api/settings/schools").send({ overrides: { RDS: "Riverbend Day School" } }).expect(200);
-    expect(await schools()).toContain("Riverbend Day School");
-    expect(await schools()).not.toContain("RDS");
+
+    // Create a school for the review item; reports use it right away.
+    await request(app)
+      .post("/api/settings/schools/actions")
+      .send({ action: "create", spellings: brigid.spellings.map((s: { entered: string }) => s.entered), school: { name: "St. Brigid School", type: "private", state: "MD", county: "Montgomery County" } })
+      .expect(200);
+    const after = await get();
+    expect(after.review.find((r: { name: string }) => r.name === "St. Brigid's")).toBeUndefined();
+    expect(after.schools.find((s: { name: string }) => s.name === "St. Brigid School").source).toBe("custom");
+    expect(await schools()).toContain("St. Brigid School");
+
+    // Type, state and county come along for reports.
+    const byCounty = await run(app, { dataset: "camper_seasons", rows: ["school_county"], column: "school_type", measure: "campers" }).expect(200);
+    const counties = byCounty.body.cells.map((c: { rows: string[] }) => c.rows[0]);
+    expect(counties).toEqual(expect.arrayContaining(["Montgomery County", "Arlington County"]));
+
+    // Assigning to a school that doesn't exist is refused; search finds schools by any spelling.
+    await request(app).post("/api/settings/schools/actions").send({ action: "assign", spellings: ["RDS"], schoolId: "nope" }).expect(400);
+    const found = await request(app).get("/api/settings/schools/search?q=riverbend").expect(200);
+    expect(found.body.results[0]).toMatchObject({ id: "nces-demo-3", name: "Riverbend Day School" });
   });
 });

@@ -344,3 +344,43 @@ tbody tr:hover { background: var(--wash); }
 .settings-tabs a:hover { color: var(--text-primary); }
 .settings-tabs a.active { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 500; }
 .tab-badge { font-size: 11px; font-weight: 600; min-width: 18px; padding: 1px 6px; border-radius: 999px; text-align: center; background: var(--status-warning); color: #fff; }
+
+/* Settings → Schools */
+.school-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.school-summary .card { padding: 12px 16px; }
+.school-summary strong { font-size: 22px; }
+.review-list, .school-list { list-style: none; margin: 0; padding: 0; }
+.review-item { padding: 14px 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.review-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.review-spellings { gap: 6px; }
+.review-chip { padding: 3px 10px 3px 6px; cursor: pointer; }
+.review-chip input { margin: 0; }
+.review-suggestion { margin: 0; }
+.review-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.review-more { padding: 12px 16px; border-top: 1px solid var(--border); }
+.school-picker { display: flex; flex-direction: column; gap: 6px; max-width: 520px; }
+.school-picker-input { display: flex; gap: 8px; }
+.school-picker-input input { flex: 1; }
+.school-picker-results { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); max-height: 280px; overflow-y: auto; }
+.school-picker-results button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: 6px; cursor: pointer; font: inherit; color: inherit; }
+.school-picker-results button:hover, .school-picker-results button:focus-visible { background: var(--wash); }
+.school-picker-empty { padding: 6px 8px; }
+.school-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items: end; max-width: 760px; }
+.school-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.school-form-actions { display: flex; gap: 8px; }
+.school-row { border-top: 1px solid var(--border); }
+.school-row-head { display: grid; grid-template-columns: 16px 1fr auto auto; gap: 12px; align-items: center; width: 100%; padding: 10px 16px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.school-row-head:hover { background: var(--wash); }
+.school-row-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.school-row-caret { color: var(--text-muted); }
+.school-row-body { padding: 4px 16px 14px 44px; display: flex; flex-direction: column; gap: 10px; }
+.spelling-table { width: 100%; border-collapse: collapse; }
+.spelling-table td, .spelling-table th { padding: 6px 8px; border-top: 1px solid var(--border); text-align: left; font-size: 13px; vertical-align: top; }
+.spelling-table th { color: var(--text-muted); font-weight: 500; }
+.spelling-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.error-text { color: var(--bad-text); font-size: 12px; }
+@media (max-width: 640px) {
+  .school-row-head { grid-template-columns: 16px 1fr; }
+  .school-row-head .num { grid-column: 2; }
+  .school-row-body { padding-left: 16px; }
+}

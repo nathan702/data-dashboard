@@ -2,10 +2,10 @@ import { useEffect, useRef } from "react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import { SOURCE_INFO, SOURCES, UNASSIGNED, type Source } from "@dash/shared";
 import { ProgramFamiliesCard } from "../components/ProgramFamilies";
-import { SchoolsCard } from "../components/Schools";
+import { SchoolsTab } from "../components/schools/SchoolsTab";
 import { SeasonSettingsCard } from "../components/SeasonSettings";
 import { AssignmentsTab, isActive } from "../components/settings/AssignmentsTab";
-import { useAssignments, useMe } from "../lib/api";
+import { useAssignments, useMe, useSchools } from "../lib/api";
 
 /** One platform's tab title: what its assignable things are called there. */
 const PLATFORM_TAB: Record<Source, string> = {
@@ -43,7 +43,12 @@ export function SettingsPage() {
   const platforms = SOURCES.filter((s) => data?.rows.some((r) => r.source === s));
   const needsAttention = (s: Source) => data?.rows.filter((r) => r.source === s && r.businessLine === UNASSIGNED && isActive(r)).length ?? 0;
   const notYet = SOURCES.filter((s) => data && !platforms.includes(s)).map((s) => SOURCE_INFO[s].label);
-  const tabs = [...platforms.map((s) => ({ id: s as string, label: PLATFORM_TAB[s], badge: needsAttention(s) })), ...OTHER_TABS.map((t) => ({ ...t, badge: 0 }))];
+  const schools = useSchools();
+  const toReview = schools.data?.review.length ?? 0;
+  const tabs = [
+    ...platforms.map((s) => ({ id: s as string, label: PLATFORM_TAB[s], badge: needsAttention(s) })),
+    ...OTHER_TABS.map((t) => ({ ...t, badge: t.id === "schools" ? toReview : 0 })),
+  ];
 
   // Plain "Settings" links open the first platform with something unassigned (e.g. from the Overview).
   if (!tab && data) return <Navigate to={`/advanced/settings/${platforms.find((p) => needsAttention(p) > 0) ?? platforms[0] ?? "seasons"}`} replace />;
@@ -69,7 +74,7 @@ export function SettingsPage() {
           <NavLink key={t.id} to={`/advanced/settings/${t.id}`}>
             {t.label}
             {t.badge > 0 && (
-              <span className="tab-badge" title={`${t.badge} need attention`}>
+              <span className="tab-badge" title={`${t.badge} to review`}>
                 {t.badge}
               </span>
             )}
@@ -79,7 +84,7 @@ export function SettingsPage() {
       {(SOURCES as readonly string[]).includes(tab) && known && <AssignmentsTab source={tab as Source} />}
       {tab === "seasons" && <SeasonSettingsCard canEdit={isAdmin} />}
       {tab === "program-families" && <ProgramFamiliesCard canEdit={isAdmin} />}
-      {tab === "schools" && <SchoolsCard canEdit={isAdmin} />}
+      {tab === "schools" && <SchoolsTab canEdit={isAdmin} />}
       {notYet.length > 0 && (SOURCES as readonly string[]).includes(tab) && (
         <p className="phase-note">{new Intl.ListFormat("en", { type: "conjunction" }).format(notYet)} get a tab here once connected.</p>
       )}

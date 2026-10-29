@@ -8,6 +8,8 @@ import { loadConfig } from "./config.js";
 import { FirestoreFreshness } from "./freshness.js";
 import { FirestorePreferences, MemoryPreferences } from "./preferences.js";
 import { FirestoreSeasonSettings, MemorySeasonSettings } from "./seasons.js";
+import { loadOfficialSchools } from "./officialSchools.js";
+import { DEMO_OFFICIAL_SCHOOLS } from "./warehouse/demoSchools.js";
 import { FirestoreProgramFamilies, FirestoreReports, FirestoreSchools, MemoryProgramFamilies, MemoryReports, MemorySchools } from "./reports.js";
 import { CloudRunJobTrigger, NoopTrigger } from "./refresh.js";
 import { BigQueryWarehouse } from "./warehouse/bigquery.js";
@@ -46,6 +48,7 @@ const app = createApi({
   reports: config.demoData || !firebase ? new MemoryReports() : new FirestoreReports(getFirestore(firebase)),
   programFamilies: config.demoData || !firebase ? new MemoryProgramFamilies() : new FirestoreProgramFamilies(getFirestore(firebase)),
   schools: config.demoData || !firebase ? new MemorySchools() : new FirestoreSchools(getFirestore(firebase)),
+  officialSchools: config.demoData ? DEMO_OFFICIAL_SCHOOLS : loadOfficialSchools(),
   refresh: config.transformJob && !config.demoData ? new CloudRunJobTrigger(config.transformJob) : new NoopTrigger(),
   corsOrigins: config.corsOrigins,
   cacheTtlSeconds: config.cacheTtlSeconds,

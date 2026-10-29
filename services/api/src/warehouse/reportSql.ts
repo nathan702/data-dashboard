@@ -1,8 +1,26 @@
-import { NONE_VALUE, REPORT_CELL_LIMIT, type ProgramFamilySettings, type ReportDataset, type ReportSpec } from "@dash/shared";
+import { NONE_VALUE, REPORT_CELL_LIMIT, type ProgramFamilySettings, type ReportDataset, type ReportSpec, type SchoolForReports } from "@dash/shared";
 import { DIMENSION_SQL } from "./retailSql.js";
 
-/** School as entered → grouped school (null: not a school); see resolveSchools. */
-export type SchoolMap = Map<string, string | null>;
+/** School as entered → its school for reports (null: no school); see resolveSchoolSpellings. */
+export type SchoolMap = Map<string, SchoolForReports | null>;
+
+const SCHOOL_TYPE_LABEL = { public: "Public", private: "Private", other: "Other" } as const;
+
+/** @schools: each spelling's school, type, state and county, as one array parameter. */
+export function schoolParams(schools: SchoolMap) {
+  return {
+    params: {
+      schools: [...schools].map(([entered, s]) => ({
+        entered,
+        school: s?.name ?? null,
+        school_type: s?.type ? SCHOOL_TYPE_LABEL[s.type] : null,
+        school_state: s?.state ?? null,
+        school_county: s?.county ?? null,
+      })),
+    },
+    types: { schools: [{ entered: "STRING", school: "STRING", school_type: "STRING", school_state: "STRING", school_county: "STRING" }] },
+  };
+}
 
 /**
  * Turns a report spec into one query. Only the fixed SQL fragments below are
@@ -26,15 +44,18 @@ const ENROLLMENTS = (marts: string) => `\`${marts}.fct_campminder_enrollments\``
 
 /**
  * Program families: Settings overrides (@pf), else the part of the name before " - " (see draftProgramFamily).
- * Schools: every spelling's grouped name (@schools, from resolveSchools); a spelling newer than that list shows as entered.
+ * Schools: every spelling's school (@schools, from resolveSchoolSpellings); a spelling newer than that list shows as entered.
  */
 const ENR_BASE = (marts: string) => `
   pfmap AS (SELECT program, family, branch FROM UNNEST(@pf)),
-  schoolmap AS (SELECT entered, school FROM UNNEST(@schools)),
+  schoolmap AS (SELECT * FROM UNNEST(@schools)),
   enr_base AS (
     SELECT
       e.*,
       IF(sm.entered IS NULL, e.school, sm.school) AS school_group,
+      sm.school_type,
+      sm.school_state,
+      sm.school_county,
       IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, TRIM(SUBSTR(e.program, 1, STRPOS(e.program, ' - ') - 1)), TRIM(e.program)), pf.family) AS program_family,
       IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, NULLIF(TRIM(SUBSTR(e.program, STRPOS(e.program, ' - ') + 3)), ''), NULL), pf.branch) AS program_branch
     FROM ${ENROLLMENTS(marts)} AS e
@@ -53,6 +74,9 @@ const CAMPER_FIELDS = {
   grade: "school_grade",
   school: "school_group",
   school_as_entered: "school",
+  school_type: "school_type",
+  school_state: "school_state",
+  school_county: "school_county",
   gender: "gender",
   state: "home_state",
   zip: "home_zip",
@@ -65,6 +89,9 @@ const CAMPER_ROLLUP = `
       ANY_VALUE(school_grade) AS school_grade,
       ANY_VALUE(school) AS school,
       ANY_VALUE(school_group) AS school_group,
+      ANY_VALUE(school_type) AS school_type,
+      ANY_VALUE(school_state) AS school_state,
+      ANY_VALUE(school_county) AS school_county,
       ANY_VALUE(gender) AS gender,
       ANY_VALUE(home_state) AS home_state,
       ANY_VALUE(home_zip) AS home_zip`;
@@ -259,8 +286,9 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   if (CAMPMINDER.includes(spec.dataset)) {
     params.pf = Object.entries(families.overrides).map(([program, v]) => ({ program, family: v.family, branch: v.branch }));
     types.pf = [{ program: "STRING", family: "STRING", branch: "STRING" }];
-    params.schools = [...schools].map(([entered, school]) => ({ entered, school }));
-    types.schools = [{ entered: "STRING", school: "STRING" }];
+    const sp = schoolParams(schools);
+    Object.assign(params, sp.params);
+    Object.assign(types, sp.types);
   }
 
   const rowAliases = spec.rows.map((_, i) => `r${i}`);

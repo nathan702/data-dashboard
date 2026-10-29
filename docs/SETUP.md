@@ -101,7 +101,8 @@ are built in and can be copied. Only vetted fields and measures exist (in
 `packages/shared/src/reports.ts`, SQL in `services/api/src/warehouse/reportSql.ts`),
 so reports can't reach anything else. Saved reports live in Firestore
 (`reports`); program families and schools (Settings) in
-`config/programFamilies` and `config/schools`.
+`config/programFamilies` and `config/schools` (schools added by hand, and
+each spelling an admin has settled).
 
 ## Connecting sources
 
@@ -197,12 +198,38 @@ ignored, and deleting a tab or the whole sheet keeps what was imported.
 runs (and to the past-season tabs, if they can be re-exported). Any column
 named `School`, `School Name`, `Current School`, `Child School` or `Camper
 School` is picked up on the next hourly sync; no change here is needed.
-Answers that aren't a school (an email address, phone number, street
-address, weight, height, age, grade, or a long answer to another question)
-are dropped before anything is stored. Spellings are grouped on **Settings →
-Schools** (admins), where abbreviations
-and nicknames can be pointed at the right school. Reports get the fields
-*School* and *School as entered*.
+Answers that aren't a school (an email address, a username, phone number,
+street address, weight, height, age, grade, or a long answer to another
+question) are dropped before anything is stored.
+
+Each spelling is then matched to an actual school: the official directory
+(`services/api/data/official-schools.json`, from the U.S. Department of
+Education) or a school added on **Settings → Schools**. The
+matcher (`packages/shared/src/schoolMatch.ts`) allows for typos, sound-alike
+spellings, missing or extra words, abbreviations and initials; it matches
+automatically when it's at least 90% sure and otherwise puts the spelling in
+the review list, grouped with its look-alikes. On **Settings → Schools**,
+admins accept a suggestion, choose another school, add a school that isn't in
+the directory (preschools, schools abroad), or mark an answer **not a
+school**. Answers marked not a school are left out of every import from the
+next sync on, and the hourly sync removes them from older stored rows once a
+day (rows from the current day can't be changed until BigQuery settles them).
+Reports get *School*, *School as entered*, *School type*, *School state* and
+*School county*; the Camp pages can break down and filter by school.
+
+**Official school list.** `services/api/data/official-schools.json` holds every
+open public and private school in DC, Maryland and Virginia (about 5,600),
+with type, state, county and city, built by
+`python3 scripts/fetch_official_schools.py` from the Department of
+Education's public data (public schools: Common Core of Data via
+educationdata.urban.org; private schools: the Private School Universe
+Survey on nces.ed.gov, combined across survey years since 2013–14 because
+each year's public file only has the schools that answered). Re-run it about
+once a year, when new data is out, and open a pull request with the result.
+Private schools appear once however many campuses they have, and a charter
+with up to three campuses ("Mundo Verde Bilingual PCS") is one school. Schools
+in the counties families mostly come from are marked "nearby", which the
+matcher prefers when two schools share a name; the list is in the script.
 
 **Safety.** If a report arrives with fewer than half the camper-sessions
 already stored for its season, it's treated as a half-written sheet: nothing
