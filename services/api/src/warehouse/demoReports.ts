@@ -92,6 +92,24 @@ function camperGroups(pf: ProgramFamilySettings, schools: SchoolMap, byFamily: b
   });
 }
 
+const distinctValues = (rs: Rec[], k: string) => [...new Set(rs.map((r) => r[k]).filter((v): v is string => typeof v === "string"))];
+const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+
+/** Same as the SQL's multi-valued fields: field id → array property. */
+const CAMPER_MULTI: Record<string, string> = { parent_occupation: "parent_occupations" };
+const MULTI: Partial<Record<ReportSpec["dataset"], Record<string, string>>> = {
+  enrollments: CAMPER_MULTI,
+  camper_seasons: {
+    ...CAMPER_MULTI,
+    session_group: "attended_session_groups",
+    session: "attended_sessions",
+    program: "attended_programs",
+    program_family: "attended_program_families",
+    week: "attended_weeks",
+  },
+  program_families: CAMPER_MULTI,
+};
+
 function camperSeasonRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec[] {
   const recs: Rec[] = camperGroups(pf, schools, false).map((g): Rec => {
     const rs = g.rs as Rec[];
@@ -105,6 +123,11 @@ function camperSeasonRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec
       first_week: weekly.length ? String(Math.min(...weekly.map((r) => Number(r.week_start)))) : null,
       last_week: weekly.length ? String(Math.max(...weekly.map((r) => Number(r.week_end)))) : null,
       programs: String(new Set(rs.map((r) => r.program)).size),
+      attended_session_groups: distinctValues(rs, "session_group"),
+      attended_sessions: distinctValues(rs, "session"),
+      attended_programs: distinctValues(rs, "program"),
+      attended_program_families: distinctValues(rs, "program_family"),
+      attended_weeks: [...new Set(weekly.flatMap((r) => range(Number(r.week_start), Number(r.week_end)).map(String)))],
     };
   });
   const key = (r: Rec, season: number) => `${r.camper_id}|${r.business_line}|${season}`;
@@ -228,16 +251,18 @@ export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings, schoo
   const filters = effectiveFilters(spec);
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters;
   const { recs: all, measures } = dataset(spec, pf, schools, usesWeek);
-  // Same rule as the SQL: a family with parents in two fields counts under each, only when occupation is asked for.
-  const usesOccupation = spec.rows.includes("parent_occupation") || spec.column === "parent_occupation" || "parent_occupation" in filters;
-  const recs = usesOccupation
-    ? all.flatMap((r): Rec[] => {
-        const occ = (r.parent_occupations as string[] | undefined) ?? [];
-        return occ.length ? occ.map((o) => ({ ...r, parent_occupation: o })) : [{ ...r, parent_occupation: null }];
-      })
-    : all;
+  // Same rules as the SQL: a multi-valued row or column splits each record by value; a multi-valued filter keeps it once.
+  const multi = MULTI[spec.dataset] ?? {};
+  const list = (r: Rec, id: string) => {
+    const vs = (r[multi[id]!] as string[] | undefined) ?? [];
+    return vs.length ? vs : [null];
+  };
+  const exploded = [...spec.rows, ...(spec.column ? [spec.column] : [])].filter((id) => id in multi);
+  const recs = exploded.reduce<Rec[]>((rs, id) => rs.flatMap((r) => list(r, id).map((v) => ({ ...r, [id]: v }))), all);
   const val = (r: Rec, id: string) => str(r[id]) ?? NONE_VALUE;
-  const picked = recs.filter((r) => Object.entries(filters).every(([id, values]) => values.includes(val(r, id))));
+  const matches = (r: Rec, id: string, values: string[]) =>
+    id in multi && !exploded.includes(id) ? list(r, id).some((v) => values.includes(v ?? NONE_VALUE)) : values.includes(val(r, id));
+  const picked = recs.filter((r) => Object.entries(filters).every(([id, values]) => matches(r, id, values)));
   const measure = measures[spec.measure]!;
   const rowIds = spec.rows;
   const sets: Array<{ rows: boolean; col: boolean }> = [];

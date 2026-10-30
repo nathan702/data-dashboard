@@ -93,9 +93,11 @@ unmatched is "Unassigned" and flagged.
 - **Seasons per business line**, same-weekday comparisons, service-date default.
 - **Report builder** (Reports tab): five data sets, vetted fields and measures,
   rows/columns/measure/filters, table, bar, line and heat map, click-to-filter,
-  private or shared saved reports, five starter reports (sessions by years at
-  camp, Explorers branches, ZIP by week, schools, retention). Program families
-  and schools on Settings.
+  private or shared saved reports, six starter reports (sessions by years at
+  camp, sessions by session group, Explorers branches, ZIP by week, schools,
+  retention). Campers by season can be filtered or grouped by the session
+  groups, sessions, programs and weeks they attended. Program families and
+  schools on Settings.
 - **Camper schools**: imported as entered and matched to actual schools
   (official directory or added on Settings) with typo-, abbreviation- and
   initials-tolerant matching; a review list for the unsure ones; School,

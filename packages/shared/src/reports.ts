@@ -117,6 +117,15 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
       f("last_week", "Last week", "Latest week attended that summer.", "numeric"),
       f("programs", "Programs that season", "Number of different programs.", "numeric"),
       f("returned", "Came back next season", "Returned / Didn't return / Not known yet (the next season hasn't happened)."),
+      f(
+        "session_group",
+        "Session group attended",
+        "Campers with at least one session in the group; filter to see their sessions across the season. As rows, a camper counts under each group they attended.",
+      ),
+      f("session", "Session attended", "Campers enrolled in the session (as one of their sessions). As rows, a camper counts under each of their sessions."),
+      f("program", "Program attended", "Campers who did the program in at least one session. As rows, a camper counts under each of their programs."),
+      f("program_family", "Program family attended", "Campers who did any program in the family. As rows, a camper counts under each family."),
+      f("week", "Week attended", "Campers at camp that week. As rows, a camper counts under each week they attended.", "numeric"),
     ],
     measures: [
       m("campers", "Campers", "Distinct campers.", "count", true),
@@ -335,6 +344,12 @@ export const STARTER_REPORTS: SavedReport[] = [
     "Sessions per camper by years at camp",
     "Do campers sign up for more sessions the longer they've been coming? Average enrolled sessions per camper, by years at camp, per season.",
     { dataset: "camper_seasons", rows: ["years_at_camp"], column: "season", measure: "avg_sessions", filters: { business_line: ["camp"] }, chart: "line" },
+  ),
+  starter(
+    "sessions-by-group",
+    "Sessions per camper by session group",
+    "For campers who attended each session group, their average sessions that season (in any group). Change the measure to Campers and add Sessions that season as a row to see the spread.",
+    { dataset: "camper_seasons", rows: ["session_group"], column: "season", measure: "avg_sessions", filters: { business_line: ["camp"] } },
   ),
   starter(
     "explorers-branches",
