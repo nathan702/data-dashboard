@@ -14,6 +14,7 @@ import {
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
   type EnrollmentSummaryResponse,
+  type OccupationCategory,
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import { noise } from "./demo.js";
@@ -42,6 +43,8 @@ export interface Row {
   zip: string;
   /** As the family typed it (several spellings per school, like the real data). */
   school: string | null;
+  /** Parents' occupation categories (none for some families, two for others). */
+  parentOccupations: OccupationCategory[];
 }
 
 /** Made-up home areas around DC, weighted roughly like a real camp's families. */
@@ -100,6 +103,25 @@ function demoSchool(camper: string): string | null {
   return s || null;
 }
 
+/** Made-up parent occupation mix. */
+const OCCUPATIONS: Array<[number, OccupationCategory]> = [
+  [0.16, "Legal"], [0.12, "Medicine and health"], [0.1, "Government and military"], [0.1, "Business and management"],
+  [0.08, "Education"], [0.08, "Finance"], [0.07, "Technology"], [0.06, "Nonprofit"], [0.05, "Science and research"],
+  [0.04, "Arts and media"], [0.04, "Real estate and construction"], [0.02, "Trades"], [0.04, "Homemaker"], [0.01, "Retired"], [0.03, "Other"],
+];
+
+function demoOccupations(camper: string): OccupationCategory[] {
+  const pick = (seed: string) => {
+    const n = noise(seed);
+    let acc = 0;
+    return (OCCUPATIONS.find(([w]) => (acc += w) >= n) ?? OCCUPATIONS[0]!)[1];
+  };
+  const n = noise(`${camper}parents`);
+  if (n < 0.15) return []; // not answered
+  const found = new Set([pick(`${camper}p1`), ...(n < 0.75 ? [pick(`${camper}p2`)] : [])]);
+  return [...found];
+}
+
 const GRADES = ["K", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"];
 const STATUSES: Array<[string, string, number]> = [["EN", "Enrolled", 0.86], ["CN", "Cancelled", 0.08], ["WD", "Withdrawn", 0.055], ["WL", "Waitlisted", 0.005]];
 
@@ -145,6 +167,7 @@ function rows(): Row[] {
             applicationDate: addDays(start, Math.floor(Math.pow(noise(`${seed}d`), 0.8) * 300)),
             ...demoHome(String(camperNo)),
             school: demoSchool(String(camperNo)),
+            parentOccupations: demoOccupations(String(camperNo)),
           });
         }
       }
@@ -154,7 +177,10 @@ function rows(): Row[] {
   return out;
 }
 
-function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week">, schools: SchoolMap): string {
+/** Same rule as the SQL: each of the family's occupation categories, or UNKNOWN_KEY. */
+const occupationKeys = (r: Row): string[] => (r.parentOccupations.length ? r.parentOccupations : [UNKNOWN_KEY]);
+
+function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week" | "occupation">, schools: SchoolMap): string {
   if (d === "school") return (r.school === null ? null : schools.has(r.school) ? schools.get(r.school)?.name : r.school) ?? UNKNOWN_KEY;
   return {
     session_group: r.sessionGroup, session: r.sessionName, program: r.program ?? UNKNOWN_KEY, age: String(r.age),
@@ -168,6 +194,8 @@ function matches(r: Row, f: EnrollmentFilters | undefined, schools: SchoolMap) {
     if (!values.length) continue;
     if (d === "week") {
       if (r.weekStart === null || !values.some((w) => Number(w) >= r.weekStart! && Number(w) <= r.weekEnd!)) return false;
+    } else if (d === "occupation") {
+      if (!occupationKeys(r).some((k) => values.includes(k))) return false;
     } else if (!values.includes(keyOf(r, d, schools))) return false;
   }
   return true;
@@ -231,6 +259,10 @@ export function demoEnrollmentBreakdown(q: EnrollmentBreakdownQuery, schools: Sc
   for (const r of cur) {
     if (q.dimension === "week") {
       if (r.weekStart !== null) for (let w = r.weekStart; w <= r.weekEnd!; w++) add(String(w), r);
+      continue;
+    }
+    if (q.dimension === "occupation") {
+      for (const k of occupationKeys(r)) add(k, r);
       continue;
     }
     add(keyOf(r, q.dimension, schools), r);

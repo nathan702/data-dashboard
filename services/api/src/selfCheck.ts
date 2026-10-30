@@ -138,6 +138,17 @@ export async function runSelfCheck(
     return null;
   });
 
+  await check("parent occupations run", async () => {
+    await warehouse.runReport(reportSpecSchema.parse({ dataset: "enrollments", rows: ["parent_occupation"], column: "week", measure: "campers" }), { overrides: {} });
+    const e = (ref as ReferenceTotals | null)?.enrollments;
+    if (e) {
+      // A family with parents in two fields counts under each, so never fewer than the table.
+      const b = await warehouse.enrollmentBreakdown({ season: e.season, dimension: "occupation", filters: {} });
+      if (sum(b.rows.map((r) => r.enrollments)) < e.count) return "occupation breakdown misses enrollments";
+    }
+    return null;
+  });
+
   for (const starter of STARTER_REPORTS) {
     await check(`starter report runs: ${starter.name}`, async () => {
       await warehouse.runReport(starter.spec, { overrides: {} });

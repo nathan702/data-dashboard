@@ -167,8 +167,8 @@ skips it when nothing changed.
    (weekly groups default to Camp).
 
 What's stored: for each camper-session, only the season, session, program,
-status, dates, gender, age on June 1, grades, school, years at camp, home
-state, home ZIP and the home's map coordinates. People are keyed by a one-way hash of
+status, dates, gender, age on June 1, grades, school, parents' occupation
+categories, years at camp, home state, home ZIP and the home's map coordinates. People are keyed by a one-way hash of
 their Campminder id. Names, birth dates, street addresses, parents and
 medical details are never written to the warehouse.
 
@@ -193,6 +193,18 @@ secret and delete that secret's versions once it isn't needed.
 sync, and again only when it changes. A tab whose sessions belong to a
 different year is refused. Tabs for the daily sheet's season or later are
 ignored, and deleting a tab or the whole sheet keeps what was imported.
+
+**Parent occupations.** The report's `F1P1 Occupation`, `F1P2 Occupation`,
+`F2P1 Occupation` and `F2P2 Occupation` columns (up to two parents in each of
+two households) are read on import and sorted into a category: Legal,
+Medicine and health, Education, Government and military, Finance,
+Technology, Business and management, Nonprofit, Science and research, Arts
+and media, Real estate and construction, Trades, Homemaker, Retired or Other
+(`packages/shared/src/occupations.ts`, by keywords such as "attorney" →
+Legal). Only the categories are stored, never what was typed; blank and
+"N/A" answers, emails and phone numbers count as not answered. Reports have a
+**Parent occupation** field and the Camp pages a Parent occupation breakdown
+and filter; a family with parents in two fields counts under each.
 
 **Schools.** Add the camper's school to the Campminder report the automation
 runs (and to the past-season tabs, if they can be re-exported). Any column

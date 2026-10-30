@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSessionDates, parseSessionPrograms, parseSessionStatuses, parseWeek, reportSeason, schoolColumn, toSessions, usDate } from "./campminderParse.js";
+import { parseSessionDates, parseSessionPrograms, parseSessionStatuses, parseWeek, reportSeason, occupationColumns, schoolColumn, toSessions, usDate } from "./campminderParse.js";
 
 // Entirely made-up people; shaped like Campminder's export.
 const row = (over: Record<string, string> = {}): Record<string, string> => ({
@@ -124,5 +124,22 @@ describe("campminder parsing", () => {
     const s = toSessions([row({ School: "parent@example.com" })], KEY, 2026);
     expect(s[0]!.school).toBeNull();
     expect(JSON.stringify(s)).not.toContain("example.com");
+  });
+
+  it("keeps parents' occupations as categories only, never the answers", () => {
+    expect(occupationColumns(["PersonID", "F1P1 Occupation", "F1P2 occupation", "F2P1 Occupation", "F1P1 Employer"])).toEqual([
+      "F1P1 Occupation",
+      "F1P2 occupation",
+      "F2P1 Occupation",
+    ]);
+    const s = toSessions(
+      [row({ "F1P1 Occupation": "Partner, Smith Jones LLP law firm", "F1P2 Occupation": "Pediatrician", "F2P1 Occupation": "attorney", "F2P2 Occupation": "" })],
+      KEY,
+      2026,
+    );
+    expect(s[0]!.parentOccupations).toEqual(["Legal", "Medicine and health"]);
+    const text = JSON.stringify(s);
+    for (const answer of ["Smith", "LLP", "Pediatrician", "attorney"]) expect(text).not.toContain(answer);
+    expect(toSessions([row({ "F1P1 Occupation": "N/A" })], KEY, 2026)[0]!.parentOccupations).toEqual([]);
   });
 });

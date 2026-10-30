@@ -66,6 +66,11 @@ const CAMPER_FIELDS = [
   f("school_type", "School type", "Public, private or other (from the official school directory)."),
   f("school_state", "School state", "State the school is in (DC counts as a state)."),
   f("school_county", "School county", "County the school is in (DC for Washington, DC)."),
+  f(
+    "parent_occupation",
+    "Parent occupation",
+    "Field each parent works in (up to four parents, both households). A family with parents in two fields counts under each, so totals can add up to more than the whole.",
+  ),
   f("gender", "Gender", "As recorded in Campminder."),
   f("state", "Home state", "Primary household's state."),
   f("zip", "Home ZIP", "Primary household's 5-digit ZIP code."),

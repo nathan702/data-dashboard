@@ -77,6 +77,7 @@ const CAMPER_FIELDS = {
   school_type: "school_type",
   school_state: "school_state",
   school_county: "school_county",
+  parent_occupation: "parent_occupation",
   gender: "gender",
   state: "home_state",
   zip: "home_zip",
@@ -92,6 +93,7 @@ const CAMPER_ROLLUP = `
       ANY_VALUE(school_type) AS school_type,
       ANY_VALUE(school_state) AS school_state,
       ANY_VALUE(school_county) AS school_county,
+      ANY_VALUE(parent_occupations) AS parent_occupations,
       ANY_VALUE(gender) AS gender,
       ANY_VALUE(home_state) AS home_state,
       ANY_VALUE(home_zip) AS home_zip`;
@@ -260,6 +262,12 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   const filters = effectiveFilters(spec);
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters;
   const ds = datasetSql(spec.dataset, marts, usesWeek);
+  // A family with parents in two fields counts under each, only when occupation is asked for.
+  const usesOccupation =
+    CAMPMINDER.includes(spec.dataset) && (spec.rows.includes("parent_occupation") || spec.column === "parent_occupation" || "parent_occupation" in filters);
+  const source = usesOccupation
+    ? `SELECT s0.*, parent_occupation FROM (SELECT * FROM ${ds.from}) AS s0, UNNEST(IF(ARRAY_LENGTH(s0.parent_occupations) > 0, s0.parent_occupations, [CAST(NULL AS STRING)])) AS parent_occupation`
+    : `SELECT * FROM ${ds.from}`;
   const field = (id: string) => {
     const sql = ds.fields[id];
     if (!sql) throw new Error(`Unknown field ${id}`);
@@ -302,7 +310,7 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   const gCol = spec.column ? "GROUPING(c)" : "0";
 
   const sql = `
-    WITH ${[...ds.ctes, `src AS (SELECT * FROM ${ds.from})`].join(",\n  ")},
+    WITH ${[...ds.ctes, `src AS (${source})`].join(",\n  ")},
     picked AS (
       SELECT src.*${dims.length ? `, ${dims.join(", ")}` : ""}
       FROM src

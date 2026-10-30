@@ -57,6 +57,7 @@ function enrollmentRecords(pf: ProgramFamilySettings, schools: SchoolMap, explod
       grade: r.grade,
       ...demoSchoolFields(r.school, schools),
       school_as_entered: r.school,
+      parent_occupations: r.parentOccupations,
       gender: r.gender,
       state: r.state,
       zip: r.zip,
@@ -226,7 +227,15 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
 export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap = new Map()): ReportResult {
   const filters = effectiveFilters(spec);
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters;
-  const { recs, measures } = dataset(spec, pf, schools, usesWeek);
+  const { recs: all, measures } = dataset(spec, pf, schools, usesWeek);
+  // Same rule as the SQL: a family with parents in two fields counts under each, only when occupation is asked for.
+  const usesOccupation = spec.rows.includes("parent_occupation") || spec.column === "parent_occupation" || "parent_occupation" in filters;
+  const recs = usesOccupation
+    ? all.flatMap((r): Rec[] => {
+        const occ = (r.parent_occupations as string[] | undefined) ?? [];
+        return occ.length ? occ.map((o) => ({ ...r, parent_occupation: o })) : [{ ...r, parent_occupation: null }];
+      })
+    : all;
   const val = (r: Rec, id: string) => str(r[id]) ?? NONE_VALUE;
   const picked = recs.filter((r) => Object.entries(filters).every(([id, values]) => values.includes(val(r, id))));
   const measure = measures[spec.measure]!;

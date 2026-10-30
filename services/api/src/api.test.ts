@@ -409,8 +409,8 @@ describe("deploy self-check", () => {
     const broken = Object.create(demo) as DemoWarehouse;
     broken.enrollmentBreakdown = async (q) => ({ ...(await demo.enrollmentBreakdown(q)), rows: [] });
     const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
-    // The School breakdown is checked against the same table count.
-    expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["campminder enrollments match tables", "school grouping runs"]);
+    // The School and Parent occupation breakdowns are checked against the same table count.
+    expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["campminder enrollments match tables", "school grouping runs", "parent occupations run"]);
   });
 });
 
@@ -469,6 +469,19 @@ describe("campminder endpoints", () => {
     await request(app).post("/api/settings/schools/actions").send({ action: "assign", spellings: ["RDS"], schoolId: "nces-demo-3" }).expect(200);
     const after = await request(app).get("/api/campminder/breakdown?season=2026&businessLine=camp&dimension=school").expect(200);
     expect(after.body.rows.map((r: { key: string }) => r.key)).not.toContain("RDS");
+  });
+
+  it("breaks down and filters by parent occupation, a family counting under each of its fields", async () => {
+    const app = api();
+    const res = await request(app).get("/api/campminder/breakdown?season=2026&businessLine=camp&dimension=occupation").expect(200);
+    const legal = res.body.rows.find((r: { key: string }) => r.key === "Legal");
+    expect(legal.campers).toBeGreaterThan(0);
+    const all = await request(app).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200);
+    const total = res.body.rows.reduce((t: number, r: { campers: number }) => t + r.campers, 0);
+    expect(total).toBeGreaterThan(all.body.current.campers);
+    const f = encodeURIComponent(JSON.stringify({ occupation: ["Legal"] }));
+    const some = await request(app).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${f}`).expect(200);
+    expect(some.body.current.campers).toBe(legal.campers);
   });
 
   it("maps homes with the same filters", async () => {
@@ -572,6 +585,15 @@ describe("report builder", () => {
     expect(sql).not.toContain("DROP");
     expect(params.f0).toEqual([evil]);
     expect(sql).toContain("GROUPING SETS ((r0, c), (r0), (c), ())");
+  });
+
+  it("splits campers by parent occupation only when a report asks for it", async () => {
+    const { compileReport } = await import("./warehouse/reportSql.js");
+    const base = { dataset: "camper_seasons", column: "season", measure: "campers", filters: {}, chart: "table", percent: "none" } as const;
+    expect(compileReport({ ...base, rows: ["age"] }, "marts", { overrides: {} }).sql).not.toContain("UNNEST(IF(ARRAY_LENGTH(s0.parent_occupations)");
+    expect(compileReport({ ...base, rows: ["parent_occupation"] }, "marts", { overrides: {} }).sql).toContain("AS parent_occupation");
+    const res = await run(api(), { dataset: "camper_seasons", rows: ["parent_occupation"], measure: "campers" }).expect(200);
+    expect(res.body.cells.map((c: { rows: string[] }) => c.rows[0])).toEqual(expect.arrayContaining(["Legal", "Medicine and health"]));
   });
 
   it("lists filter values with counts", async () => {
