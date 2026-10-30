@@ -36,6 +36,13 @@ interface DatasetSql {
   from: string;
   fields: Record<string, string>;
   measures: Record<string, string>;
+  /**
+   * Fields with several values per record (field id → array column): a camper
+   * attended several sessions; a family has parents in several fields. A
+   * record counts under each of its values when the field is a row or column;
+   * a filter keeps records with any of the chosen values, counted once.
+   */
+  multi?: Record<string, string>;
   /** Date column for dated data sets. */
   dateColumn?: string;
 }
@@ -77,7 +84,6 @@ const CAMPER_FIELDS = {
   school_type: "school_type",
   school_state: "school_state",
   school_county: "school_county",
-  parent_occupation: "parent_occupation",
   gender: "gender",
   state: "home_state",
   zip: "home_zip",
@@ -98,6 +104,9 @@ const CAMPER_ROLLUP = `
       ANY_VALUE(home_state) AS home_state,
       ANY_VALUE(home_zip) AS home_zip`;
 
+/** Multi-valued fields of every Campminder data set. */
+const CAMPER_MULTI = { parent_occupation: "parent_occupations" };
+
 function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean): DatasetSql {
   switch (dataset) {
     case "enrollments":
@@ -117,6 +126,7 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           week: "CAST(week AS STRING)",
           status: "status",
         },
+        multi: CAMPER_MULTI,
         measures: {
           enrollments: "COUNTIF(status_code = 'EN')",
           campers: "COUNT(DISTINCT IF(status_code = 'EN', camper_hash, NULL))",
@@ -138,7 +148,12 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
       SUM(IF(is_weekly, week_end - week_start + 1, 0)) AS weeks,
       MIN(IF(is_weekly, week_start, NULL)) AS first_week,
       MAX(IF(is_weekly, week_end, NULL)) AS last_week,
-      COUNT(DISTINCT program) AS programs
+      COUNT(DISTINCT program) AS programs,
+      ARRAY_AGG(DISTINCT session_group IGNORE NULLS) AS attended_session_groups,
+      ARRAY_AGG(DISTINCT session_name IGNORE NULLS) AS attended_sessions,
+      ARRAY_AGG(DISTINCT program IGNORE NULLS) AS attended_programs,
+      ARRAY_AGG(DISTINCT program_family IGNORE NULLS) AS attended_program_families,
+      ARRAY_CONCAT_AGG(IF(is_weekly, GENERATE_ARRAY(week_start, week_end), CAST([] AS ARRAY<INT64>))) AS attended_week_numbers
     FROM enr_base
     WHERE status_code = 'EN'
     GROUP BY season, business_line, camper_hash
@@ -146,6 +161,7 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           `camper_seasons AS (
     SELECT
       a.*,
+      ARRAY(SELECT DISTINCT CAST(w AS STRING) FROM UNNEST(a.attended_week_numbers) AS w) AS attended_weeks,
       -- Unknown for the newest season: its next season hasn't happened.
       CASE WHEN a.season >= (SELECT MAX(season) FROM cs0) THEN NULL ELSE b.camper_hash IS NOT NULL END AS returned
     FROM cs0 AS a
@@ -161,6 +177,14 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           last_week: "CAST(last_week AS STRING)",
           programs: "CAST(programs AS STRING)",
           returned: "CASE returned WHEN TRUE THEN 'Returned' WHEN FALSE THEN 'Didn''t return' ELSE 'Not known yet' END",
+        },
+        multi: {
+          ...CAMPER_MULTI,
+          session_group: "attended_session_groups",
+          session: "attended_sessions",
+          program: "attended_programs",
+          program_family: "attended_program_families",
+          week: "attended_weeks",
         },
         measures: {
           campers: "COUNT(DISTINCT camper_hash)",
@@ -192,6 +216,7 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           branches: "CAST(branches AS STRING)",
           branch_combination: "branch_combination",
         },
+        multi: CAMPER_MULTI,
         measures: {
           campers: "COUNT(DISTINCT camper_hash)",
           avg_branches: "AVG(branches)",
@@ -262,14 +287,15 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   const filters = effectiveFilters(spec);
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters;
   const ds = datasetSql(spec.dataset, marts, usesWeek);
-  // A family with parents in two fields counts under each, only when occupation is asked for.
-  const usesOccupation =
-    CAMPMINDER.includes(spec.dataset) && (spec.rows.includes("parent_occupation") || spec.column === "parent_occupation" || "parent_occupation" in filters);
-  const source = usesOccupation
-    ? `SELECT s0.*, parent_occupation FROM (SELECT * FROM ${ds.from}) AS s0, UNNEST(IF(ARRAY_LENGTH(s0.parent_occupations) > 0, s0.parent_occupations, [CAST(NULL AS STRING)])) AS parent_occupation`
+  // Multi-valued fields shown as rows or columns: one record per value (mv_<field>); a record with none counts under (none).
+  const multi = ds.multi ?? {};
+  const valuesOf = (array: string) => `UNNEST(IF(ARRAY_LENGTH(${array}) > 0, ${array}, [CAST(NULL AS STRING)]))`;
+  const exploded = [...spec.rows, ...(spec.column ? [spec.column] : [])].filter((id) => id in multi);
+  const source = exploded.length
+    ? `SELECT s0.*, ${exploded.map((id) => `mv_${id}`).join(", ")} FROM (SELECT * FROM ${ds.from}) AS s0, ${exploded.map((id) => `${valuesOf(`s0.${multi[id]}`)} AS mv_${id}`).join(", ")}`
     : `SELECT * FROM ${ds.from}`;
   const field = (id: string) => {
-    const sql = ds.fields[id];
+    const sql = id in multi ? `mv_${id}` : ds.fields[id];
     if (!sql) throw new Error(`Unknown field ${id}`);
     return `COALESCE(${sql}, '${NONE_VALUE}')`;
   };
@@ -282,7 +308,12 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   Object.entries(filters).forEach(([id, values], i) => {
     params[`f${i}`] = values;
     types[`f${i}`] = ["STRING"];
-    where.push(`${field(id)} IN UNNEST(@f${i})`);
+    // A multi-valued filter that isn't split out keeps records with any of the values, once each.
+    where.push(
+      id in multi && !exploded.includes(id)
+        ? `EXISTS (SELECT 1 FROM ${valuesOf(multi[id]!)} AS v WHERE COALESCE(v, '${NONE_VALUE}') IN UNNEST(@f${i}))`
+        : `${field(id)} IN UNNEST(@f${i})`,
+    );
   });
   if (ds.dateColumn) {
     params.start = spec.start;
