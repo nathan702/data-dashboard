@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { campminderCalendar, cleanSchool } from "@dash/shared";
+import { campminderCalendar, cleanSchool, occupationCategories, type OccupationCategory } from "@dash/shared";
 import { pseudonymize } from "../core/privacy.js";
 import { addressKey, homeAddress, zip5, type GeoResult } from "./geocode.js";
 
@@ -17,7 +17,7 @@ import { addressKey, homeAddress, zip5, type GeoResult } from "./geocode.js";
  * every row is rewritten (the version is part of each row's hash), so no row
  * keeps a value an older parser stored.
  */
-export const PARSER_VERSION = "6";
+export const PARSER_VERSION = "7";
 
 export const STATUS_LABEL: Record<string, string> = {
   EN: "Enrolled",
@@ -50,6 +50,8 @@ export interface CampminderSession {
   schoolGrade: string | null;
   /** School as the family entered it (grouped for reports in the API; see schools.ts). */
   school: string | null;
+  /** Each parent's occupation as a category ("Legal", "Education"…), once per category; the answers themselves aren't kept. */
+  parentOccupations: OccupationCategory[];
   yearsAsCamper: number | null;
   applicationDate: string | null;
   statusPostDate: string | null;
@@ -182,6 +184,15 @@ export function schoolColumn(headers: Iterable<string>): string | null {
 }
 
 /**
+ * The report columns holding parents' occupations: "F1P1 Occupation" through
+ * "F2P2 Occupation" (family 1 or 2, parent 1 or 2; a second family is a
+ * second household).
+ */
+export function occupationColumns(headers: Iterable<string>): string[] {
+  return [...headers].filter((h) => /^\s*F\dP\d\s+Occupation\s*$/i.test(h));
+}
+
+/**
  * Convert report rows (header → value) into camper-session rows. Only the
  * fields listed on CampminderSession leave this function.
  */
@@ -200,6 +211,7 @@ export function toSessions(
   for (const r of rows) for (const [k, v] of parseSessionDates(r["Enrolled Child Sessions With Dates (columnar)"] ?? "")) dates.set(k, v);
 
   const schoolCol = schoolColumn(Object.keys(rows[0] ?? {}));
+  const occupationCols = occupationColumns(Object.keys(rows[0] ?? {}));
   const out = new Map<string, CampminderSession>();
   for (const r of rows) {
     const personId = clean(r["PersonID"]);
@@ -217,6 +229,7 @@ export function toSessions(
       campGrade: clean(r["Camp Grade"]),
       schoolGrade: clean(r["School Grade"]),
       school: keepSchool(schoolCol ? cleanSchool(r[schoolCol]) : null, notSchools),
+      parentOccupations: occupationCategories(occupationCols.map((c) => r[c])),
       yearsAsCamper: Number.isFinite(years) && years > 0 ? years : null,
       applicationDate: usDate(r["Child Application Date"]),
       statusPostDate: usDate(r["Child Status Post Date"]),

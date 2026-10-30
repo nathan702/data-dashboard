@@ -101,6 +101,10 @@ unmatched is "Unassigned" and flagged.
   initials-tolerant matching; a review list for the unsure ones; School,
   School type, state and county in reports; School breakdown and filter on
   the Camp pages.
+- **Parent occupations**: each parent's occupation (up to four, both
+  households) sorted into one of 15 categories on import; only the category
+  is kept. Parent occupation in reports; breakdown and filter on the Camp
+  pages.
 - **Settings tabs**: one tab per platform's assignments, Seasons, Program
   families, Schools.
 
@@ -116,10 +120,10 @@ unmatched is "Unassigned" and flagged.
    county; the Camp pages break down and filter by school. Answers marked
    "not a school" are kept out of the data. *Needs:* 2022–2025 history
    re-exported with the School column.
-4. **Parent occupations** ← *next*: same grouping approach, into categories ("attorney" /
-   "lawyer" → Legal). Adds parent information to what's stored, so it needs
-   sign-off first.
-5. **Campminder financials**: from the separate report produced by the other
+4. **Parent occupations** ✅ Each parent's occupation (F1P1–F2P2 columns) is
+   sorted into one of 15 categories ("attorney" / "lawyer" → Legal) when
+   imported; the text itself is never stored. Everyone can see it.
+5. **Campminder financials** ← *next*: from the separate report produced by the other
    Google Cloud project, read the same way as the daily sheet.
 6. **Family and sibling reporting**: keep the household ID as a scrambled ID;
    sibling status week by week.

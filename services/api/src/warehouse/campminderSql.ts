@@ -7,7 +7,7 @@ import { schoolParams, type SchoolMap } from "./reportSql.js";
  */
 const FILTER = "(@business_line IS NULL OR business_line = @business_line)";
 
-const KEY_SQL: Record<Exclude<EnrollmentDimension, "week">, string> = {
+const KEY_SQL: Record<Exclude<EnrollmentDimension, "week" | "occupation">, string> = {
   session_group: "session_group",
   session: "session_name",
   program: "program",
@@ -20,6 +20,9 @@ const KEY_SQL: Record<Exclude<EnrollmentDimension, "week">, string> = {
   status: "status",
 };
 
+/** Each parent occupation category of the camper's family (a family can have several); none known is UNKNOWN_KEY. */
+const OCCUPATIONS = `UNNEST(IF(ARRAY_LENGTH(parent_occupations) > 0, parent_occupations, ['${UNKNOWN_KEY}']))`;
+
 /**
  * Drill-down filters: one clause per dimension, each with its own array
  * parameter (@f_<dimension>). Empty arrays arrive as NULL, hence COALESCE.
@@ -27,7 +30,9 @@ const KEY_SQL: Record<Exclude<EnrollmentDimension, "week">, string> = {
 const DRILL = ENROLLMENT_DIMENSIONS.map((d) =>
   d === "week"
     ? "(COALESCE(ARRAY_LENGTH(@f_week), 0) = 0 OR EXISTS (SELECT 1 FROM UNNEST(@f_week) AS w WHERE SAFE_CAST(w AS INT64) BETWEEN week_start AND week_end))"
-    : `(COALESCE(ARRAY_LENGTH(@f_${d}), 0) = 0 OR COALESCE(${KEY_SQL[d]}, '${UNKNOWN_KEY}') IN UNNEST(@f_${d}))`,
+    : d === "occupation"
+      ? `(COALESCE(ARRAY_LENGTH(@f_occupation), 0) = 0 OR EXISTS (SELECT 1 FROM ${OCCUPATIONS} AS o WHERE o IN UNNEST(@f_occupation)))`
+      : `(COALESCE(ARRAY_LENGTH(@f_${d}), 0) = 0 OR COALESCE(${KEY_SQL[d]}, '${UNKNOWN_KEY}') IN UNNEST(@f_${d}))`,
 ).join("\n      AND ");
 
 /**
@@ -118,6 +123,14 @@ export function breakdownSql(t: string, dimension: EnrollmentDimension) {
       SELECT CAST(week AS STRING) AS key, ${COUNTS}
       FROM ${t}, UNNEST(GENERATE_ARRAY(week_start, week_end)) AS week
       WHERE ${FILTER} AND ${DRILL} AND season = @season AND is_weekly
+      GROUP BY 1`;
+  }
+  if (dimension === "occupation") {
+    // A family with parents in two fields counts under each.
+    return `
+      SELECT occupation AS key, ${COUNTS}
+      FROM ${t}, ${OCCUPATIONS} AS occupation
+      WHERE ${FILTER} AND ${DRILL} AND season = @season
       GROUP BY 1`;
   }
   return `
