@@ -9,6 +9,7 @@ import {
   type ReportChart,
   type ReportDataset,
   type ReportPercent,
+  type ReportChange,
   type ReportSpec,
 } from "@dash/shared";
 import { FilterChips } from "../components/FilterChips";
@@ -85,18 +86,32 @@ export function ReportBuilder() {
     ...(spec.column && spec.rows.length ? ([["row", "% of row"], ["column", "% of column"]] as Array<[ReportPercent, string]>) : []),
     ...((spec.rows.length || spec.column) ? ([["total", "% of total"]] as Array<[ReportPercent, string]>) : []),
   ];
+  const colOrdered = !!spec.column && info.fields.find((f) => f.id === spec.column)?.order !== "text";
   const update = (patch: Partial<ReportSpec>, push = false) => {
     const next = { ...spec, ...patch };
+    if (next.change !== "none" && (!next.column || info.fields.find((f) => f.id === next.column)?.order === "text")) next.change = "none";
     if (!info.measures.find((m) => m.id === next.measure)?.additive) next.percent = "none";
     if ((next.percent === "row" || next.percent === "column") && !(next.column && next.rows.length)) next.percent = "none";
     setSpec(next, push);
   };
-  const active = Object.entries(spec.filters).filter(([, v]) => v.length > 0) as Array<[string, string[]]>;
+  // Chips: included values by field id, left-out ones as "not:<field id>".
+  const active = [
+    ...Object.entries(spec.filters).filter(([, v]) => v.length > 0),
+    ...Object.entries(spec.exclude)
+      .filter(([, v]) => v.length > 0)
+      .map(([fid, v]): [string, string[]] => [`not:${fid}`, v]),
+  ];
+  const chipField = (key: string) => key.replace(/^not:/, "");
   const drill = (row: string[] | null, col: string | null) => {
     const filters = { ...spec.filters };
-    row?.forEach((v, i) => (filters[spec.rows[i]!] = [v]));
-    if (col !== null && spec.column) filters[spec.column] = [col];
-    update({ filters }, true);
+    const exclude = { ...spec.exclude };
+    const keep = (fid: string, v: string) => {
+      filters[fid] = [v];
+      delete exclude[fid];
+    };
+    row?.forEach((v, i) => keep(spec.rows[i]!, v));
+    if (col !== null && spec.column) keep(spec.column, col);
+    update({ filters, exclude }, true);
   };
   const title = isNew ? "New report" : saved.data?.name ?? "Report";
   const canEdit = !isNew && !!saved.data?.canEdit;
@@ -198,6 +213,18 @@ export function ReportBuilder() {
               ))}
             </select>
           </Field>
+          <Field label="Change">
+            <select
+              value={spec.change}
+              onChange={(e) => update({ change: e.target.value as ReportChange })}
+              disabled={!colOrdered}
+              title={colOrdered ? "Change from the previous column" : "Pick an ordered column (season, year, month, week…) first"}
+            >
+              <option value="none">None</option>
+              <option value="difference">vs previous column</option>
+              <option value="percent">% vs previous column</option>
+            </select>
+          </Field>
           {info.dated && (
             <>
               <Field label="From">
@@ -223,14 +250,15 @@ export function ReportBuilder() {
 
       <FilterChips
         active={active}
-        label={fieldLabel}
-        valueLabel={(fid, v) => displayValue(info.fields.find((f) => f.id === fid) ?? null, v)}
-        onRemove={(fid) => {
-          const filters = { ...spec.filters };
-          delete filters[fid];
-          update({ filters }, true);
+        label={(key) => (key.startsWith("not:") ? `${fieldLabel(chipField(key))} is not` : fieldLabel(key))}
+        valueLabel={(key, v) => displayValue(info.fields.find((f) => f.id === chipField(key)) ?? null, v)}
+        onRemove={(key) => {
+          const which = key.startsWith("not:") ? "exclude" : "filters";
+          const next = { ...spec[which] };
+          delete next[chipField(key)];
+          update({ [which]: next }, true);
         }}
-        onClear={() => update({ filters: {} }, true)}
+        onClear={() => update({ filters: {}, exclude: {} }, true)}
       >
         <button type="button" className="button" onClick={() => setPicking((x) => !x)} aria-expanded={picking}>
           + Filter
@@ -239,11 +267,14 @@ export function ReportBuilder() {
       {picking && (
         <ReportFilterPicker
           spec={spec}
-          onApply={(fid, values) => {
+          onApply={(fid, values, leaveOut) => {
+            // A field is either kept to its values or has them left out, not both.
             const filters = { ...spec.filters };
-            if (values.length) filters[fid] = values;
-            else delete filters[fid];
-            update({ filters }, true);
+            const exclude = { ...spec.exclude };
+            delete filters[fid];
+            delete exclude[fid];
+            if (values.length) (leaveOut ? exclude : filters)[fid] = values;
+            update({ filters, exclude }, true);
             setPicking(false);
           }}
           onCancel={() => setPicking(false)}
@@ -267,10 +298,19 @@ export function ReportBuilder() {
   );
 }
 
-function ReportFilterPicker({ spec, onApply, onCancel }: { spec: ReportSpec; onApply(field: string, values: string[]): void; onCancel(): void }) {
+function ReportFilterPicker({
+  spec,
+  onApply,
+  onCancel,
+}: {
+  spec: ReportSpec;
+  onApply(field: string, values: string[], leaveOut: boolean): void;
+  onCancel(): void;
+}) {
   const info = REPORT_DATASET_INFO[spec.dataset];
   const [field, setField] = useState(info.fields[0]!.id);
-  const [chosen, setChosen] = useState<string[]>(spec.filters[field] ?? []);
+  const [chosen, setChosen] = useState<string[]>(spec.filters[field] ?? spec.exclude[field] ?? []);
+  const [leaveOut, setLeaveOut] = useState(!!spec.exclude[field]?.length);
   const [query, setQuery] = useState("");
   const values = useReportValues(spec, field);
   const f = info.fields.find((x) => x.id === field)!;
@@ -288,7 +328,8 @@ function ReportFilterPicker({ spec, onApply, onCancel }: { spec: ReportSpec; onA
             value={field}
             onChange={(e) => {
               setField(e.target.value);
-              setChosen(spec.filters[e.target.value] ?? []);
+              setChosen(spec.filters[e.target.value] ?? spec.exclude[e.target.value] ?? []);
+              setLeaveOut(!!spec.exclude[e.target.value]?.length);
               setQuery("");
             }}
           >
@@ -297,6 +338,12 @@ function ReportFilterPicker({ spec, onApply, onCancel }: { spec: ReportSpec; onA
                 {x.label}
               </option>
             ))}
+          </select>
+        </Field>
+        <Field label="Keep">
+          <select value={leaveOut ? "out" : "in"} onChange={(e) => setLeaveOut(e.target.value === "out")}>
+            <option value="in">Only these</option>
+            <option value="out">Everything except these</option>
           </select>
         </Field>
         <Field label="Search">
@@ -316,7 +363,7 @@ function ReportFilterPicker({ spec, onApply, onCancel }: { spec: ReportSpec; onA
         {rows.length > 500 && <span className="hint">Showing 500 of {rows.length}; search to narrow it down.</span>}
       </div>
       <div className="chips">
-        <button type="button" className="button button-primary" onClick={() => onApply(field, chosen)}>
+        <button type="button" className="button button-primary" onClick={() => onApply(field, chosen, leaveOut)}>
           Apply
         </button>
         {q && rows.length > 0 && rows.length <= 500 && (

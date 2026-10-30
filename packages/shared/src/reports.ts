@@ -71,6 +71,8 @@ const CAMPER_FIELDS = [
     "Parent occupation",
     "Field each parent works in (up to four parents, both households). A family with parents in two fields counts under each, so totals can add up to more than the whole.",
   ),
+  f("signup_month", "Sign-up month", "Month the camper's application was submitted (YYYY-MM).", "numeric"),
+  f("signup_week", "Sign-up week", "Week the camper's application was submitted (the Monday it starts, YYYY-MM-DD).", "numeric"),
   f("gender", "Gender", "As recorded in Campminder."),
   f("state", "Home state", "Primary household's state."),
   f("zip", "Home ZIP", "Primary household's 5-digit ZIP code."),
@@ -92,6 +94,7 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
       f("program_branch", "Program branch", "The branch within its family."),
       f("week", "Week", "Week of summer camp. A multi-week session counts in each of its weeks.", "numeric"),
       f("status", "Status", "Enrolled, Cancelled, Withdrawn, Waitlisted…"),
+      f("weeks_before_session", "Weeks from sign-up to session", "Whole weeks between the application and the session's start (0 = the week before it starts).", "numeric"),
     ],
     measures: [
       m("enrollments", "Enrollments", "Enrolled camper-sessions.", "count", true),
@@ -126,12 +129,35 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
       f("program", "Program attended", "Campers who did the program in at least one session. As rows, a camper counts under each of their programs."),
       f("program_family", "Program family attended", "Campers who did any program in the family. As rows, a camper counts under each family."),
       f("week", "Week attended", "Campers at camp that week. As rows, a camper counts under each week they attended.", "numeric"),
+      f(
+        "also_business_line",
+        "Also in business line",
+        "Other business lines the camper was enrolled in the same season (e.g. camp campers who also did CHAPs). (none) = only this one.",
+      ),
+      f("cancellations", "Cancelled or withdrew", "Whether the camper cancelled or withdrew from at least one session that season (in this business line).", "text"),
     ],
     measures: [
       m("campers", "Campers", "Distinct campers.", "count", true),
       m("avg_sessions", "Average sessions per camper", "Mean enrolled sessions per camper that season.", "decimal", false),
       m("avg_weeks", "Average weeks per camper", "Mean weeks enrolled per camper that season.", "decimal", false),
       m("return_rate", "% who came back", "Share of campers enrolled again the next season (seasons with a known next season only).", "percent", false),
+      m(
+        "return_rate_same_group",
+        "% who came back to the same session group",
+        "Share enrolled again the next season in a session group they attended (the group shown, or chosen in the filter, when there is one).",
+        "percent",
+        false,
+      ),
+      m(
+        "avg_sessions_matching",
+        "Average sessions in the chosen groups",
+        "Mean sessions per camper counting only sessions in the session group, session, program, family or week shown or filtered to (all sessions when none is).",
+        "decimal",
+        false,
+      ),
+      m("sessions_matching", "Sessions in the chosen groups", "Total sessions in the session group, session, program, family or week shown or filtered to.", "count", true),
+      m("cancel_rate", "% who cancelled or withdrew", "Share of campers who cancelled or withdrew from at least one session that season.", "percent", false),
+      m("cancelled_sessions", "Cancelled or withdrawn sessions", "Sessions the campers cancelled or withdrew from.", "count", true),
       m("sessions_total", "Sessions", "Total enrolled sessions.", "count", true),
       m("families", "Families", "Distinct households.", "count", true),
     ],
@@ -208,6 +234,9 @@ export const REPORT_CHARTS = ["table", "bar", "line", "heatmap"] as const;
 export type ReportChart = (typeof REPORT_CHARTS)[number];
 export const REPORT_PERCENTS = ["none", "row", "column", "total"] as const;
 export type ReportPercent = (typeof REPORT_PERCENTS)[number];
+/** Change from the previous column (season, year, month, week…), shown under each value. */
+export const REPORT_CHANGES = ["none", "difference", "percent"] as const;
+export type ReportChange = (typeof REPORT_CHANGES)[number];
 
 const isoDate = z.string().refine(isIsoDate, "Expected YYYY-MM-DD");
 
@@ -220,15 +249,18 @@ export const reportSpecSchema = z
     column: z.string().optional(),
     measure: z.string(),
     filters: z.record(z.string(), z.array(z.string().max(300)).max(500)).default({}),
+    /** Leave out records with any of these values ("campers who did not attend Riley's"). */
+    exclude: z.record(z.string(), z.array(z.string().max(300)).max(500)).default({}),
     start: isoDate.optional(),
     end: isoDate.optional(),
     chart: z.enum(REPORT_CHARTS).default("table"),
     percent: z.enum(REPORT_PERCENTS).default("none"),
+    change: z.enum(REPORT_CHANGES).default("none"),
   })
   .superRefine((s, ctx) => {
     const info = REPORT_DATASET_INFO[s.dataset];
     const fieldIds = new Set(info.fields.map((x) => x.id));
-    for (const id of [...s.rows, ...(s.column ? [s.column] : []), ...Object.keys(s.filters)]) {
+    for (const id of [...s.rows, ...(s.column ? [s.column] : []), ...Object.keys(s.filters), ...Object.keys(s.exclude)]) {
       if (!fieldIds.has(id)) ctx.addIssue({ code: "custom", message: `Unknown field "${id}" for ${info.label}` });
     }
     if (new Set([...s.rows, s.column].filter(Boolean)).size !== s.rows.length + (s.column ? 1 : 0)) {
@@ -237,6 +269,9 @@ export const reportSpecSchema = z
     const measure = info.measures.find((x) => x.id === s.measure);
     if (!measure) ctx.addIssue({ code: "custom", message: `Unknown measure "${s.measure}" for ${info.label}` });
     else if (s.percent !== "none" && !measure.additive) ctx.addIssue({ code: "custom", message: `${measure.label} can't be shown as a share` });
+    if (s.change !== "none" && (!s.column || info.fields.find((x) => x.id === s.column)?.order === "text")) {
+      ctx.addIssue({ code: "custom", message: "Change from the previous column needs an ordered column (season, year, month, week…)" });
+    }
     if (info.dated) {
       if (!s.start || !s.end) ctx.addIssue({ code: "custom", message: `${info.label} needs a date range` });
       else if (s.start > s.end) ctx.addIssue({ code: "custom", message: "The date range ends before it starts" });

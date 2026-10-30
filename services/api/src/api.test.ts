@@ -579,20 +579,30 @@ describe("report builder", () => {
     const { compileReport } = await import("./warehouse/reportSql.js");
     const evil = "x'); DROP TABLE marts.y; --";
     const { sql, params } = compileReport(
-      { dataset: "store_sales", rows: ["item"], column: "month", measure: "net", filters: { category: [evil] }, start: "2026-01-01", end: "2026-01-31", chart: "table", percent: "none" },
+      reportSpecSchema.parse({
+        dataset: "store_sales",
+        rows: ["item"],
+        column: "month",
+        measure: "net",
+        filters: { category: [evil] },
+        exclude: { item: [evil] },
+        start: "2026-01-01",
+        end: "2026-01-31",
+      }),
       "marts",
       { overrides: {} },
     );
     expect(sql).not.toContain("DROP");
     expect(params.f0).toEqual([evil]);
+    expect(params.x0).toEqual([evil]);
     expect(sql).toContain("GROUPING SETS ((r0, c), (r0), (c), ())");
   });
 
   it("splits campers by parent occupation only when a report asks for it", async () => {
     const { compileReport } = await import("./warehouse/reportSql.js");
-    const base = { dataset: "camper_seasons", column: "season", measure: "campers", filters: {}, chart: "table", percent: "none" } as const;
-    expect(compileReport({ ...base, rows: ["age"] }, "marts", { overrides: {} }).sql).not.toContain("mv_parent_occupation");
-    expect(compileReport({ ...base, rows: ["parent_occupation"] }, "marts", { overrides: {} }).sql).toContain("AS mv_parent_occupation");
+    const base = { dataset: "camper_seasons", column: "season", measure: "campers" } as const;
+    expect(compileReport(reportSpecSchema.parse({ ...base, rows: ["age"] }), "marts", { overrides: {} }).sql).not.toContain("mv_parent_occupation");
+    expect(compileReport(reportSpecSchema.parse({ ...base, rows: ["parent_occupation"] }), "marts", { overrides: {} }).sql).toContain("AS mv_parent_occupation");
     const res = await run(api(), { dataset: "camper_seasons", rows: ["parent_occupation"], measure: "campers" }).expect(200);
     expect(res.body.cells.map((c: { rows: string[] }) => c.rows[0])).toEqual(expect.arrayContaining(["Legal", "Medicine and health"]));
   });
@@ -627,6 +637,57 @@ describe("report builder", () => {
     );
   });
 
+  it("answers the follow-up questions: sessions in a group, exclusions, sign-up timing, same-group returns, other lines, cancellations", async () => {
+    const app = api();
+    const total = async (spec: object) => (await run(app, spec).expect(200)).body.cells.find((c: { kind: string }) => c.kind === "total").value as number;
+    const camp = { season: ["2026"], business_line: ["camp"] };
+    const cs = (measure: string, filters: object = {}, exclude: object = {}) => ({ dataset: "camper_seasons", measure, filters: { ...camp, ...filters }, exclude });
+
+    // Sessions in the chosen group: Farm campers' Farm sessions, as counted in Enrollments.
+    const farmSessions = await total({ dataset: "enrollments", measure: "enrollments", filters: { ...camp, session_group: ["Farm"] } });
+    expect(await total(cs("sessions_matching", { session_group: ["Farm"] }))).toBe(farmSessions);
+    expect(await total(cs("sessions_matching"))).toBe(await total(cs("sessions_total")));
+    const byGroup = (await run(app, { ...cs("sessions_matching"), rows: ["session_group"] }).expect(200)).body;
+    expect(byGroup.cells.find((c: { kind: string; rows: string[] }) => c.kind === "cell" && c.rows[0] === "Farm").value).toBe(farmSessions);
+
+    // Exclusions: campers who did Riley's plus those who didn't are all campers.
+    const all = await total(cs("campers"));
+    const riley = await total(cs("campers", { session_group: ["Riley's"] }));
+    const notRiley = await total(cs("campers", {}, { session_group: ["Riley's"] }));
+    expect(riley + notRiley).toBe(all);
+    expect(await total({ dataset: "enrollments", measure: "enrollments", filters: camp, exclude: { gender: ["Male"] } })).toBe(
+      await total({ dataset: "enrollments", measure: "enrollments", filters: { ...camp, gender: ["Female"] } }),
+    );
+
+    // Sign-up timing.
+    const months = (await run(app, { dataset: "enrollments", rows: ["signup_month"], measure: "enrollments", filters: camp }).expect(200)).body;
+    expect(months.cells.some((c: { rows: string[] }) => /^\d{4}-\d{2}$/.test(c.rows[0] ?? ""))).toBe(true);
+    const lead = (await run(app, { dataset: "enrollments", rows: ["weeks_before_session"], measure: "enrollments", filters: camp }).expect(200)).body;
+    expect(lead.cells.filter((c: { kind: string }) => c.kind === "cell").length).toBeGreaterThan(5);
+
+    // Coming back to the same group is never more common than coming back at all.
+    const last = { season: ["2025"], business_line: ["camp"] };
+    const back = await total({ dataset: "camper_seasons", measure: "return_rate", filters: last });
+    const same = await total({ dataset: "camper_seasons", measure: "return_rate_same_group", filters: last });
+    expect(same).toBeGreaterThan(0);
+    expect(same).toBeLessThanOrEqual(back);
+
+    // Other business lines the same season, and cancellations among enrolled campers.
+    const lines = (await run(app, { ...cs("campers"), rows: ["also_business_line"] }).expect(200)).body;
+    expect(lines.cells.map((c: { rows: string[] }) => c.rows[0])).toEqual(expect.arrayContaining(["(none)", "school_year"]));
+    const rate = await total(cs("cancel_rate"));
+    expect(rate).toBeGreaterThan(0);
+    expect(rate).toBeLessThan(1);
+    const cancelledSessions = await total(cs("cancelled_sessions"));
+    const allCancelled = await total({ dataset: "enrollments", measure: "cancelled", filters: camp }) + (await total({ dataset: "enrollments", measure: "withdrawn", filters: camp }));
+    expect(cancelledSessions).toBeGreaterThan(0);
+    expect(cancelledSessions).toBeLessThanOrEqual(allCancelled);
+
+    // Change from the previous column needs an ordered column.
+    await run(app, { ...cs("campers"), rows: ["age"], column: "gender", change: "percent" }).expect(400);
+    await run(app, { dataset: "camper_seasons", measure: "campers", rows: ["age"], column: "season", change: "percent" }).expect(200);
+  });
+
   it("splits multi-valued fields only for rows and columns, and filters on them with EXISTS", async () => {
     const { compileReport } = await import("./warehouse/reportSql.js");
     const spec = (s: object) => reportSpecSchema.parse({ dataset: "camper_seasons", measure: "avg_sessions", ...s });
@@ -636,6 +697,11 @@ describe("report builder", () => {
     const rows = compileReport(spec({ rows: ["session_group"], column: "parent_occupation" }), "marts", { overrides: {} }).sql;
     expect(rows).toContain("AS mv_session_group");
     expect(rows).toContain("AS mv_parent_occupation");
+    expect(rows).toContain("x.session_group = mv_session_group");
+    expect(filtered).toContain("COALESCE(x.session_group, '(none)') IN UNNEST(@f0)");
+    const excluded = compileReport(spec({ exclude: { session_group: ["Riley's"] } }), "marts", { overrides: {} });
+    expect(excluded.sql).toContain("NOT EXISTS (SELECT 1 FROM UNNEST(IF(ARRAY_LENGTH(attended_session_groups)");
+    expect(excluded.params.x0).toEqual(["Riley's"]);
   });
 
   it("lists filter values with counts", async () => {

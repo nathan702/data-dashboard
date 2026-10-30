@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { REPORT_DATASET_INFO, reportSpecSchema, type ReportCell } from "@dash/shared";
-import { buildPivot, formatMeasure } from "./pivot";
+import { buildPivot, formatChange, formatMeasure } from "./pivot";
 
 const spec = reportSpecSchema.parse({ dataset: "enrollments", rows: ["grade"], column: "season", measure: "campers", percent: "column" });
 const cells: ReportCell[] = [
@@ -24,6 +24,18 @@ describe("pivot", () => {
     expect(p.total).toBe(42);
     expect(p.shown(10, ["K"], "2026")).toBeCloseTo(10 / 38);
     expect(formatMeasure(p.shown(10, ["K"], "2026"), "share")).toBe("26.3%");
+  });
+
+  it("shows the change from the previous column", () => {
+    const s = reportSpecSchema.parse({ dataset: "enrollments", rows: ["grade"], column: "season", measure: "campers", change: "percent" });
+    const p = buildPivot({ spec: s, cells, truncated: false, generatedAt: "" }, REPORT_DATASET_INFO.enrollments);
+    expect(p.change(["K"], "2025")).toBeNull();
+    // 2nd grade has no 2025 value; the column totals go 5 → 38.
+    expect(p.change(["2nd"], "2026")).toBeNull();
+    const t = p.change(null, "2026")!;
+    expect(t.diff).toBe(33);
+    expect(formatChange(t, "percent", "count")).toBe("+660.0%");
+    expect(formatChange({ diff: -3, pct: -0.1 }, "difference", "count")).toBe("−3");
   });
 
   it("sorts text fields biggest first, with (none) last", () => {

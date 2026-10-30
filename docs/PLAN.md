@@ -96,8 +96,12 @@ unmatched is "Unassigned" and flagged.
   private or shared saved reports, six starter reports (sessions by years at
   camp, sessions by session group, Explorers branches, ZIP by week, schools,
   retention). Campers by season can be filtered or grouped by the session
-  groups, sessions, programs and weeks they attended. Program families and
-  schools on Settings.
+  groups, sessions, programs and weeks they attended, with sessions counted
+  in just those groups, returns to the same session group, other business
+  lines the same season and cancellations; enrollments by sign-up month and
+  weeks ahead. Any filter can leave values out instead ("everything except"),
+  and tables can show the change from the previous season, month or week.
+  Program families and schools on Settings.
 - **Camper schools**: imported as entered and matched to actual schools
   (official directory or added on Settings) with typo-, abbreviation- and
   initials-tolerant matching; a review list for the unsure ones; School,

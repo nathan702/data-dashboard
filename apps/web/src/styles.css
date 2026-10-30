@@ -330,6 +330,7 @@ tbody tr:hover { background: var(--wash); }
 .pivot-heat td.num { transition: none; }
 .cell-link { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; text-align: inherit; }
 .cell-link:hover, .cell-link:focus-visible { text-decoration: underline; }
+.cell-change { display: block; font-size: 11px; opacity: 0.75; }
 .save-form { display: flex; flex-direction: column; gap: 10px; }
 .save-form input[type="text"] { min-width: 260px; }
 .link-button.danger { color: var(--bad-text); }
