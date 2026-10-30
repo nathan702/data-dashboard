@@ -27,6 +27,9 @@ export interface Pivot {
   /** Shown number: the value or its share, per the report's percent setting. */
   shown(v: number | null, row: string[] | null, col: string | null): number | null;
   percent: boolean;
+  /** Change of the shown number from the previous column (null for the first column or a missing value). */
+  change(row: string[] | null, col: string): { diff: number; pct: number | null } | null;
+  changeMode: ReportResult["spec"]["change"];
 }
 
 const k = (row: string[]) => row.join("␟");
@@ -80,37 +83,58 @@ export function buildPivot(result: ReportResult, info: ReportDatasetInfo): Pivot
   });
 
   const share = (v: number | null, of: number | null) => (v === null || !of ? null : v / of);
+  const value = (row: string[], col: string | null) => cells.get(`${k(row)}|${col ?? ""}`) ?? null;
+  const shown = (v: number | null, row: string[] | null, col: string | null) => {
+    switch (spec.percent) {
+      case "none":
+        return v;
+      case "total":
+        return share(v, total);
+      case "row":
+        return row ? share(v, rowTotal(row)) : share(v, total);
+      case "column":
+        return col !== null ? share(v, colTotal(col)) : share(v, total);
+    }
+  };
+  // A row's cells (or the column totals, for row null) compared with the column before.
+  const change = (row: string[] | null, col: string) => {
+    const i = colKeys.indexOf(col);
+    if (spec.change === "none" || i <= 0) return null;
+    const at = (c: string) => shown(row ? value(row, c) : colTotal(c), row, c);
+    const now = at(col);
+    const before = at(colKeys[i - 1]!);
+    if (now === null || before === null) return null;
+    return { diff: now - before, pct: before === 0 ? null : (now - before) / Math.abs(before) };
+  };
   return {
     rowFields,
     colField,
     measure,
     rowKeys,
     colKeys,
-    value: (row, col) => cells.get(`${k(row)}|${col ?? ""}`) ?? null,
+    value,
     rowTotal,
     colTotal,
     total,
     percent: spec.percent !== "none",
-    shown(v, row, col) {
-      switch (spec.percent) {
-        case "none":
-          return v;
-        case "total":
-          return share(v, total);
-        case "row":
-          return row ? share(v, rowTotal(row)) : share(v, total);
-        case "column":
-          return col !== null ? share(v, colTotal(col)) : share(v, total);
-      }
-    },
+    shown,
+    change,
+    changeMode: spec.change,
   };
 }
 
 /** Field values as people should read them (business line ids → names). */
 export function displayValue(field: ReportField | null, v: string): string {
-  if (field?.id === "business_line" && isBusinessLineOrUnassigned(v)) return businessLineLabel(v);
+  if ((field?.id === "business_line" || field?.id === "also_business_line") && isBusinessLineOrUnassigned(v)) return businessLineLabel(v);
   if (field?.id === "week" && v !== NONE_VALUE) return `Week ${v}`;
   return v;
+}
+
+/** A change from the previous column, signed: "+12", "−3.5%". */
+export function formatChange(c: { diff: number; pct: number | null }, mode: "difference" | "percent", format: ReportMeasure["format"] | "share"): string {
+  const sign = (n: number) => (n > 0 ? "+" : n < 0 ? "−" : "±");
+  if (mode === "percent") return c.pct === null ? "–" : `${sign(c.pct)}${formatMeasure(Math.abs(c.pct), "share")}`;
+  return `${sign(c.diff)}${formatMeasure(Math.abs(c.diff), format)}`;
 }
 
 export function formatMeasure(v: number | null, format: ReportMeasure["format"] | "share"): string {

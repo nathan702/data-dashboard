@@ -2,7 +2,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import type { ReportChart } from "@dash/shared";
 import { ACCENT_VAR } from "../lib/colors";
 import { downloadCsv, toCsv } from "../lib/csv";
-import { displayValue, formatMeasure, type Pivot } from "../lib/pivot";
+import { displayValue, formatChange, formatMeasure, type Pivot } from "../lib/pivot";
 import { TopBarChart } from "./TopBarChart";
 
 /** Categorical slots in fixed order (validated set; see styles.css). More than eight → table. */
@@ -24,15 +24,25 @@ export function ReportView({ pivot, chart, onDrill, exportName }: Props) {
   const colLabel = (c: string) => displayValue(pivot.colField, c);
 
   const exportCsv = () => {
+    const changes = pivot.changeMode !== "none" && pivot.colField;
     const cols = [
       ...pivot.rowFields.map((f, i) => ({ key: `r${i}`, label: f.label })),
-      ...(pivot.colField ? pivot.colKeys.map((c, i) => ({ key: `c${i}`, label: colLabel(c) })) : []),
+      ...(pivot.colField
+        ? pivot.colKeys.flatMap((c, i) => [
+            { key: `c${i}`, label: colLabel(c) },
+            ...(changes && i > 0 ? [{ key: `d${i}`, label: `${colLabel(c)} change` }] : []),
+          ])
+        : []),
       { key: "total", label: pivot.colField ? "Total" : pivot.measure.label },
     ];
     const rows = pivot.rowKeys.map((rk) => {
       const out: Record<string, string | number | null> = {};
       rk.forEach((v, i) => (out[`r${i}`] = displayValue(pivot.rowFields[i]!, v)));
-      pivot.colKeys.forEach((c, i) => (out[`c${i}`] = pivot.shown(pivot.value(rk, c), rk, c)));
+      pivot.colKeys.forEach((c, i) => {
+        out[`c${i}`] = pivot.shown(pivot.value(rk, c), rk, c);
+        const d = pivot.change(rk, c);
+        if (d) out[`d${i}`] = pivot.changeMode === "percent" ? d.pct : d.diff;
+      });
       out.total = pivot.shown(pivot.rowTotal(rk), rk, null);
       return out;
     });
@@ -101,6 +111,12 @@ function PivotTable({
   colLabel(c: string): string;
 }) {
   const cols = pivot.colField ? pivot.colKeys : [];
+  const changeNote = (row: string[] | null, c: string) => {
+    const d = pivot.changeMode === "none" ? null : pivot.change(row, c);
+    if (!d) return null;
+    // Neutral color: up is good for campers, bad for cancellations.
+    return <span className="cell-change">{formatChange(d, pivot.changeMode as "difference" | "percent", pivot.percent ? "share" : pivot.measure.format)}</span>;
+  };
   // Heat map: one-hue ramp from the surface to the accent, scaled to the largest cell shown.
   const shownCells = pivot.rowKeys.flatMap((rk) => (cols.length ? cols.map((c) => pivot.shown(pivot.value(rk, c), rk, c)) : [pivot.shown(pivot.rowTotal(rk), rk, null)]));
   const max = Math.max(0, ...shownCells.map((v) => v ?? 0));
@@ -147,6 +163,7 @@ function PivotTable({
                           {fmt(v)}
                         </button>
                       )}
+                      {changeNote(rk, c)}
                     </td>
                   );
                 })}
@@ -170,6 +187,7 @@ function PivotTable({
                 {cols.map((c) => (
                   <td key={c} className="num">
                     {fmt(pivot.shown(pivot.colTotal(c), null, c))}
+                    {changeNote(null, c)}
                   </td>
                 ))}
                 <td className="num">{fmt(pivot.percent ? 1 : pivot.total)}</td>

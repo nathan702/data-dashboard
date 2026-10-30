@@ -149,6 +149,26 @@ export async function runSelfCheck(
     return null;
   });
 
+  await check("camper follow-up measures run", async () => {
+    // Sessions in the chosen groups, same-group returns, other lines, cancellations, sign-up timing and an exclusion.
+    for (const measure of ["avg_sessions_matching", "return_rate_same_group", "cancel_rate"]) {
+      await warehouse.runReport(
+        reportSpecSchema.parse({
+          dataset: "camper_seasons",
+          rows: ["session_group", "also_business_line"],
+          column: "season",
+          measure,
+          filters: { week: ["1", "2"] },
+          exclude: { program: ["(self-check)"] },
+          change: "percent",
+        }),
+        { overrides: {} },
+      );
+    }
+    await warehouse.runReport(reportSpecSchema.parse({ dataset: "enrollments", rows: ["signup_month", "weeks_before_session"], measure: "enrollments" }), { overrides: {} });
+    return null;
+  });
+
   for (const starter of STARTER_REPORTS) {
     await check(`starter report runs: ${starter.name}`, async () => {
       await warehouse.runReport(starter.spec, { overrides: {} });

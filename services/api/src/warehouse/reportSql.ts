@@ -43,8 +43,18 @@ interface DatasetSql {
    * a filter keeps records with any of the chosen values, counted once.
    */
   multi?: Record<string, string>;
+  /** Columns worked out per report (they depend on which fields are shown or filtered), for the measures to use. */
+  computed?(ctx: ReportContext): string[];
   /** Date column for dated data sets. */
   dateColumn?: string;
+}
+
+/** What a report shows and filters on, for computed columns. */
+interface ReportContext {
+  /** Multi-valued fields split into rows or columns (their value is mv_<field>). */
+  exploded: string[];
+  /** Filtered field → its values' parameter (@f0…). */
+  filterParam: Record<string, string>;
 }
 
 const ENROLLMENTS = (marts: string) => `\`${marts}.fct_campminder_enrollments\``;
@@ -64,7 +74,8 @@ const ENR_BASE = (marts: string) => `
       sm.school_state,
       sm.school_county,
       IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, TRIM(SUBSTR(e.program, 1, STRPOS(e.program, ' - ') - 1)), TRIM(e.program)), pf.family) AS program_family,
-      IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, NULLIF(TRIM(SUBSTR(e.program, STRPOS(e.program, ' - ') + 3)), ''), NULL), pf.branch) AS program_branch
+      IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, NULLIF(TRIM(SUBSTR(e.program, STRPOS(e.program, ' - ') + 3)), ''), NULL), pf.branch) AS program_branch,
+      IF(e.is_weekly, ARRAY(SELECT CAST(w AS STRING) FROM UNNEST(GENERATE_ARRAY(e.week_start, e.week_end)) AS w), CAST([] AS ARRAY<STRING>)) AS week_list
     FROM ${ENROLLMENTS(marts)} AS e
     LEFT JOIN pfmap AS pf ON pf.program = e.program
     LEFT JOIN schoolmap AS sm ON sm.entered = e.school
@@ -84,6 +95,8 @@ const CAMPER_FIELDS = {
   school_type: "school_type",
   school_state: "school_state",
   school_county: "school_county",
+  signup_month: "FORMAT_DATE('%Y-%m', application_date)",
+  signup_week: "CAST(DATE_TRUNC(application_date, WEEK(MONDAY)) AS STRING)",
   gender: "gender",
   state: "home_state",
   zip: "home_zip",
@@ -102,7 +115,8 @@ const CAMPER_ROLLUP = `
       ANY_VALUE(parent_occupations) AS parent_occupations,
       ANY_VALUE(gender) AS gender,
       ANY_VALUE(home_state) AS home_state,
-      ANY_VALUE(home_zip) AS home_zip`;
+      ANY_VALUE(home_zip) AS home_zip,
+      MIN(application_date) AS application_date`;
 
 /** Multi-valued fields of every Campminder data set. */
 const CAMPER_MULTI = { parent_occupation: "parent_occupations" };
@@ -125,6 +139,7 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           program_branch: "program_branch",
           week: "CAST(week AS STRING)",
           status: "status",
+          weeks_before_session: "CAST(DIV(DATE_DIFF(session_start, application_date, DAY), 7) AS STRING)",
         },
         multi: CAMPER_MULTI,
         measures: {
@@ -153,19 +168,40 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
       ARRAY_AGG(DISTINCT session_name IGNORE NULLS) AS attended_sessions,
       ARRAY_AGG(DISTINCT program IGNORE NULLS) AS attended_programs,
       ARRAY_AGG(DISTINCT program_family IGNORE NULLS) AS attended_program_families,
-      ARRAY_CONCAT_AGG(IF(is_weekly, GENERATE_ARRAY(week_start, week_end), CAST([] AS ARRAY<INT64>))) AS attended_week_numbers
+      ARRAY_CONCAT_AGG(week_list) AS attended_week_list,
+      -- Each session, for "sessions in the chosen groups".
+      ARRAY_AGG(STRUCT(session_group, session_name AS session, program, program_family, week_list AS weeks)) AS session_list
     FROM enr_base
     WHERE status_code = 'EN'
     GROUP BY season, business_line, camper_hash
   )`,
+          `cs_cancels AS (
+    SELECT season, business_line, camper_hash, COUNTIF(status_code IN ('CN', 'WD')) AS cancelled_sessions
+    FROM enr_base
+    GROUP BY season, business_line, camper_hash
+  )`,
+          `cs_lines AS (
+    SELECT season, camper_hash, ARRAY_AGG(DISTINCT business_line) AS lines
+    FROM cs0
+    GROUP BY season, camper_hash
+  )`,
           `camper_seasons AS (
     SELECT
       a.*,
-      ARRAY(SELECT DISTINCT CAST(w AS STRING) FROM UNNEST(a.attended_week_numbers) AS w) AS attended_weeks,
+      ARRAY(SELECT DISTINCT w FROM UNNEST(a.attended_week_list) AS w) AS attended_weeks,
+      ARRAY(SELECT l FROM UNNEST(cl.lines) AS l WHERE l != a.business_line) AS other_business_lines,
+      COALESCE(cc.cancelled_sessions, 0) AS cancelled_sessions,
       -- Unknown for the newest season: its next season hasn't happened.
-      CASE WHEN a.season >= (SELECT MAX(season) FROM cs0) THEN NULL ELSE b.camper_hash IS NOT NULL END AS returned
+      CASE WHEN a.season >= (SELECT MAX(season) FROM cs0) THEN NULL ELSE b.camper_hash IS NOT NULL END AS returned,
+      -- This season's session groups the camper was in again next season.
+      CASE
+        WHEN a.season >= (SELECT MAX(season) FROM cs0) THEN NULL
+        ELSE ARRAY(SELECT g FROM UNNEST(a.attended_session_groups) AS g WHERE g IN UNNEST(IFNULL(b.attended_session_groups, [])))
+      END AS returned_groups
     FROM cs0 AS a
     LEFT JOIN cs0 AS b ON b.camper_hash = a.camper_hash AND b.business_line = a.business_line AND b.season = a.season + 1
+    LEFT JOIN cs_lines AS cl ON cl.season = a.season AND cl.camper_hash = a.camper_hash
+    LEFT JOIN cs_cancels AS cc ON cc.season = a.season AND cc.business_line = a.business_line AND cc.camper_hash = a.camper_hash
   )`,
         ],
         from: "camper_seasons",
@@ -177,6 +213,7 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           last_week: "CAST(last_week AS STRING)",
           programs: "CAST(programs AS STRING)",
           returned: "CASE returned WHEN TRUE THEN 'Returned' WHEN FALSE THEN 'Didn''t return' ELSE 'Not known yet' END",
+          cancellations: "IF(cancelled_sessions > 0, 'Cancelled or withdrew a session', 'No cancellations')",
         },
         multi: {
           ...CAMPER_MULTI,
@@ -185,7 +222,9 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           program: "attended_programs",
           program_family: "attended_program_families",
           week: "attended_weeks",
+          also_business_line: "other_business_lines",
         },
+        computed: campersComputed,
         measures: {
           campers: "COUNT(DISTINCT camper_hash)",
           avg_sessions: "AVG(sessions)",
@@ -193,6 +232,11 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           return_rate: "AVG(IF(returned IS NULL, NULL, IF(returned, 1, 0)))",
           sessions_total: "SUM(sessions)",
           families: "COUNT(DISTINCT family_hash)",
+          return_rate_same_group: "AVG(IF(returned_same_group IS NULL, NULL, IF(returned_same_group, 1, 0)))",
+          avg_sessions_matching: "AVG(matching_sessions)",
+          sessions_matching: "SUM(matching_sessions)",
+          cancel_rate: "AVG(IF(cancelled_sessions > 0, 1, 0))",
+          cancelled_sessions: "SUM(cancelled_sessions)",
         },
       };
     case "program_families":
@@ -272,12 +316,50 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
   }
 }
 
+/** Session fields a camper's sessions can be matched on: field id → that field in session_list. */
+const SESSION_MATCH: Record<string, string> = { session_group: "session_group", session: "session", program: "program", program_family: "program_family" };
+
+/**
+ * Campers by season: which of a camper's sessions fall in the session group,
+ * session, program, family or week shown (as a row or column) or filtered to,
+ * and whether they came back to the same session group.
+ */
+function campersComputed({ exploded, filterParam }: ReportContext): string[] {
+  const conds = ["TRUE"];
+  for (const id of [...Object.keys(SESSION_MATCH), "week"]) {
+    const inSession = (v: string) => (id === "week" ? `${v} IN UNNEST(x.weeks)` : `x.${SESSION_MATCH[id]} = ${v}`);
+    if (exploded.includes(id)) conds.push(inSession(`mv_${id}`));
+    else if (filterParam[id]) {
+      conds.push(
+        id === "week"
+          ? `EXISTS (SELECT 1 FROM UNNEST(x.weeks) AS w WHERE w IN UNNEST(@${filterParam[id]}))`
+          : `COALESCE(x.${SESSION_MATCH[id]}, '${NONE_VALUE}') IN UNNEST(@${filterParam[id]})`,
+      );
+    }
+  }
+  const sameGroup = exploded.includes("session_group")
+    ? "mv_session_group IN UNNEST(returned_groups)"
+    : filterParam.session_group
+      ? `EXISTS (SELECT 1 FROM UNNEST(returned_groups) AS g WHERE g IN UNNEST(@${filterParam.session_group}))`
+      : "ARRAY_LENGTH(returned_groups) > 0";
+  return [
+    `(SELECT COUNT(*) FROM UNNEST(session_list) AS x WHERE ${conds.join(" AND ")}) AS matching_sessions`,
+    `IF(returned_groups IS NULL, NULL, ${sameGroup}) AS returned_same_group`,
+  ];
+}
+
 const CAMPMINDER: ReportDataset[] = ["enrollments", "camper_seasons", "program_families"];
 
 /** Revenue counts by program/service date unless the report says otherwise. */
 export function effectiveFilters(spec: ReportSpec): Record<string, string[]> {
   const filters = Object.fromEntries(Object.entries(spec.filters).filter(([, v]) => v.length > 0));
-  if (spec.dataset === "revenue" && !filters.date_basis && !spec.rows.includes("date_basis") && spec.column !== "date_basis") {
+  if (
+    spec.dataset === "revenue" &&
+    !filters.date_basis &&
+    !spec.exclude.date_basis?.length &&
+    !spec.rows.includes("date_basis") &&
+    spec.column !== "date_basis"
+  ) {
     filters.date_basis = ["Program / service date"];
   }
   return filters;
@@ -285,7 +367,8 @@ export function effectiveFilters(spec: ReportSpec): Record<string, string[]> {
 
 export function compileReport(spec: ReportSpec, marts: string, families: ProgramFamilySettings, schools: SchoolMap = new Map()) {
   const filters = effectiveFilters(spec);
-  const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters;
+  const exclude = Object.fromEntries(Object.entries(spec.exclude).filter(([, v]) => v.length > 0));
+  const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters || "week" in exclude;
   const ds = datasetSql(spec.dataset, marts, usesWeek);
   // Multi-valued fields shown as rows or columns: one record per value (mv_<field>); a record with none counts under (none).
   const multi = ds.multi ?? {};
@@ -305,14 +388,26 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   const params: Record<string, unknown> = {};
   const types: Record<string, unknown> = {};
   const where: string[] = ["TRUE"];
+  const filterParam: Record<string, string> = {};
   Object.entries(filters).forEach(([id, values], i) => {
     params[`f${i}`] = values;
     types[`f${i}`] = ["STRING"];
+    filterParam[id] = `f${i}`;
     // A multi-valued filter that isn't split out keeps records with any of the values, once each.
     where.push(
       id in multi && !exploded.includes(id)
         ? `EXISTS (SELECT 1 FROM ${valuesOf(multi[id]!)} AS v WHERE COALESCE(v, '${NONE_VALUE}') IN UNNEST(@f${i}))`
         : `${field(id)} IN UNNEST(@f${i})`,
+    );
+  });
+  // Exclusions leave out a record with any of the values (for a multi-valued field: a camper who attended any of them).
+  Object.entries(exclude).forEach(([id, values], i) => {
+    params[`x${i}`] = values;
+    types[`x${i}`] = ["STRING"];
+    where.push(
+      id in multi
+        ? `NOT EXISTS (SELECT 1 FROM ${valuesOf(multi[id]!)} AS v WHERE COALESCE(v, '${NONE_VALUE}') IN UNNEST(@x${i}))`
+        : `${field(id)} NOT IN UNNEST(@x${i})`,
     );
   });
   if (ds.dateColumn) {
@@ -343,7 +438,7 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   const sql = `
     WITH ${[...ds.ctes, `src AS (${source})`].join(",\n  ")},
     picked AS (
-      SELECT src.*${dims.length ? `, ${dims.join(", ")}` : ""}
+      SELECT src.*${[...dims, ...(ds.computed?.({ exploded, filterParam }) ?? [])].map((d) => `, ${d}`).join("")}
       FROM src
       WHERE ${where.join("\n        AND ")}
     )

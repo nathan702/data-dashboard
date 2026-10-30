@@ -286,7 +286,17 @@ export function createApi(opts: ApiOptions) {
     }
     const { spec, field } = parsed.data;
     const others = Object.fromEntries(Object.entries(spec.filters).filter(([k]) => k !== field));
-    const valuesSpec = { ...spec, rows: [field], column: undefined, filters: others, measure: info!.defaultMeasure, percent: "none" as const };
+    const otherExclusions = Object.fromEntries(Object.entries(spec.exclude).filter(([k]) => k !== field));
+    const valuesSpec = {
+      ...spec,
+      rows: [field],
+      column: undefined,
+      filters: others,
+      exclude: otherExclusions,
+      measure: info!.defaultMeasure,
+      percent: "none" as const,
+      change: "none" as const,
+    };
     const [families, schools] = await Promise.all([opts.programFamilies.get(), schoolMap()]);
     const result = await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}:${schools.key}`, () =>
       opts.warehouse.runReport(valuesSpec, families, schools.map),

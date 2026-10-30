@@ -1,5 +1,6 @@
 import {
   addDays,
+  campminderCalendar,
   draftProgramFamily,
   NONE_VALUE,
   type ProgramFamilySettings,
@@ -41,6 +42,19 @@ function familyOf(program: string | null, pf: ProgramFamilySettings) {
   return pf.overrides[program] ?? draftProgramFamily(program);
 }
 
+/** Monday of the week a date falls in (YYYY-MM-DD). */
+const mondayOf = (d: string) => addDays(d, -((new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7));
+/** Demo sessions run weekly from late June. */
+const demoSessionStart = (season: number, week: number | null) => (week === null ? null : addDays(`${season}-06-22`, 7 * (week - 1)));
+
+function signupFields(applicationDate: string | null) {
+  return {
+    application_date: applicationDate,
+    signup_month: applicationDate?.slice(0, 7) ?? null,
+    signup_week: applicationDate ? mondayOf(applicationDate) : null,
+  };
+}
+
 function enrollmentRecords(pf: ProgramFamilySettings, schools: SchoolMap, explodeWeeks: boolean): Rec[] {
   const out: Rec[] = [];
   for (const r of demoEnrollmentRows()) {
@@ -70,6 +84,9 @@ function enrollmentRecords(pf: ProgramFamilySettings, schools: SchoolMap, explod
       status_code: r.statusCode,
       week_start: r.weekStart,
       week_end: r.weekEnd,
+      week_list: r.weekStart === null ? [] : range(r.weekStart, r.weekEnd!).map(String),
+      ...signupFields(r.applicationDate),
+      weeks_before_session: weeksBefore(r.applicationDate, demoSessionStart(r.season, r.weekStart)),
     };
     if (explodeWeeks && r.weekStart !== null) for (let w = r.weekStart; w <= r.weekEnd!; w++) out.push({ ...base, week: String(w) });
     else out.push({ ...base, week: null });
@@ -78,6 +95,12 @@ function enrollmentRecords(pf: ProgramFamilySettings, schools: SchoolMap, explod
 }
 
 const EN = (r: Rec) => r.status_code === "EN";
+
+function weeksBefore(applied: string | null, start: string | null) {
+  if (!applied || !start) return null;
+  const days = (Date.parse(`${start}T00:00:00Z`) - Date.parse(`${applied}T00:00:00Z`)) / 86_400_000;
+  return String(Math.floor(days / 7));
+}
 
 function camperGroups(pf: ProgramFamilySettings, schools: SchoolMap, byFamily: boolean): Rec[] {
   const groups = new Map<string, Rec[]>();
@@ -88,12 +111,15 @@ function camperGroups(pf: ProgramFamilySettings, schools: SchoolMap, byFamily: b
   }
   return [...groups.values()].map((rs) => {
     const a = rs[0]!;
-    return { ...a, years_at_camp: String(Math.max(...rs.map((r) => Number(r.years)))), rs };
+    const applied = rs.map((r) => r.application_date as string | null).filter((d): d is string => !!d).sort()[0] ?? null;
+    return { ...a, ...signupFields(applied), years_at_camp: String(Math.max(...rs.map((r) => Number(r.years)))), rs };
   });
 }
 
 const distinctValues = (rs: Rec[], k: string) => [...new Set(rs.map((r) => r[k]).filter((v): v is string => typeof v === "string"))];
-const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+function range(a: number, b: number) {
+  return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+}
 
 /** Same as the SQL's multi-valued fields: field id → array property. */
 const CAMPER_MULTI: Record<string, string> = { parent_occupation: "parent_occupations" };
@@ -106,6 +132,7 @@ const MULTI: Partial<Record<ReportSpec["dataset"], Record<string, string>>> = {
     program: "attended_programs",
     program_family: "attended_program_families",
     week: "attended_weeks",
+    also_business_line: "other_business_lines",
   },
   program_families: CAMPER_MULTI,
 };
@@ -128,14 +155,36 @@ function camperSeasonRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec
       attended_programs: distinctValues(rs, "program"),
       attended_program_families: distinctValues(rs, "program_family"),
       attended_weeks: [...new Set(weekly.flatMap((r) => range(Number(r.week_start), Number(r.week_end)).map(String)))],
+      session_list: rs.map((r) => ({ session_group: r.session_group, session: r.session, program: r.program, program_family: r.program_family, weeks: r.week_list })),
     };
   });
   const key = (r: Rec, season: number) => `${r.camper_id}|${r.business_line}|${season}`;
-  const present = new Set(recs.map((r) => key(r, Number(r.season))));
+  const bySeason = new Map(recs.map((r) => [key(r, Number(r.season)), r]));
   const newest = Math.max(...recs.map((r) => Number(r.season)));
+  // Business lines per camper and season; cancelled or withdrawn sessions per camper, season and line.
+  const lines = new Map<string, Set<string>>();
+  for (const r of recs) {
+    const k = `${r.camper_id}|${r.season}`;
+    lines.set(k, (lines.get(k) ?? new Set()).add(String(r.business_line)));
+  }
+  const cancels = new Map<string, number>();
+  for (const r of enrollmentRecords(pf, schools, false)) {
+    if (r.status_code === "CN" || r.status_code === "WD") cancels.set(key(r, Number(r.season)), (cancels.get(key(r, Number(r.season))) ?? 0) + 1);
+  }
   return recs.map((r) => {
-    const returned = Number(r.season) >= newest ? null : present.has(key(r, Number(r.season) + 1));
-    return { ...r, returned_flag: returned, returned: returned === null ? "Not known yet" : returned ? "Returned" : "Didn't return" };
+    const next = Number(r.season) >= newest ? null : bySeason.get(key(r, Number(r.season) + 1)) ?? false;
+    const returned = next === null ? null : next !== false;
+    const nextGroups = next ? (next.attended_session_groups as string[]) : [];
+    const cancelled = cancels.get(key(r, Number(r.season))) ?? 0;
+    return {
+      ...r,
+      returned_flag: returned,
+      returned: returned === null ? "Not known yet" : returned ? "Returned" : "Didn't return",
+      returned_groups: next === null ? null : (r.attended_session_groups as string[]).filter((g) => nextGroups.includes(g)),
+      other_business_lines: [...(lines.get(`${r.camper_id}|${r.season}`) ?? [])].filter((l) => l !== r.business_line),
+      cancelled_sessions: cancelled,
+      cancellations: cancelled > 0 ? "Cancelled or withdrew a session" : "No cancellations",
+    };
   });
 }
 
@@ -216,6 +265,12 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
           return_rate: (rs) => avg(rs.filter((r) => r.returned_flag !== null).map((r) => ({ x: r.returned_flag ? 1 : 0 })), "x"),
           sessions_total: (rs) => sum(rs, "sessions_n"),
           families: (rs) => distinct(rs, "camper_id"),
+          return_rate_same_group: (rs) =>
+            avg(rs.filter((r) => r.returned_same_group !== null).map((r) => ({ x: r.returned_same_group ? 1 : 0 })), "x"),
+          avg_sessions_matching: (rs) => avg(rs, "matching_sessions"),
+          sessions_matching: (rs) => sum(rs, "matching_sessions"),
+          cancel_rate: (rs) => avg(rs.map((r) => ({ x: Number(r.cancelled_sessions) > 0 ? 1 : 0 })), "x"),
+          cancelled_sessions: (rs) => sum(rs, "cancelled_sessions"),
         },
       };
     case "program_families":
@@ -247,9 +302,30 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
   }
 }
 
+/** Same as the SQL's campersComputed: sessions in the chosen groups, and whether the camper came back to the same group. */
+function campersComputed(r: Rec, exploded: string[], filters: Record<string, string[]>) {
+  const fields = ["session_group", "session", "program", "program_family", "week"];
+  const inSession = (x: Rec, id: string, values: string[]) =>
+    id === "week" ? (x.weeks as string[]).some((w) => values.includes(w)) : values.includes((x[id] as string | null) ?? NONE_VALUE);
+  const sessions = (r.session_list as Rec[]).filter((x) =>
+    fields.every((id) => (exploded.includes(id) ? inSession(x, id, [String(r[id])]) : filters[id] ? inSession(x, id, filters[id]) : true)),
+  );
+  const back = r.returned_groups as string[] | null;
+  const same =
+    back === null
+      ? null
+      : exploded.includes("session_group")
+        ? back.includes(String(r.session_group))
+        : filters.session_group
+          ? back.some((g) => filters.session_group!.includes(g))
+          : back.length > 0;
+  return { matching_sessions: sessions.length, returned_same_group: same };
+}
+
 export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap = new Map()): ReportResult {
   const filters = effectiveFilters(spec);
-  const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters;
+  const exclude = Object.fromEntries(Object.entries(spec.exclude).filter(([, v]) => v.length > 0));
+  const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters || "week" in exclude;
   const { recs: all, measures } = dataset(spec, pf, schools, usesWeek);
   // Same rules as the SQL: a multi-valued row or column splits each record by value; a multi-valued filter keeps it once.
   const multi = MULTI[spec.dataset] ?? {};
@@ -262,7 +338,12 @@ export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings, schoo
   const val = (r: Rec, id: string) => str(r[id]) ?? NONE_VALUE;
   const matches = (r: Rec, id: string, values: string[]) =>
     id in multi && !exploded.includes(id) ? list(r, id).some((v) => values.includes(v ?? NONE_VALUE)) : values.includes(val(r, id));
-  const picked = recs.filter((r) => Object.entries(filters).every(([id, values]) => matches(r, id, values)));
+  const excluded = (r: Rec, id: string, values: string[]) =>
+    id in multi ? list(r, id).some((v) => values.includes(v ?? NONE_VALUE)) : values.includes(val(r, id));
+  const picked = recs
+    .filter((r) => Object.entries(filters).every(([id, values]) => matches(r, id, values)))
+    .filter((r) => Object.entries(exclude).every(([id, values]) => !excluded(r, id, values)))
+    .map((r) => (spec.dataset === "camper_seasons" ? { ...r, ...campersComputed(r, exploded, filters) } : r));
   const measure = measures[spec.measure]!;
   const rowIds = spec.rows;
   const sets: Array<{ rows: boolean; col: boolean }> = [];
