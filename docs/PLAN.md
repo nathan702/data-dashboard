@@ -167,6 +167,15 @@ unmatched is "Unassigned" and flagged.
 15. **Digests and alerts**: email and Slack.
 16. **Targets**: goals to compare against.
 
+### Running costs
+
+17. **Lower the fixed Google Cloud bill** (about $20 in October 2026, nearly
+    all from schedules, not use): rebuild the tables only when a sync wrote new
+    data instead of every 15 minutes (expected 70–90% less on BigQuery and
+    Cloud Run), then read only new raw rows if data grows a lot. Safety nets
+    to set in the console: a $40/month budget alert, and a 1 TiB "Query usage
+    per day" BigQuery quota.
+
 ## Open items for Calleva
 
 - Assign the remaining Campminder session groups and Square locations (Settings).
