@@ -6,7 +6,7 @@ import { NotConfiguredError, requireSecret, type SecretStore } from "../core/sec
 import type { Connector, RawRecord, SyncContext } from "../core/types.js";
 import { Firestore } from "@google-cloud/firestore";
 import { NOT_A_SCHOOL } from "@dash/shared";
-import { FINANCE_PARSER_VERSION, isFinancialTab, toTransactions, transactionSummary } from "./campminderFinance.js";
+import { FINANCE_PARSER_VERSION, financialHeaderRow, toTransactions, transactionSummary } from "./campminderFinance.js";
 import { PARSER_VERSION, reportSeason, sessionRecordId, toSessions } from "./campminderParse.js";
 import { CensusGeocoder, FirestoreGeoCache, homeAddress, locateHomes, type GeoCache, type Geocoder, type HomeAddress } from "./geocode.js";
 
@@ -234,8 +234,9 @@ export class CampminderConnector implements Connector {
       ctx.log("campminder financial tab unchanged");
       return;
     }
-    const [header, ...body] = values;
-    if (!header || !isFinancialTab(header)) throw new Error(`The "${tab}" tab is missing the ID, Season, Transaction Type or Amount column`);
+    const at = financialHeaderRow(values);
+    if (at < 0) throw new Error(`The "${tab}" tab is missing the ID, Season, Transaction Type or Amount column`);
+    const [header, ...body] = values.slice(at) as [string[], ...string[][]];
     const rows = body
       .filter((r) => r.some((c) => c && c.trim()))
       .map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ""])));
@@ -255,8 +256,8 @@ export class CampminderConnector implements Connector {
       }
       const seen = new Set<string>();
       for (const t of inSeason) {
-        seen.add(t.transactionId);
-        if (previous.get(t.transactionId) !== t.rowHash) records.push({ entity: "transactions", recordId: t.transactionId, sourceUpdatedAt: now, payload: t });
+        seen.add(t.lineId);
+        if (previous.get(t.lineId) !== t.rowHash) records.push({ entity: "transactions", recordId: t.lineId, sourceUpdatedAt: now, payload: t });
       }
       for (const id of previous.keys()) {
         if (!seen.has(id)) records.push({ entity: "transactions", recordId: id, sourceUpdatedAt: now, isDeleted: true, payload: { season } });

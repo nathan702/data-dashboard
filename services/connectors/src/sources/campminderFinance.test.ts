@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { finDate, isFinancialTab, money, toTransactions, transactionSummary } from "./campminderFinance.js";
+import { finDate, financialHeaderRow, isFinancialTab, money, toTransactions, transactionSummary } from "./campminderFinance.js";
 
 const KEY = "k".repeat(40);
 // Entirely made-up people and cards; shaped like Campminder's Financial tab.
@@ -84,6 +84,32 @@ describe("campminder financial tab", () => {
     expect(isFinancialTab(["PersonID", "Child Session/Status"])).toBe(false);
   });
 
+  it("keeps every part of a payment split across what it paid for", () => {
+    const pay = { ID: "777", "Transaction Type": "Payment", "Session Name": "" };
+    const txs = toTransactions(
+      [
+        tx({ ...pay, "Financial Category": "Summer Camp", Amount: "$500.00" }),
+        tx({ ...pay, "Financial Category": "CHAPS", Amount: "$500.00" }),
+        // Two identical parts are both kept.
+        tx({ ...pay, "Financial Category": "CHAPS", Amount: "$500.00" }),
+      ],
+      KEY,
+    );
+    expect(txs.map((t) => t.category)).toEqual(["Summer Camp", "CHAPS", "CHAPS"]);
+    expect(new Set(txs.map((t) => t.lineId)).size).toBe(3);
+    expect(txs.every((t) => t.transactionId === "777" && t.lineId.startsWith("777|"))).toBe(true);
+    // The same rows read again get the same ids.
+    expect(toTransactions([tx({ ...pay, "Financial Category": "CHAPS", Amount: "$500.00" })], KEY)[0]!.lineId).toBe(txs[1]!.lineId);
+    expect(transactionSummary(txs).payment).toMatchObject({ rows: 3, transactions: 1 });
+  });
+
+  it("finds the header below a title line", () => {
+    const header = Object.keys(tx());
+    expect(financialHeaderRow([header])).toBe(0);
+    expect(financialHeaderRow([["Transaction-Report-Detailed-2026-11-06_20.01.31"], header])).toBe(1);
+    expect(financialHeaderRow([["something else"]])).toBe(-1);
+  });
+
   it("skips rows without an id, type or season, and sums by type for the log", () => {
     const txs = toTransactions(
       [tx(), tx({ ID: "" }), tx({ ID: "2", Season: "" }), tx({ ID: "3", "Transaction Type": "Payment", Amount: "-$100.00", "Session Name": "" })],
@@ -91,8 +117,8 @@ describe("campminder financial tab", () => {
     );
     expect(txs.map((t) => t.transactionId)).toEqual(["56341659", "3"]);
     expect(transactionSummary(txs)).toEqual({
-      debit: { rows: 1, positive: 650, negative: 0, withSession: 1, reversed: 0 },
-      payment: { rows: 1, positive: 0, negative: -100, withSession: 0, reversed: 0 },
+      debit: { rows: 1, transactions: 1, positive: 650, negative: 0, withSession: 1, reversed: 0 },
+      payment: { rows: 1, transactions: 1, positive: 0, negative: -100, withSession: 0, reversed: 0 },
     });
   });
 });

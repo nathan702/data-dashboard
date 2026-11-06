@@ -11,9 +11,15 @@ import { parseWeek, usDate } from "./campminderParse.js";
  */
 
 /** Bump when parsing changes what's stored: the tab is re-read and every row rewritten. */
-export const FINANCE_PARSER_VERSION = "1";
+export const FINANCE_PARSER_VERSION = "2";
 
 export interface CampminderTransaction {
+  /**
+   * One row of the report. A payment split across what it paid for (camp and
+   * CHAPs) is several rows with the same transaction id, so a row is the id
+   * plus what tells its parts apart.
+   */
+  lineId: string;
   /** Campminder's transaction id; a reversal is the original's id + "R". */
   transactionId: string;
   season: number;
@@ -78,9 +84,15 @@ export function isFinancialTab(headers: string[]): boolean {
   return h.has("ID") && h.has("Transaction Type") && h.has("Amount") && h.has("Season");
 }
 
+/** Index of the header row: the report may start with a title line ("Transaction-Report-Detailed-…"). */
+export function financialHeaderRow(values: string[][]): number {
+  return values.slice(0, 5).findIndex(isFinancialTab);
+}
+
 /** Convert Financial tab rows (header → value) into transactions. Only the fields on CampminderTransaction leave this function. */
 export function toTransactions(rows: Array<Record<string, string>>, key: string): CampminderTransaction[] {
   const out = new Map<string, CampminderTransaction>();
+  const parts = new Map<string, number>();
   for (const r of rows) {
     const id = clean(r["ID"]);
     const season = Number(clean(r["Season"]));
@@ -111,17 +123,27 @@ export function toTransactions(rows: Array<Record<string, string>>, key: string)
       familyHash: pseudonymize(clean(r["Household ID"]), key),
       affectedAmount: money(r["Affected On Transaction Amount"]),
     };
-    out.set(id, { ...row, rowHash: createHash("sha256").update(`${FINANCE_PARSER_VERSION}|${JSON.stringify(row)}`).digest("hex").slice(0, 16) });
+    // Parts of a split payment differ by what they paid for; identical parts are numbered.
+    const part = createHash("sha256")
+      .update(JSON.stringify([row.sessionName, row.program, row.category, row.serviceStart, row.serviceEnd, row.amount, row.affectedAmount]))
+      .digest("hex")
+      .slice(0, 10);
+    const n = (parts.get(`${id}|${part}`) ?? 0) + 1;
+    parts.set(`${id}|${part}`, n);
+    const lineId = `${id}|${part}${n > 1 ? `|${n}` : ""}`;
+    out.set(lineId, { lineId, ...row, rowHash: createHash("sha256").update(`${FINANCE_PARSER_VERSION}|${JSON.stringify(row)}`).digest("hex").slice(0, 16) });
   }
   return [...out.values()];
 }
 
 /** Counts and sums by transaction type, for the sync log (no per-family detail). */
 export function transactionSummary(txs: CampminderTransaction[]) {
-  const by: Record<string, { rows: number; positive: number; negative: number; withSession: number; reversed: number }> = {};
+  const by: Record<string, { rows: number; transactions: number; positive: number; negative: number; withSession: number; reversed: number }> = {};
+  const ids: Record<string, Set<string>> = {};
   for (const t of txs) {
-    const s = (by[t.type] ??= { rows: 0, positive: 0, negative: 0, withSession: 0, reversed: 0 });
+    const s = (by[t.type] ??= { rows: 0, transactions: 0, positive: 0, negative: 0, withSession: 0, reversed: 0 });
     s.rows++;
+    s.transactions = (ids[t.type] ??= new Set()).add(t.transactionId).size;
     if ((t.amount ?? 0) > 0) s.positive = Math.round((s.positive + t.amount!) * 100) / 100;
     if ((t.amount ?? 0) < 0) s.negative = Math.round((s.negative + t.amount!) * 100) / 100;
     if (t.sessionName) s.withSession++;
