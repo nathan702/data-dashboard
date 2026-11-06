@@ -356,6 +356,21 @@ describe("revenue SQL", () => {
     }
   });
 
+  it("matches financial lines to filtered enrollments by person, else by household and session", async () => {
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const queries: string[] = [];
+    const fake = { query: async (o: { query: string }) => (queries.push(o.query), [[{}]]) };
+    const w = new BigQueryWarehouse(fake as never, "marts");
+    const r = await w.campminderFinance({ season: 2026, businessLine: "camp", filters: { session_group: ["Farm"] } });
+    expect(r.filtered).toBe(true);
+    const q = queries[0]!;
+    // Payments are under the parent who paid: when the person isn't a camper in that session, the household is used.
+    expect(q).toContain("IF(c.camper_hash IS NOT NULL, kp.camper_hash IS NOT NULL, kf.family_hash IS NOT NULL)");
+    expect(q).toContain("kf.family_hash = tx.family_hash AND kf.session_name = tx.session_name");
+    await w.campminderFinance({ season: 2026, filters: {} });
+    expect(queries[1]).not.toContain("kept AS");
+  });
+
   it("buckets seasons from the line's season starts, passed as DATEs", async () => {
     const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
     const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
