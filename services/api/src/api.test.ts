@@ -498,6 +498,29 @@ describe("campminder endpoints", () => {
     expect(camp.householdsOwing).toBeGreaterThan(0);
     expect(camp.householdsOwing).toBeLessThan(camp.households);
     await request(app).get("/api/campminder/finance?season=abc").expect(400);
+    expect(camp.filtered).toBe(false);
+  });
+
+  it("narrows tuition to the camper-sessions the Camp page filters match", async () => {
+    const app = api();
+    const get = async (f: object) =>
+      (await request(app).get(`/api/campminder/finance?season=2026&businessLine=camp&filters=${encodeURIComponent(JSON.stringify(f))}`).expect(200)).body;
+    const all = await get({});
+    const farm = await get({ session_group: ["Farm"] });
+    const riley = await get({ session_group: ["Riley's"] });
+    expect(farm.filtered).toBe(true);
+    // A camper in both Farm and Riley's counts only the Farm sessions under Farm.
+    expect(farm.charges).toBeGreaterThan(0);
+    expect(farm.charges + riley.charges).toBeLessThanOrEqual(all.charges);
+    // Every camp camper-session is in some group: the groups' charges add up to the whole.
+    const groups = ["Farm", "Riley's", "Madeira", "Fraser"];
+    let sum = 0;
+    for (const g of groups) sum += (await get({ session_group: [g] })).charges;
+    expect(sum).toBeCloseTo(all.charges, 2);
+    // A camper filter keeps all of a matching camper's sessions.
+    const girls = await get({ gender: ["Female"] });
+    const boys = await get({ gender: ["Male"] });
+    expect(girls.charges + boys.charges).toBeCloseTo(all.charges, 2);
   });
 
   it("maps homes with the same filters", async () => {

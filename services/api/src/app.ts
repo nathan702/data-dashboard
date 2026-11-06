@@ -258,7 +258,9 @@ export function createApi(opts: ApiOptions) {
   enrollmentRoute("/campminder/map", (q) => enrollmentMapQuerySchema.safeParse(q), async (d: EnrollmentMapQuery) =>
     opts.warehouse.enrollmentMap(d, (await schoolMap()).map),
   );
-  enrollmentRoute("/campminder/finance", (q) => campminderFinanceQuerySchema.safeParse(q), (d: CampminderFinanceQuery) => opts.warehouse.campminderFinance(d));
+  enrollmentRoute("/campminder/finance", (q) => campminderFinanceQuerySchema.safeParse(q), async (d: CampminderFinanceQuery) =>
+    opts.warehouse.campminderFinance(d, (await schoolMap()).map),
+  );
   enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), async (d: EnrollmentBreakdownQuery) =>
     opts.warehouse.enrollmentBreakdown(d, (await schoolMap()).map),
   );

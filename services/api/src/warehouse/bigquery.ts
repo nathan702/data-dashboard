@@ -38,6 +38,7 @@ import {
   breakdownSql as enrollmentBreakdownSql,
   byWeekSql,
   drillParams,
+  drillWhere,
   enrollmentsWithSchools,
   kpiSql as enrollmentKpiSql,
   mapSql,
@@ -315,12 +316,26 @@ export class BigQueryWarehouse implements Warehouse {
       .then(([rows]) => rows as T[]);
   }
 
-  async campminderFinance(q: CampminderFinanceQuery): Promise<CampminderFinanceSummary> {
-    const [rows] = await this.bq.query({
-      query: `
-        WITH t AS (
+  async campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap): Promise<CampminderFinanceSummary> {
+    const filtered = hasFilters(q.filters);
+    // With filters, each line is matched to the camper's enrollment in its session (the person is the camper),
+    // and the drill-down clauses are applied to that enrollment, as for the enrollment tiles.
+    const scope = filtered
+      ? `
+          SELECT * FROM (
+            SELECT tx.type, tx.amount, tx.family_hash, tx.business_line AS tx_business_line, e.* EXCEPT (family_hash)
+            FROM \`${this.martsDataset}.fct_campminder_transactions\` AS tx
+            JOIN ${this.enrollmentsView} AS e
+              ON e.season = tx.season AND e.camper_hash = tx.person_hash AND e.session_name = tx.session_name
+            WHERE tx.season = @season
+          )
+          WHERE (@business_line IS NULL OR tx_business_line = @business_line) AND ${drillWhere()}`
+      : `
           SELECT * FROM \`${this.martsDataset}.fct_campminder_transactions\`
-          WHERE season = @season AND (@business_line IS NULL OR business_line = @business_line)
+          WHERE season = @season AND (@business_line IS NULL OR business_line = @business_line)`;
+    const rows = await this.enrollmentQuery<Record<string, unknown>>(
+      `
+        WITH t AS (${scope}
         ),
         -- Each household's balance for the season (in this business line, when one is chosen).
         hh AS (SELECT family_hash, SUM(amount) AS balance FROM t WHERE family_hash IS NOT NULL GROUP BY 1)
@@ -334,11 +349,12 @@ export class BigQueryWarehouse implements Warehouse {
           (SELECT SUM(IF(balance < -0.005, -balance, 0)) FROM hh) AS credit_held,
           (SELECT COUNT(*) FROM hh) AS households
         FROM t`,
-      params: { season: q.season, business_line: q.businessLine ?? null },
-      types: { business_line: "STRING" },
-      location: this.location,
-    });
-    const r = (rows as Array<Record<string, unknown>>)[0] ?? {};
+      { season: q.season },
+      q.businessLine,
+      q.filters,
+      schools,
+    );
+    const r = rows[0] ?? {};
     const n = (k: string) => round2(Number(r[k] ?? 0));
     return {
       season: q.season,
@@ -353,6 +369,7 @@ export class BigQueryWarehouse implements Warehouse {
       householdsOwing: Number(r.households_owing ?? 0),
       creditHeld: n("credit_held"),
       households: Number(r.households ?? 0),
+      filtered,
     };
   }
 

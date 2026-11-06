@@ -203,8 +203,8 @@ export function useEnrollmentSummary(q: EnrollmentScope) {
   return useApiWhen<EnrollmentSummaryResponse>(!!q.season, ["enrollment-summary", qs], `/api/campminder/summary?${qs}`);
 }
 
-export function useCampminderFinance(q: { season: number | undefined; businessLine?: BusinessLineOrUnassigned }) {
-  const qs = new URLSearchParams({ season: String(q.season ?? ""), ...(q.businessLine ? { businessLine: q.businessLine } : {}) }).toString();
+export function useCampminderFinance(q: EnrollmentScope) {
+  const qs = enrollmentQs(q);
   return useApiWhen<CampminderFinanceSummary>(!!q.season, ["campminder-finance", qs], `/api/campminder/finance?${qs}`);
 }
 
