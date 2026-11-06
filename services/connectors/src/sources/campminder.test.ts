@@ -119,10 +119,16 @@ describe("campminder connector", () => {
     expect(txs()).toHaveLength(3);
     sheet.financial = [FIN, t("1"), t("2", "$150.00")];
     await runSync(c, deps, "incremental");
-    expect(txs().slice(3).map((r) => [r.record.recordId, !!r.record.isDeleted])).toEqual(
-      expect.arrayContaining([["2", false], ["3", true]]),
+    expect(txs().slice(3).map((r) => [(r.record.payload as { transactionId?: string }).transactionId ?? r.record.recordId.split("|")[0], !!r.record.isDeleted])).toEqual(
+      expect.arrayContaining([["2", false], ["2", true], ["3", true]]),
     );
-    expect(txs()).toHaveLength(5);
+    // The changed amount is a new part of transaction 2 (the old part is removed).
+    expect(txs()).toHaveLength(6);
+
+    // A title line above the headers is fine.
+    sheet.financial = [["Transaction-Report-Detailed-2026-11-06_20.01.31"], FIN, t("1"), t("2", "$150.00")];
+    await runSync(c, deps, "incremental");
+    expect(txs()).toHaveLength(6);
     // Enrollments weren't touched.
     expect(writer.rows.filter((r) => r.record.entity === "sessions")).toHaveLength(3);
   });
