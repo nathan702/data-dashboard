@@ -53,9 +53,10 @@ export function AssignmentsTab({ source }: { source: Source }) {
       key: "activity",
       label: "Last 12 months",
       numeric: true,
-      // Campminder has no money yet, so its sessions show enrollments.
-      value: (r) => (r.source === "campminder" ? r.activityLast12Months : r.netLast12Months),
-      render: (r) => (r.source === "campminder" ? `${formatInt(r.activityLast12Months)} enrolled` : formatUsd(r.netLast12Months)),
+      // Campminder session groups show enrollments; its financial categories, net charges.
+      value: (r) => (r.source === "campminder" && r.kind === "session" ? r.activityLast12Months : r.netLast12Months),
+      render: (r) =>
+        r.source === "campminder" && r.kind === "session" ? `${formatInt(r.activityLast12Months)} enrolled` : formatUsd(r.netLast12Months),
     },
     {
       key: "businessLine",

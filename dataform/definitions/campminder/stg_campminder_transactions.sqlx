@@ -1,0 +1,64 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Latest state of every line of Campminder's Financial report, with the value its business line is assigned by. Amounts keep Campminder's signs: debits and refunds positive, credits and payments negative, so a household's balance is the sum. A reversal is its own line with the opposite sign, so sums net it out.",
+  assertions: { uniqueKey: ["line_id"], nonNull: ["season", "type", "line_id"] }
+}
+js { const { latestRaw } = require("includes/sql"); }
+
+WITH base AS (
+  SELECT
+    record_id AS line_id,
+    JSON_VALUE(payload, '$.transactionId') AS transaction_id,
+    SAFE_CAST(JSON_VALUE(payload, '$.season') AS INT64) AS season,
+    LOWER(JSON_VALUE(payload, '$.type')) AS type,
+    JSON_VALUE(payload, '$.category') AS category,
+    SAFE_CAST(JSON_VALUE(payload, '$.postDate') AS DATE) AS post_date,
+    SAFE_CAST(JSON_VALUE(payload, '$.effectiveDate') AS DATE) AS effective_date,
+    SAFE_CAST(JSON_VALUE(payload, '$.reversalDate') AS DATE) AS reversal_date,
+    COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.isReversed') AS BOOL), FALSE) AS is_reversed,
+    COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.isReversal') AS BOOL), FALSE) AS is_reversal,
+    SAFE_CAST(JSON_VALUE(payload, '$.quantity') AS NUMERIC) AS quantity,
+    SAFE_CAST(JSON_VALUE(payload, '$.unitAmount') AS NUMERIC) AS unit_amount,
+    COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.amount') AS NUMERIC), 0) AS amount,
+    JSON_VALUE(payload, '$.method') AS method,
+    SAFE_CAST(JSON_VALUE(payload, '$.serviceStart') AS DATE) AS service_start,
+    SAFE_CAST(JSON_VALUE(payload, '$.serviceEnd') AS DATE) AS service_end,
+    JSON_VALUE(payload, '$.sessionName') AS session_name,
+    JSON_VALUE(payload, '$.sessionGroup') AS session_group,
+    JSON_VALUE(payload, '$.campminderSessionGroup') AS campminder_session_group,
+    JSON_VALUE(payload, '$.program') AS program,
+    JSON_VALUE(payload, '$.personHash') AS person_hash,
+    JSON_VALUE(payload, '$.familyHash') AS family_hash
+  FROM (${latestRaw(ref("raw_campminder", "transactions"))})
+),
+keyed AS (
+  SELECT
+    *,
+    -- What the line itself says it's for: its session group, else its financial category
+    -- (Miscellaneous and System say nothing about the business line).
+    CASE
+      WHEN session_group IS NOT NULL THEN session_group
+      WHEN category IS NOT NULL AND category NOT IN ('Miscellaneous', 'System') THEN CONCAT('category:', category)
+    END AS own_key
+  FROM base
+),
+-- Each household's main business line that season: what its largest charges were for.
+household AS (
+  SELECT family_hash, season, own_key AS household_key
+  FROM keyed
+  WHERE own_key IS NOT NULL AND family_hash IS NOT NULL
+  GROUP BY family_hash, season, own_key
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY family_hash, season ORDER BY SUM(IF(type = 'debit', amount, 0)) DESC, own_key) = 1
+)
+SELECT
+  k.* EXCEPT (own_key),
+  COALESCE(k.own_key, h.household_key) AS assign_key,
+  CASE
+    WHEN k.session_group IS NOT NULL THEN 'session'
+    WHEN k.own_key IS NOT NULL THEN 'category'
+    WHEN h.household_key IS NOT NULL THEN 'household'
+    ELSE 'none'
+  END AS assigned_by
+FROM keyed AS k
+LEFT JOIN household AS h USING (family_hash, season)

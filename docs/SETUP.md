@@ -203,7 +203,21 @@ payment method, session, session group and program, and the person and
 household ids as the same keyed hashes as enrollments. Never stored: names,
 household names, card details, check and deposit numbers, and the
 descriptions (they often name people). A different tab name can be set with
-`CAMPMINDER_FINANCIAL_TAB`; a sheet without the tab is skipped.
+`CAMPMINDER_FINANCIAL_TAB`; a sheet without the tab is skipped. A payment
+the report splits across what it paid for (camp and CHAPs) is several rows
+with the same transaction id; each is kept as its own line.
+
+Amounts keep Campminder's signs (charges and refunds positive, credits and
+payments negative), so a household's balance is the sum of its lines and a
+reversal, its own line with the opposite sign, nets out. Each line's business
+line is its session group's; else its financial category's (Summer Camp and
+LIT → Camp, CHAPS → CHAPs, Extracurricular → School Year Programs, River
+School → River School, changeable on **Settings → Campminder**); else
+(Miscellaneous, System, unsplit payments, refunds) the household's main line
+that season, the one with its largest charges. Revenue counts charges less
+discounts by service start date (or post date for "booked"), payments by post
+date for "collected", and refunds on their post date; transfers between
+accounts or seasons aren't revenue.
 
 **Parent occupations.** The report's `F1P1 Occupation`, `F1P2 Occupation`,
 `F2P1 Occupation` and `F2P2 Occupation` columns (up to two parents in each of

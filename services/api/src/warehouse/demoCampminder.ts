@@ -14,6 +14,8 @@ import {
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
   type EnrollmentSummaryResponse,
+  type CampminderFinanceQuery,
+  type CampminderFinanceSummary,
   type OccupationCategory,
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
@@ -295,4 +297,85 @@ export function demoEnrollmentMap(q: EnrollmentMapQuery, schools?: SchoolMap): E
   }
   const rows = [...homes.values()].map((h) => ({ lat: h.lat, lon: h.lon, campers: h.campers.size, enrollments: h.enrollments, families: h.lat === null ? h.campers.size : 1 }));
   return toMapResponse(q.season, rows);
+}
+
+/** One line of the demo Financial report (signed like Campminder's: charges and refunds +, credits and payments −). */
+export interface DemoTransaction {
+  transactionId: string;
+  season: number;
+  businessLine: BusinessLineOrUnassigned;
+  family: string;
+  type: "debit" | "credit" | "payment" | "refund";
+  category: string;
+  sessionGroup: string;
+  session: string;
+  program: string | null;
+  amount: number;
+  postDate: string;
+  serviceStart: string | null;
+  method: string | null;
+}
+
+let txCache: DemoTransaction[] | null = null;
+
+/** Demo transactions for every demo camper-session: a charge, sometimes a discount, payments, and refunds for cancellations. */
+export function demoTransactions(): DemoTransaction[] {
+  if (txCache) return txCache;
+  const out: DemoTransaction[] = [];
+  const category = (bl: BusinessLineOrUnassigned) => (bl === "camp" ? "Summer Camp" : bl === "chaps" ? "CHAPS" : "Extracurricular");
+  rows().forEach((r, i) => {
+    if (r.statusCode !== "EN" && r.statusCode !== "CN") return;
+    const price = r.weekStart !== null ? 650 : 400;
+    const id = `D${i}`;
+    const serviceStart = r.weekStart !== null ? addDays(`${r.season}-06-22`, 7 * (r.weekStart - 1)) : null;
+    const base = {
+      season: r.season,
+      businessLine: r.businessLine,
+      family: r.camper,
+      category: category(r.businessLine),
+      sessionGroup: r.sessionGroup,
+      session: r.sessionName,
+      program: r.program,
+      postDate: r.applicationDate,
+      serviceStart,
+    };
+    out.push({ ...base, transactionId: id, type: "debit", amount: price, method: null });
+    const n = noise(`${id}fin`);
+    const discount = n < 0.12 ? Math.round(price * 0.15) : 0;
+    if (discount) out.push({ ...base, transactionId: `${id}c`, type: "credit", amount: -discount, method: null });
+    // Most pay in full; some still owe part; cancellations are refunded.
+    const paid = n > 0.93 && r.statusCode === "EN" ? Math.round((price - discount) / 2) : price - discount;
+    const method = n < 0.6 ? "Credit Card" : n < 0.85 ? "ACH" : "Check";
+    out.push({ ...base, transactionId: `${id}p`, type: "payment", amount: -paid, postDate: addDays(r.applicationDate, 3), method });
+    if (r.statusCode === "CN") out.push({ ...base, transactionId: `${id}r`, type: "refund", amount: paid, postDate: addDays(r.applicationDate, 30), method });
+  });
+  txCache = out;
+  return out;
+}
+
+export function demoCampminderFinance(q: CampminderFinanceQuery): CampminderFinanceSummary {
+  const txs = demoTransactions().filter((t) => t.season === q.season && (!q.businessLine || t.businessLine === q.businessLine));
+  const sum = (type: DemoTransaction["type"]) => txs.filter((t) => t.type === type).reduce((a, t) => a + t.amount, 0);
+  const balances = new Map<string, number>();
+  for (const t of txs) balances.set(t.family, (balances.get(t.family) ?? 0) + t.amount);
+  const owed = [...balances.values()].filter((b) => b > 0.005);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const charges = sum("debit");
+  const discounts = -sum("credit");
+  const payments = -sum("payment");
+  const refunds = sum("refund");
+  return {
+    season: q.season,
+    businessLine: q.businessLine ?? null,
+    charges: r2(charges),
+    discounts: r2(discounts),
+    netTuition: r2(charges - discounts),
+    payments: r2(payments),
+    refunds: r2(refunds),
+    netCollected: r2(payments - refunds),
+    balanceOwed: r2(owed.reduce((a, b) => a + b, 0)),
+    householdsOwing: owed.length,
+    creditHeld: r2(-[...balances.values()].filter((b) => b < -0.005).reduce((a, b) => a + b, 0)),
+    households: balances.size,
+  };
 }

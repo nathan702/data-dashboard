@@ -1,0 +1,51 @@
+config {
+  type: "view",
+  schema: "staging",
+  description: "Campminder revenue per day in the fct_revenue_daily contract. Service date: charges (debits) and discounts and aid (credits) on the service start date. Booked: the same on the post date. Collected: payments on the post date. Refunds on their post date in every basis. Transfers between accounts or seasons aren't revenue."
+}
+
+WITH t AS (
+  SELECT * FROM ${ref("stg_campminder_transactions")}
+  WHERE type IN ('debit', 'credit', 'payment', 'refund')
+),
+parts AS (
+  SELECT
+    basis,
+    IF(basis = 'service', COALESCE(service_start, effective_date, post_date), post_date) AS d,
+    assign_key,
+    category,
+    SUM(IF(type = 'debit', amount, 0)) AS gross,
+    SUM(IF(type = 'credit', -amount, 0)) AS discounts,
+    0 AS refunds,
+    COUNT(DISTINCT IF(type = 'debit' AND amount > 0 AND NOT is_reversal, transaction_id, NULL)) AS transactions
+  FROM t
+  CROSS JOIN UNNEST(['service', 'booked']) AS basis
+  WHERE type IN ('debit', 'credit')
+  GROUP BY 1, 2, 3, 4
+  UNION ALL
+  SELECT 'collected', post_date, assign_key, category, SUM(-amount), 0, 0, COUNT(DISTINCT IF(amount < 0, transaction_id, NULL))
+  FROM t
+  WHERE type = 'payment'
+  GROUP BY 1, 2, 3, 4
+  UNION ALL
+  SELECT basis, post_date, assign_key, category, 0, 0, SUM(amount), 0
+  FROM t
+  CROSS JOIN UNNEST(['service', 'booked', 'collected']) AS basis
+  WHERE type = 'refund'
+  GROUP BY 1, 2, 3, 4
+)
+SELECT
+  'campminder' AS source,
+  assign_key,
+  d AS revenue_date,
+  basis AS date_basis,
+  CAST(NULL AS STRING) AS location,
+  COALESCE(category, '(no category)') AS channel,
+  SUM(gross) AS gross,
+  SUM(discounts) AS discounts,
+  SUM(refunds) AS refunds,
+  0 AS fees,
+  SUM(transactions) AS transactions
+FROM parts
+WHERE d IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6

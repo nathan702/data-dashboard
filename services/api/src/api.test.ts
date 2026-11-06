@@ -485,6 +485,21 @@ describe("campminder endpoints", () => {
     expect(some.body.current.campers).toBe(legal.campers);
   });
 
+  it("sums a season's tuition, payments and balances, by business line", async () => {
+    const app = api();
+    const all = (await request(app).get("/api/campminder/finance?season=2026").expect(200)).body;
+    const camp = (await request(app).get("/api/campminder/finance?season=2026&businessLine=camp").expect(200)).body;
+    expect(camp.charges).toBeGreaterThan(0);
+    expect(camp.charges).toBeLessThan(all.charges);
+    expect(camp.netTuition).toBeCloseTo(camp.charges - camp.discounts, 2);
+    expect(camp.netCollected).toBeCloseTo(camp.payments - camp.refunds, 2);
+    // What's owed less credit held is everything charged less everything paid.
+    expect(camp.balanceOwed - camp.creditHeld).toBeCloseTo(camp.netTuition - camp.netCollected, 2);
+    expect(camp.householdsOwing).toBeGreaterThan(0);
+    expect(camp.householdsOwing).toBeLessThan(camp.households);
+    await request(app).get("/api/campminder/finance?season=abc").expect(400);
+  });
+
   it("maps homes with the same filters", async () => {
     const all = await request(api()).get("/api/campminder/map?season=2026&businessLine=camp").expect(200);
     const f = encodeURIComponent(JSON.stringify({ week: ["9"], program: ["Rock Climbing with THURSDAY CAMPOUT"] }));
@@ -702,6 +717,26 @@ describe("report builder", () => {
     const excluded = compileReport(spec({ exclude: { session_group: ["Riley's"] } }), "marts", { overrides: {} });
     expect(excluded.sql).toContain("NOT EXISTS (SELECT 1 FROM UNNEST(IF(ARRAY_LENGTH(attended_session_groups)");
     expect(excluded.params.x0).toEqual(["Riley's"]);
+  });
+
+  it("reports on Campminder financials, agreeing with the season summary", async () => {
+    const app = api();
+    const total = async (measure: string, filters: object = { season: ["2026"], business_line: ["camp"] }) =>
+      (await run(app, { dataset: "campminder_finance", measure, filters }).expect(200)).body.cells.find((c: { kind: string }) => c.kind === "total").value as number;
+    const summary = (await request(app).get("/api/campminder/finance?season=2026&businessLine=camp").expect(200)).body;
+    expect(await total("net_tuition")).toBeCloseTo(summary.netTuition, 0);
+    expect(await total("net_collected")).toBeCloseTo(summary.netCollected, 0);
+    expect(await total("balance_owed")).toBeCloseTo(summary.balanceOwed, 0);
+    expect(await total("households_owing")).toBe(summary.householdsOwing);
+    const byType = (await run(app, { dataset: "campminder_finance", rows: ["type"], measure: "balance", filters: { season: ["2026"] } }).expect(200)).body;
+    expect(byType.cells.map((c: { rows: string[] }) => c.rows[0])).toEqual(expect.arrayContaining(["Charge", "Payment", "Refund", "Discount or credit"]));
+
+    const { compileReport } = await import("./warehouse/reportSql.js");
+    const { sql, params } = compileReport(reportSpecSchema.parse({ dataset: "campminder_finance", rows: ["program_family"], measure: "balance_owed" }), "marts", { overrides: {} });
+    expect(sql).toContain("marts.fct_campminder_transactions");
+    expect(sql).toContain("PARTITION BY t.family_hash, t.season, t.business_line");
+    expect(params).toHaveProperty("pf");
+    expect(params).not.toHaveProperty("schools");
   });
 
   it("lists filter values with counts", async () => {

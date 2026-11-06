@@ -129,12 +129,14 @@ unmatched is "Unassigned" and flagged.
 4. **Parent occupations** ✅ Each parent's occupation (F1P1–F2P2 columns) is
    sorted into one of 15 categories ("attorney" / "lawyer" → Legal) when
    imported; the text itself is never stored. Everyone can see it.
-5. **Campminder financials** ← *in progress*: the `Financial` tab of the daily
-   sheet (current season; past seasons later). Step 1 imports the
-   transactions (no names, card details or descriptions); step 2 adds camp
-   revenue to the revenue views (service, booked and paid dates), a
-   financials report data set (charges, discounts and aid, net tuition,
-   refunds, payments, balances owed) and Camp page tiles.
+5. **Campminder financials** ✅ The `Financial` tab of the daily sheet
+   (current season; past seasons later) is imported without names, card
+   details or descriptions, payments split across what they paid for.
+   Campminder revenue is on the Overview and business-line pages (service,
+   booked and paid dates); a Campminder financials report data set (charges,
+   discounts and credits, net tuition, payments, refunds, balances owed,
+   households owing); a tuition and balances card on the Camp, CHAPs and
+   School Year pages.
 6. **Family and sibling reporting**: keep the household ID as a scrambled ID;
    sibling status week by week.
 7. **Registration open dates**: returning MD families, returning VA families and

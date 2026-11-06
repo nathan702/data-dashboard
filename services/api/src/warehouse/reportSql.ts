@@ -57,6 +57,10 @@ interface ReportContext {
   filterParam: Record<string, string>;
 }
 
+/** A program's family: Settings overrides (pfmap, from @pf), else the part of the name before " - ". */
+const programFamilySql = (program: string, pf: string) =>
+  `IF(${pf}.program IS NULL, IF(STRPOS(${program}, ' - ') > 0, TRIM(SUBSTR(${program}, 1, STRPOS(${program}, ' - ') - 1)), TRIM(${program})), ${pf}.family)`;
+
 const ENROLLMENTS = (marts: string) => `\`${marts}.fct_campminder_enrollments\``;
 
 /**
@@ -73,7 +77,7 @@ const ENR_BASE = (marts: string) => `
       sm.school_type,
       sm.school_state,
       sm.school_county,
-      IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, TRIM(SUBSTR(e.program, 1, STRPOS(e.program, ' - ') - 1)), TRIM(e.program)), pf.family) AS program_family,
+      ${programFamilySql("e.program", "pf")} AS program_family,
       IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, NULLIF(TRIM(SUBSTR(e.program, STRPOS(e.program, ' - ') + 3)), ''), NULL), pf.branch) AS program_branch,
       IF(e.is_weekly, ARRAY(SELECT CAST(w AS STRING) FROM UNNEST(GENERATE_ARRAY(e.week_start, e.week_end)) AS w), CAST([] AS ARRAY<STRING>)) AS week_list
     FROM ${ENROLLMENTS(marts)} AS e
@@ -266,6 +270,51 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           avg_branches: "AVG(branches)",
         },
       };
+    case "campminder_finance":
+      return {
+        ctes: [
+          `pfmap AS (SELECT program, family, branch FROM UNNEST(@pf))`,
+          `fin_base AS (
+    SELECT
+      t.*,
+      ${programFamilySql("t.program", "pf")} AS program_family,
+      -- The household's balance in this business line and season (all its lines, whatever a report filters).
+      SUM(t.amount) OVER (PARTITION BY t.family_hash, t.season, t.business_line) AS household_balance
+    FROM \`${marts}.fct_campminder_transactions\` AS t
+    LEFT JOIN pfmap AS pf ON pf.program = t.program
+  )`,
+        ],
+        from: "fin_base",
+        fields: {
+          season: "CAST(season AS STRING)",
+          business_line: "business_line",
+          type: "CASE type WHEN 'debit' THEN 'Charge' WHEN 'credit' THEN 'Discount or credit' WHEN 'payment' THEN 'Payment' WHEN 'refund' THEN 'Refund' ELSE 'Transfer' END",
+          category: "category",
+          session_group: "session_group",
+          session: "session_name",
+          program: "program",
+          program_family: "program_family",
+          method: "method",
+          post_month: "FORMAT_DATE('%Y-%m', post_date)",
+          service_month: "FORMAT_DATE('%Y-%m', service_start)",
+          household: "SUBSTR(family_hash, 1, 10)",
+          assigned_by:
+            "CASE assigned_by WHEN 'session' THEN 'Session group' WHEN 'category' THEN 'Financial category' WHEN 'household' THEN 'Household''s main line' ELSE 'Not assigned' END",
+        },
+        measures: {
+          net_tuition: "SUM(IF(type IN ('debit', 'credit'), amount, 0))",
+          charges: "SUM(IF(type = 'debit', amount, 0))",
+          discounts: "SUM(IF(type = 'credit', -amount, 0))",
+          net_collected: "SUM(IF(type = 'payment', -amount, IF(type = 'refund', -amount, 0)))",
+          payments: "SUM(IF(type = 'payment', -amount, 0))",
+          refunds: "SUM(IF(type = 'refund', amount, 0))",
+          balance: "SUM(amount)",
+          balance_owed: "SUM(IF(household_balance > 0.005, amount, 0))",
+          households_owing: "COUNT(DISTINCT IF(household_balance > 0.005, family_hash, NULL))",
+          households: "COUNT(DISTINCT family_hash)",
+          transactions: "COUNT(DISTINCT transaction_id)",
+        },
+      };
     case "revenue":
       return {
         ctes: [],
@@ -417,9 +466,11 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
     types.end = "DATE";
     where.push(`${ds.dateColumn} BETWEEN @start AND @end`);
   }
-  if (CAMPMINDER.includes(spec.dataset)) {
+  if (CAMPMINDER.includes(spec.dataset) || spec.dataset === "campminder_finance") {
     params.pf = Object.entries(families.overrides).map(([program, v]) => ({ program, family: v.family, branch: v.branch }));
     types.pf = [{ program: "STRING", family: "STRING", branch: "STRING" }];
+  }
+  if (CAMPMINDER.includes(spec.dataset)) {
     const sp = schoolParams(schools);
     Object.assign(params, sp.params);
     Object.assign(types, sp.types);

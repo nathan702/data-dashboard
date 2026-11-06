@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { encodeEnrollmentFilters, encodeFilters } from "@dash/shared";
 import type {
   AssignmentsResponse,
+  CampminderFinanceSummary,
   AssignmentUpdate,
   BusinessLineOrUnassigned,
   ComparisonMode,
@@ -200,6 +201,11 @@ const enrollmentQs = (q: EnrollmentScope, extra: Record<string, string> = {}) =>
 export function useEnrollmentSummary(q: EnrollmentScope) {
   const qs = enrollmentQs(q);
   return useApiWhen<EnrollmentSummaryResponse>(!!q.season, ["enrollment-summary", qs], `/api/campminder/summary?${qs}`);
+}
+
+export function useCampminderFinance(q: { season: number | undefined; businessLine?: BusinessLineOrUnassigned }) {
+  const qs = new URLSearchParams({ season: String(q.season ?? ""), ...(q.businessLine ? { businessLine: q.businessLine } : {}) }).toString();
+  return useApiWhen<CampminderFinanceSummary>(!!q.season, ["campminder-finance", qs], `/api/campminder/finance?${qs}`);
 }
 
 export function useEnrollmentBreakdown(q: EnrollmentScope & { dimension: EnrollmentDimension }) {
