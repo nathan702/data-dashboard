@@ -129,8 +129,12 @@ unmatched is "Unassigned" and flagged.
 4. **Parent occupations** ✅ Each parent's occupation (F1P1–F2P2 columns) is
    sorted into one of 15 categories ("attorney" / "lawyer" → Legal) when
    imported; the text itself is never stored. Everyone can see it.
-5. **Campminder financials** ← *next*: from the separate report produced by the other
-   Google Cloud project, read the same way as the daily sheet.
+5. **Campminder financials** ← *in progress*: the `Financial` tab of the daily
+   sheet (current season; past seasons later). Step 1 imports the
+   transactions (no names, card details or descriptions); step 2 adds camp
+   revenue to the revenue views (service, booked and paid dates), a
+   financials report data set (charges, discounts and aid, net tuition,
+   refunds, payments, balances owed) and Camp page tiles.
 6. **Family and sibling reporting**: keep the household ID as a scrambled ID;
    sibling status week by week.
 7. **Registration open dates**: returning MD families, returning VA families and
@@ -166,6 +170,15 @@ unmatched is "Unassigned" and flagged.
 14. **HubSpot** (Education Programs, CHAPs group bookings): one pipeline per line.
 15. **Digests and alerts**: email and Slack.
 16. **Targets**: goals to compare against.
+
+### Running costs
+
+17. **Lower the fixed Google Cloud bill** (about $20 in October 2026, nearly
+    all from schedules, not use): rebuild the tables only when a sync wrote new
+    data instead of every 15 minutes (expected 70–90% less on BigQuery and
+    Cloud Run), then read only new raw rows if data grows a lot. Safety nets
+    to set in the console: a $40/month budget alert, and a 1 TiB "Query usage
+    per day" BigQuery quota.
 
 ## Open items for Calleva
 

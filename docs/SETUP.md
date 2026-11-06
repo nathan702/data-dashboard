@@ -194,6 +194,17 @@ sync, and again only when it changes. A tab whose sessions belong to a
 different year is refused. Tabs for the daily sheet's season or later are
 ignored, and deleting a tab or the whole sheet keeps what was imported.
 
+**Financials.** A tab named `Financial` in the same sheet (Campminder's
+transaction report: one row per charge, credit, payment, refund or transfer)
+is imported on the same hourly sync into `raw_campminder.transactions`, and
+again only when it changes. Kept: transaction id, season, type, financial
+category, dates (post, effective, reversal, service), quantity and amounts,
+payment method, session, session group and program, and the person and
+household ids as the same keyed hashes as enrollments. Never stored: names,
+household names, card details, check and deposit numbers, and the
+descriptions (they often name people). A different tab name can be set with
+`CAMPMINDER_FINANCIAL_TAB`; a sheet without the tab is skipped.
+
 **Parent occupations.** The report's `F1P1 Occupation`, `F1P2 Occupation`,
 `F2P1 Occupation` and `F2P2 Occupation` columns (up to two parents in each of
 two households) are read on import and sorted into a category: Legal,
