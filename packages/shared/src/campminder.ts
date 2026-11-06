@@ -3,7 +3,7 @@ import { encodeFilters, jsonQueryParam } from "./params.js";
 import { BUSINESS_LINES_WITH_UNASSIGNED, type BusinessLineOrUnassigned } from "./businessLines.js";
 
 /** Ways to slice Campminder enrollments. */
-export const ENROLLMENT_DIMENSIONS = ["session_group", "session", "program", "week", "age", "grade", "school", "occupation", "gender", "years", "state", "status"] as const;
+export const ENROLLMENT_DIMENSIONS = ["session_group", "session", "program", "week", "age", "grade", "school", "occupation", "family", "gender", "years", "state", "status"] as const;
 export type EnrollmentDimension = (typeof ENROLLMENT_DIMENSIONS)[number];
 
 export const ENROLLMENT_DIMENSION_LABEL: Record<EnrollmentDimension, string> = {
@@ -15,6 +15,7 @@ export const ENROLLMENT_DIMENSION_LABEL: Record<EnrollmentDimension, string> = {
   grade: "School grade",
   school: "School",
   occupation: "Parent occupation",
+  family: "Campers in family",
   gender: "Gender",
   years: "Years at camp",
   state: "Home state",
@@ -71,6 +72,12 @@ export interface EnrollmentKpis {
   cancelled: number;
   withdrawn: number;
   waitlisted: number;
+  /** Households with an enrolled camper. */
+  families: number;
+  /** Households with two or more enrolled campers. */
+  siblingFamilies: number;
+  /** Weeks a family had two or more campers at camp together (one per family per week). */
+  siblingWeeksTogether: number;
 }
 
 export interface EnrollmentSummaryResponse {

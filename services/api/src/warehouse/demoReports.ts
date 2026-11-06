@@ -10,7 +10,7 @@ import {
 import { effectiveFilters, type SchoolMap } from "./reportSql.js";
 import { toReportResult } from "./reportResult.js";
 import { DEMO_STREAMS, demoRow } from "./demo.js";
-import { demoEnrollmentRows, demoTransactions } from "./demoCampminder.js";
+import { demoEnrollmentRows, demoFamilyCampers, demoTransactions, familyBucket } from "./demoCampminder.js";
 import { demoLineKey, demoLines } from "./demoRetail.js";
 
 /**
@@ -72,6 +72,8 @@ function enrollmentRecords(pf: ProgramFamilySettings, schools: SchoolMap, explod
       ...demoSchoolFields(r.school, schools),
       school_as_entered: r.school,
       parent_occupations: r.parentOccupations,
+      family: r.family,
+      campers_in_family: familyBucket(demoFamilyCampers(r)),
       gender: r.gender,
       state: r.state,
       zip: r.zip,
@@ -125,6 +127,7 @@ function range(a: number, b: number) {
 const CAMPER_MULTI: Record<string, string> = { parent_occupation: "parent_occupations" };
 const MULTI: Partial<Record<ReportSpec["dataset"], Record<string, string>>> = {
   enrollments: CAMPER_MULTI,
+  families: { parent_occupation: "parent_occupations", session_group: "attended_session_groups", week: "attended_weeks" },
   camper_seasons: {
     ...CAMPER_MULTI,
     session_group: "attended_session_groups",
@@ -184,6 +187,52 @@ function camperSeasonRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec
       other_business_lines: [...(lines.get(`${r.camper_id}|${r.season}`) ?? [])].filter((l) => l !== r.business_line),
       cancelled_sessions: cancelled,
       cancellations: cancelled > 0 ? "Cancelled or withdrew a session" : "No cancellations",
+    };
+  });
+}
+
+/** Same as the SQL's families: one record per household, season and business line, from enrolled camper-sessions. */
+function householdRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec[] {
+  const groups = new Map<string, Rec[]>();
+  for (const r of enrollmentRecords(pf, schools, false)) {
+    if (!EN(r)) continue;
+    const k = `${r.season}|${r.business_line}|${r.family}`;
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const campersOf = (k: string) => new Set((groups.get(k) ?? []).map((r) => r.camper_id)).size;
+  const seasons = [...groups.values()].map((rs) => Number(rs[0]!.season));
+  const first = Math.min(...seasons);
+  const newest = Math.max(...seasons);
+  return [...groups.entries()].map(([k, rs]) => {
+    const a = rs[0]!;
+    const season = Number(a.season);
+    const key = (s: number) => `${s}|${a.business_line}|${a.family}`;
+    const n = campersOf(k);
+    const last = groups.has(key(season - 1)) ? campersOf(key(season - 1)) : null;
+    const byWeek = new Map<string, Set<unknown>>();
+    for (const r of rs) for (const w of r.week_list as string[]) byWeek.set(w, (byWeek.get(w) ?? new Set()).add(r.camper_id));
+    const together = [...byWeek.values()].filter((s) => s.size >= 2).length;
+    const returned = season >= newest ? null : groups.has(key(season + 1));
+    return {
+      season: a.season,
+      business_line: a.business_line,
+      household: a.family,
+      family: a.family,
+      campers_n: n,
+      campers_in_family: familyBucket(n),
+      siblings: n >= 2 ? "Siblings at camp" : "One camper",
+      weeks_together_n: together,
+      weeks_together: String(together),
+      last_season_campers: season <= first ? null : String(last ?? 0),
+      change_vs_last:
+        season <= first ? null : last === null ? "New family" : n > last ? "More campers" : n === last ? "Same number" : "Fewer campers",
+      returned_flag: returned,
+      returned: returned === null ? "Not known yet" : returned ? "Returned" : "Didn't return",
+      state: a.state,
+      zip: a.zip,
+      parent_occupations: a.parent_occupations,
+      attended_session_groups: [...new Set(rs.map((r) => r.session_group as string))],
+      attended_weeks: [...byWeek.keys()],
     };
   });
 }
@@ -277,6 +326,21 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
       return {
         recs: familyRecords(pf, schools),
         measures: { campers: (rs) => distinct(rs, "camper_id"), avg_branches: (rs) => avg(rs, "branches_n") },
+      };
+    case "families":
+      return {
+        recs: householdRecords(pf, schools),
+        measures: {
+          families: (rs) => new Set(rs.map((r) => `${r.season}|${r.business_line}|${r.family}`)).size,
+          campers: (rs) => sum(rs, "campers_n"),
+          avg_campers: (rs) => avg(rs, "campers_n"),
+          sibling_families: (rs) => new Set(rs.filter((r) => Number(r.campers_n) >= 2).map((r) => `${r.season}|${r.business_line}|${r.family}`)).size,
+          pct_sibling_families: (rs) => avg(rs.map((r) => ({ x: Number(r.campers_n) >= 2 ? 1 : 0 })), "x"),
+          campers_in_sibling_families: (rs) => sum(rs.filter((r) => Number(r.campers_n) >= 2), "campers_n"),
+          weeks_together: (rs) => sum(rs, "weeks_together_n"),
+          pct_together: (rs) => avg(rs.filter((r) => Number(r.campers_n) >= 2).map((r) => ({ x: Number(r.weeks_together_n) > 0 ? 1 : 0 })), "x"),
+          return_rate: (rs) => avg(rs.filter((r) => r.returned_flag !== null).map((r) => ({ x: r.returned_flag ? 1 : 0 })), "x"),
+        },
       };
     case "campminder_finance": {
       const TYPE = { debit: "Charge", credit: "Discount or credit", payment: "Payment", refund: "Refund" } as const;

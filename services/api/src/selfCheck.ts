@@ -169,6 +169,15 @@ export async function runSelfCheck(
     return null;
   });
 
+  await check("family reporting runs", async () => {
+    await warehouse.runReport(
+      reportSpecSchema.parse({ dataset: "families", rows: ["campers_in_family", "change_vs_last"], column: "season", measure: "pct_together" }),
+      { overrides: {} },
+    );
+    await warehouse.runReport(reportSpecSchema.parse({ dataset: "camper_seasons", rows: ["campers_in_family"], measure: "campers" }), { overrides: {} });
+    return null;
+  });
+
   await check("campminder financials run", async () => {
     await warehouse.runReport(
       reportSpecSchema.parse({ dataset: "campminder_finance", rows: ["business_line", "type"], column: "season", measure: "balance_owed" }),

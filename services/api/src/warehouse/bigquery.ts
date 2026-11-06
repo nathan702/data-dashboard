@@ -318,25 +318,41 @@ export class BigQueryWarehouse implements Warehouse {
 
   async campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap): Promise<CampminderFinanceSummary> {
     const filtered = hasFilters(q.filters);
-    // With filters, each line is matched to the camper's enrollment in its session (the person is the camper),
-    // and the drill-down clauses are applied to that enrollment, as for the enrollment tiles.
+    const lines = `\`${this.martsDataset}.fct_campminder_transactions\``;
+    // With filters, each line is matched to an enrollment in its session that the drill-down clauses keep, as for
+    // the enrollment tiles: by the person when the person is a camper in that session (charges), else by the
+    // household (payments and most credits are under the parent who paid).
     const scope = filtered
       ? `
-          SELECT * FROM (
-            SELECT tx.type, tx.amount, tx.family_hash, tx.business_line AS tx_business_line, e.* EXCEPT (family_hash)
-            FROM \`${this.martsDataset}.fct_campminder_transactions\` AS tx
-            JOIN ${this.enrollmentsView} AS e
-              ON e.season = tx.season AND e.camper_hash = tx.person_hash AND e.session_name = tx.session_name
-            WHERE tx.season = @season
-          )
-          WHERE (@business_line IS NULL OR tx_business_line = @business_line) AND ${drillWhere()}`
+        kept AS (
+          SELECT DISTINCT camper_hash, family_hash, session_name
+          FROM ${this.enrollmentsView}
+          WHERE season = @season AND ${drillWhere()}
+        ),
+        campers AS (
+          SELECT DISTINCT camper_hash, session_name FROM ${this.enrollments} WHERE season = @season
+        ),
+        t AS (
+          SELECT tx.*
+          FROM ${lines} AS tx
+          LEFT JOIN campers AS c ON c.camper_hash = tx.person_hash AND c.session_name = tx.session_name
+          LEFT JOIN (SELECT DISTINCT camper_hash, session_name FROM kept) AS kp
+            ON kp.camper_hash = tx.person_hash AND kp.session_name = tx.session_name
+          LEFT JOIN (SELECT DISTINCT family_hash, session_name FROM kept) AS kf
+            ON kf.family_hash = tx.family_hash AND kf.session_name = tx.session_name
+          WHERE tx.season = @season
+            AND (@business_line IS NULL OR tx.business_line = @business_line)
+            AND tx.session_name IS NOT NULL
+            AND IF(c.camper_hash IS NOT NULL, kp.camper_hash IS NOT NULL, kf.family_hash IS NOT NULL)
+        ),`
       : `
-          SELECT * FROM \`${this.martsDataset}.fct_campminder_transactions\`
-          WHERE season = @season AND (@business_line IS NULL OR business_line = @business_line)`;
+        t AS (
+          SELECT * FROM ${lines}
+          WHERE season = @season AND (@business_line IS NULL OR business_line = @business_line)
+        ),`;
     const rows = await this.enrollmentQuery<Record<string, unknown>>(
       `
-        WITH t AS (${scope}
-        ),
+        WITH ${scope}
         -- Each household's balance for the season (in this business line, when one is chosen).
         hh AS (SELECT family_hash, SUM(amount) AS balance FROM t WHERE family_hash IS NOT NULL GROUP BY 1)
         SELECT

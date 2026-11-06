@@ -37,6 +37,9 @@ const TILES: Array<{ key: keyof EnrollmentKpis; label: string; upIsGood?: boolea
   { key: "waitlisted", label: "Waitlisted" },
   { key: "cancelled", label: "Cancelled", upIsGood: false },
   { key: "withdrawn", label: "Withdrawn", upIsGood: false },
+  { key: "families", label: "Families" },
+  { key: "siblingFamilies", label: "Families with siblings" },
+  { key: "siblingWeeksTogether", label: "Sibling weeks together" },
 ];
 
 function CountTile({ label, value, previous, upIsGood = true, cmpLabel }: {
@@ -161,7 +164,7 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
     .filter((r) => r.enrollments > 0)
     .map((r) => ({ key: valueLabel(dimension, r.key), id: r.key, value: r.enrollments }));
   // Ordered dimensions (weeks, ages, grades) read best in order; others by size.
-  const ordered = dimension === "week" || dimension === "age" || dimension === "grade" || dimension === "years";
+  const ordered = dimension === "week" || dimension === "age" || dimension === "grade" || dimension === "years" || dimension === "family";
   const topBars = ordered ? bars : [...bars].sort((a, b) => b.value - a.value).slice(0, 15);
 
   return (
@@ -195,7 +198,7 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
         <>
           <p className="card-subtitle">
             {active.length > 0 ? "Only camper-sessions matching every filter. " : ""}
-            Counts enrolled camper-sessions; each camper counts once in Campers.
+            Counts enrolled camper-sessions; each camper counts once in Campers. A family is a household; siblings are two or more of its campers that season.
             {s.comparison && ` Compared with season ${s.season - 1} ${seasonOver(s) ? "overall" : "at the same point in its season"}.`}
             {!seasonOver(s) && ` As of ${formatDate(s.asOf)}.`}
           </p>

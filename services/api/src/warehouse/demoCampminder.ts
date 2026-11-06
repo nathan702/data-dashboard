@@ -45,6 +45,8 @@ export interface Row {
   zip: string;
   /** As the family typed it (several spellings per school, like the real data). */
   school: string | null;
+  /** Household (made-up): the first thousand campers come in pairs of siblings. */
+  family: string;
   /** Parents' occupation categories (none for some families, two for others). */
   parentOccupations: OccupationCategory[];
 }
@@ -153,6 +155,7 @@ function rows(): Row[] {
             businessLine: g.line,
             season,
             camper: String(camperNo), // same ID every season, like real Campminder IDs
+            family: `F${camperNo < 1000 ? Math.floor(camperNo / 2) : camperNo}`,
             sessionGroup: g.group,
             sessionName: g.weekly ? `${g.group} Week ${week}` : g.group,
             weekStart: g.weekly ? week : null,
@@ -179,12 +182,33 @@ function rows(): Row[] {
   return out;
 }
 
+/** Enrolled campers per household, season and business line (as the SQL's family_campers). */
+let familySizes: Map<string, number> | null = null;
+export function demoFamilyCampers(r: Pick<Row, "season" | "businessLine" | "family">): number {
+  if (!familySizes) {
+    const sets = new Map<string, Set<string>>();
+    for (const x of rows()) {
+      if (x.statusCode !== "EN") continue;
+      const k = `${x.season}|${x.businessLine}|${x.family}`;
+      sets.set(k, (sets.get(k) ?? new Set()).add(x.camper));
+    }
+    familySizes = new Map([...sets].map(([k, v]) => [k, v.size]));
+  }
+  return familySizes.get(`${r.season}|${r.businessLine}|${r.family}`) ?? 0;
+}
+
+/** Same as the SQL's FAMILY_BUCKET. */
+export function familyBucket(n: number): string | null {
+  return n <= 0 ? null : n === 1 ? "1 camper" : n >= 4 ? "4+ campers" : `${n} campers`;
+}
+
 /** Same rule as the SQL: each of the family's occupation categories, or UNKNOWN_KEY. */
 const occupationKeys = (r: Row): string[] => (r.parentOccupations.length ? r.parentOccupations : [UNKNOWN_KEY]);
 
 function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week" | "occupation">, schools: SchoolMap): string {
   if (d === "school") return (r.school === null ? null : schools.has(r.school) ? schools.get(r.school)?.name : r.school) ?? UNKNOWN_KEY;
   return {
+    family: familyBucket(demoFamilyCampers(r)) ?? UNKNOWN_KEY,
     session_group: r.sessionGroup, session: r.sessionName, program: r.program ?? UNKNOWN_KEY, age: String(r.age),
     grade: r.grade, gender: r.gender, years: String(r.years), state: r.state, status: r.status,
   }[d];
@@ -217,6 +241,26 @@ function counts(rs: Row[]) {
     cancelled: rs.filter((r) => r.statusCode === "CN").length,
     withdrawn: rs.filter((r) => r.statusCode === "WD").length,
     waitlisted: rs.filter((r) => r.statusCode === "WL").length,
+    ...familyCounts(en),
+  };
+}
+
+/** Same as the SQL: families among these enrolled camper-sessions, those with 2+ campers, and their weeks together. */
+function familyCounts(en: Row[]) {
+  const campers = new Map<string, Set<string>>();
+  const weeks = new Map<string, Set<string>>();
+  for (const r of en) {
+    campers.set(r.family, (campers.get(r.family) ?? new Set()).add(r.camper));
+    if (r.weekStart === null) continue;
+    for (let w = r.weekStart; w <= r.weekEnd!; w++) {
+      const k = `${r.family}|${w}`;
+      weeks.set(k, (weeks.get(k) ?? new Set()).add(r.camper));
+    }
+  }
+  return {
+    families: campers.size,
+    sibling_families: [...campers.values()].filter((s) => s.size >= 2).length,
+    sibling_weeks_together: [...weeks.values()].filter((s) => s.size >= 2).length,
   };
 }
 
