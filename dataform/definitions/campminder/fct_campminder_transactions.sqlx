@@ -1,0 +1,15 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Every line of Campminder's Financial report with its business line (by session group, else financial category, else the household's main line that season; see stg_campminder_transactions). Signed amounts: a household's balance is the sum of its lines.",
+  bigquery: { clusterBy: ["business_line", "season"] },
+  assertions: { nonNull: ["business_line", "season", "type"] }
+}
+
+SELECT
+  COALESCE(a.business_line, 'unassigned') AS business_line,
+  t.* EXCEPT (assign_key),
+  t.assign_key
+FROM ${ref("stg_campminder_transactions")} AS t
+LEFT JOIN ${ref("business_line_assignments")} AS a
+  ON a.source = 'campminder' AND a.assign_key = t.assign_key

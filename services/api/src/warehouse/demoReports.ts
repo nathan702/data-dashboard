@@ -10,7 +10,7 @@ import {
 import { effectiveFilters, type SchoolMap } from "./reportSql.js";
 import { toReportResult } from "./reportResult.js";
 import { DEMO_STREAMS, demoRow } from "./demo.js";
-import { demoEnrollmentRows } from "./demoCampminder.js";
+import { demoEnrollmentRows, demoTransactions } from "./demoCampminder.js";
 import { demoLineKey, demoLines } from "./demoRetail.js";
 
 /**
@@ -278,6 +278,48 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
         recs: familyRecords(pf, schools),
         measures: { campers: (rs) => distinct(rs, "camper_id"), avg_branches: (rs) => avg(rs, "branches_n") },
       };
+    case "campminder_finance": {
+      const TYPE = { debit: "Charge", credit: "Discount or credit", payment: "Payment", refund: "Refund" } as const;
+      const txs = demoTransactions();
+      const balance = new Map<string, number>();
+      const hhKey = (t: { family: string; season: number; businessLine: string }) => `${t.family}|${t.season}|${t.businessLine}`;
+      for (const t of txs) balance.set(hhKey(t), (balance.get(hhKey(t)) ?? 0) + t.amount);
+      const amt = (rs: Rec[], type: string, sign = 1) => rs.filter((r) => r.type_code === type).reduce((a, r) => a + sign * Number(r.amount), 0);
+      return {
+        recs: txs.map((t) => ({
+          season: String(t.season),
+          business_line: t.businessLine,
+          type: TYPE[t.type],
+          type_code: t.type,
+          category: t.category,
+          session_group: t.sessionGroup,
+          session: t.session,
+          program: t.program,
+          program_family: t.program ? familyOf(t.program, pf).family : null,
+          method: t.method,
+          post_month: t.postDate.slice(0, 7),
+          service_month: t.serviceStart?.slice(0, 7) ?? null,
+          household: t.family,
+          assigned_by: "Session group",
+          amount: t.amount,
+          transaction_id: t.transactionId,
+          household_balance: balance.get(hhKey(t)) ?? 0,
+        })),
+        measures: {
+          net_tuition: (rs) => amt(rs, "debit") + amt(rs, "credit"),
+          charges: (rs) => amt(rs, "debit"),
+          discounts: (rs) => amt(rs, "credit", -1),
+          net_collected: (rs) => amt(rs, "payment", -1) - amt(rs, "refund"),
+          payments: (rs) => amt(rs, "payment", -1),
+          refunds: (rs) => amt(rs, "refund"),
+          balance: (rs) => sum(rs, "amount"),
+          balance_owed: (rs) => sum(rs.filter((r) => Number(r.household_balance) > 0.005), "amount"),
+          households_owing: (rs) => distinct(rs, "household", (r) => Number(r.household_balance) > 0.005),
+          households: (rs) => distinct(rs, "household"),
+          transactions: (rs) => distinct(rs, "transaction_id"),
+        },
+      };
+    }
     case "revenue":
       return {
         recs: revenueRecords(spec.start!, spec.end!),

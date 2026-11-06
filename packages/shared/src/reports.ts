@@ -9,7 +9,7 @@ import { isIsoDate } from "./dates.js";
  * word always means the same thing.
  */
 
-export const REPORT_DATASETS = ["enrollments", "camper_seasons", "program_families", "revenue", "store_sales"] as const;
+export const REPORT_DATASETS = ["enrollments", "camper_seasons", "program_families", "campminder_finance", "revenue", "store_sales"] as const;
 export type ReportDataset = (typeof REPORT_DATASETS)[number];
 
 /** How a field's values sort: numbers, school grades, weekdays, or text. */
@@ -177,6 +177,48 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
     measures: [
       m("campers", "Campers", "Distinct campers.", "count", true),
       m("avg_branches", "Average branches per camper", "Mean number of branches done.", "decimal", false),
+    ],
+  },
+  campminder_finance: {
+    id: "campminder_finance",
+    label: "Campminder financials",
+    description:
+      "One row per line of Campminder's Financial report: charges, discounts and credits, payments, refunds and transfers. A payment split across what it paid for is one line per part. Business line: the line's session group, else its financial category, else the household's main line that season.",
+    dated: false,
+    defaultMeasure: "net_tuition",
+    fields: [
+      f("season", "Season", "Campminder season the transaction belongs to.", "numeric"),
+      f("business_line", "Business line", "From the session group, else the financial category (Settings → Campminder), else the household's main line that season."),
+      f("type", "Type", "Charge, Discount or credit, Payment, Refund, or Transfer (balance or credit moved between accounts or seasons)."),
+      f("category", "Financial category", "Campminder's financial category (Summer Camp, CHAPS, Miscellaneous…)."),
+      f("session_group", "Session group", "Session name without the week (“Farm Week 9” → “Farm”)."),
+      f("session", "Session", "Full session name."),
+      f("program", "Program", "The program within the session."),
+      f("program_family", "Program family", "Programs grouped into families (Settings → Program families)."),
+      f("method", "Payment method", "Credit card, check, ACH… (payments and refunds)."),
+      f("post_month", "Month posted", "Month the transaction was posted (YYYY-MM).", "numeric"),
+      f("service_month", "Service month", "Month the service starts (YYYY-MM); charges for sessions.", "numeric"),
+      f("household", "Household", "One household (scrambled ID, the same as in the enrollment data sets)."),
+      f("assigned_by", "Business line from", "Whether the business line came from the session, the financial category, or the household's main line."),
+    ],
+    measures: [
+      m("net_tuition", "Net tuition", "Charges minus discounts and credits.", "money", true),
+      m("charges", "Charges", "Charges (debits), net of any reversed.", "money", true),
+      m("discounts", "Discounts and credits", "Discounts, financial aid and other credits.", "money", true),
+      m("net_collected", "Net collected", "Payments minus refunds.", "money", true),
+      m("payments", "Payments", "Money received, net of reversed payments.", "money", true),
+      m("refunds", "Refunds", "Money paid back.", "money", true),
+      m("balance", "Balance", "What's owed minus credit held: the sum of every line (charges and refunds add, credits and payments subtract).", "money", true),
+      m(
+        "balance_owed",
+        "Balance owed",
+        "What households still owe: lines of households whose balance in that business line and season is above zero.",
+        "money",
+        true,
+      ),
+      m("households_owing", "Households owing", "Households with a balance above zero in that business line and season.", "count", true),
+      m("households", "Households", "Distinct households.", "count", true),
+      m("transactions", "Transactions", "Distinct Campminder transactions (a split payment counts once).", "count", true),
     ],
   },
   revenue: {
@@ -385,6 +427,12 @@ export const STARTER_REPORTS: SavedReport[] = [
     "Sessions per camper by session group",
     "For campers who attended each session group, their average sessions that season (in any group). Change the measure to Campers and add Sessions that season as a row to see the spread.",
     { dataset: "camper_seasons", rows: ["session_group"], column: "season", measure: "avg_sessions", filters: { business_line: ["camp"] } },
+  ),
+  starter(
+    "tuition-by-group",
+    "Tuition and payments by session group",
+    "Net tuition, by session group and business line, for the current Campminder season. Change the measure to Net collected or Balance owed.",
+    { dataset: "campminder_finance", rows: ["business_line", "session_group"], measure: "net_tuition", chart: "table" },
   ),
   starter(
     "explorers-branches",

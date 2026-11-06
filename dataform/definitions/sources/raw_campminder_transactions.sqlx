@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_campminder",
+  name: "transactions",
+  description: "Lines of Campminder's Financial report (charges, credits, payments, refunds, transfers; a split payment is several lines), written by services/connectors only when they change. No names, card details, check numbers or descriptions; people and households are keyed hashes."
+}

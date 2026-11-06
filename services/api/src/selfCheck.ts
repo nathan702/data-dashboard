@@ -169,6 +169,16 @@ export async function runSelfCheck(
     return null;
   });
 
+  await check("campminder financials run", async () => {
+    await warehouse.runReport(
+      reportSpecSchema.parse({ dataset: "campminder_finance", rows: ["business_line", "type"], column: "season", measure: "balance_owed" }),
+      { overrides: {} },
+    );
+    const e = (ref as ReferenceTotals | null)?.enrollments;
+    if (e) await warehouse.campminderFinance({ season: e.season });
+    return null;
+  });
+
   for (const starter of STARTER_REPORTS) {
     await check(`starter report runs: ${starter.name}`, async () => {
       await warehouse.runReport(starter.spec, { overrides: {} });

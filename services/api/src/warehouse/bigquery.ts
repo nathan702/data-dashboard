@@ -1,5 +1,7 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import {
+  type CampminderFinanceQuery,
+  type CampminderFinanceSummary,
   comparisonRange,
   comparisonShiftDays,
   hasFilters,
@@ -311,6 +313,47 @@ export class BigQueryWarehouse implements Warehouse {
         location: this.location,
       })
       .then(([rows]) => rows as T[]);
+  }
+
+  async campminderFinance(q: CampminderFinanceQuery): Promise<CampminderFinanceSummary> {
+    const [rows] = await this.bq.query({
+      query: `
+        WITH t AS (
+          SELECT * FROM \`${this.martsDataset}.fct_campminder_transactions\`
+          WHERE season = @season AND (@business_line IS NULL OR business_line = @business_line)
+        ),
+        -- Each household's balance for the season (in this business line, when one is chosen).
+        hh AS (SELECT family_hash, SUM(amount) AS balance FROM t WHERE family_hash IS NOT NULL GROUP BY 1)
+        SELECT
+          SUM(IF(type = 'debit', amount, 0)) AS charges,
+          SUM(IF(type = 'credit', -amount, 0)) AS discounts,
+          SUM(IF(type = 'payment', -amount, 0)) AS payments,
+          SUM(IF(type = 'refund', amount, 0)) AS refunds,
+          (SELECT SUM(IF(balance > 0.005, balance, 0)) FROM hh) AS balance_owed,
+          (SELECT COUNTIF(balance > 0.005) FROM hh) AS households_owing,
+          (SELECT SUM(IF(balance < -0.005, -balance, 0)) FROM hh) AS credit_held,
+          (SELECT COUNT(*) FROM hh) AS households
+        FROM t`,
+      params: { season: q.season, business_line: q.businessLine ?? null },
+      types: { business_line: "STRING" },
+      location: this.location,
+    });
+    const r = (rows as Array<Record<string, unknown>>)[0] ?? {};
+    const n = (k: string) => round2(Number(r[k] ?? 0));
+    return {
+      season: q.season,
+      businessLine: q.businessLine ?? null,
+      charges: n("charges"),
+      discounts: n("discounts"),
+      netTuition: round2(n("charges") - n("discounts")),
+      payments: n("payments"),
+      refunds: n("refunds"),
+      netCollected: round2(n("payments") - n("refunds")),
+      balanceOwed: n("balance_owed"),
+      householdsOwing: Number(r.households_owing ?? 0),
+      creditHeld: n("credit_held"),
+      households: Number(r.households ?? 0),
+    };
   }
 
   async enrollmentSeasons(businessLine: BusinessLineOrUnassigned | undefined): Promise<EnrollmentSeason[]> {

@@ -8,6 +8,7 @@ import {
   type EnrollmentBreakdownQuery,
   type EnrollmentMapQuery,
   type EnrollmentSummaryQuery,
+  type CampminderFinanceQuery,
   type RetailBreakdownQuery,
   type RetailKpiQuery,
   type RetailSource,
@@ -22,7 +23,7 @@ import {
 } from "@dash/shared";
 import { demoRunReport } from "./demoReports.js";
 import type { SchoolMap } from "./reportSql.js";
-import { DEMO_SESSION_GROUPS, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
+import { DEMO_SESSION_GROUPS, demoCampminderFinance, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
 import type { DailyRevenueRow, FreshnessSource, Warehouse } from "./types.js";
@@ -189,6 +190,10 @@ export class DemoWarehouse implements Warehouse {
 
   async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap) {
     return demoRunReport(spec, families, schools);
+  }
+
+  async campminderFinance(q: CampminderFinanceQuery) {
+    return demoCampminderFinance(q);
   }
 
   async schoolList() {

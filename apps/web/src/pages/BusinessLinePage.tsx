@@ -8,8 +8,8 @@ import { SOURCE_COLOR_VAR } from "../lib/colors";
 
 /** Platforms that have a connector today; others show when they arrive. */
 const CONNECTED: Source[] = ["campminder", "shopify", "square"];
-/** Connected platforms that carry money (Campminder has no financials yet). */
-const REVENUE: Source[] = ["shopify", "square"];
+/** Connected platforms that carry money. */
+const REVENUE: Source[] = ["shopify", "square", "campminder"];
 
 function SourceSection({ line, source }: { line: BusinessLine; source: Source }) {
   const role = BUSINESS_LINE_INFO[line].sourceRoles[source];

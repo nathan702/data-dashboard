@@ -23,6 +23,7 @@ import { formatDate, formatInt, formatPercent, percentChange } from "../lib/form
 import { useDrill } from "../lib/drill";
 import { DataTable, type Column } from "./DataTable";
 import { FilterChips } from "./FilterChips";
+import { TuitionCard } from "./TuitionCard";
 import { TopBarChart } from "./TopBarChart";
 
 // The map library is only downloaded when a page shows the map.
@@ -210,6 +211,8 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
               />
             ))}
           </div>
+
+          <TuitionCard season={season} businessLine={businessLine} />
 
           {s.byWeek.length > 0 && (
             <div className="card">
