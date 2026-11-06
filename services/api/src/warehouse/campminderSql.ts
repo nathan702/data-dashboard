@@ -1,5 +1,5 @@
 import { ENROLLMENT_DIMENSIONS, UNKNOWN_KEY, type EnrollmentDimension, type EnrollmentFilters } from "@dash/shared";
-import { schoolParams, type SchoolMap } from "./reportSql.js";
+import { FAMILY_BUCKET, familyCampersSql, schoolParams, type SchoolMap } from "./reportSql.js";
 
 /**
  * SQL for Campminder enrollments (marts.fct_campminder_enrollments). Only
@@ -14,6 +14,7 @@ const KEY_SQL: Record<Exclude<EnrollmentDimension, "week" | "occupation">, strin
   age: "CAST(age_at_season AS STRING)",
   grade: "school_grade",
   school: "school_group",
+  family: FAMILY_BUCKET("family_campers"),
   gender: "gender",
   years: "CAST(years_as_camper AS STRING)",
   state: "home_state",
@@ -41,13 +42,16 @@ export const drillWhere = () => DRILL;
 /**
  * The enrollments table with each camper's school grouped as on Settings →
  * Schools (@schools: spelling → school, see schoolParams); a spelling newer
- * than that list shows as entered.
+ * than that list shows as entered. Also each camper's family_campers (enrolled
+ * campers in the household that season and business line).
  */
 export function enrollmentsWithSchools(table: string) {
   return `(
-      SELECT e.*, IF(sm.entered IS NULL, e.school, sm.school) AS school_group
+      SELECT e.*, IF(sm.entered IS NULL, e.school, sm.school) AS school_group, fc.family_campers
       FROM ${table} AS e
       LEFT JOIN UNNEST(@schools) AS sm ON sm.entered = e.school
+      LEFT JOIN ${familyCampersSql(table)} AS fc
+        ON fc.season = e.season AND fc.business_line = e.business_line AND fc.family_hash = e.family_hash
     )`;
 }
 
@@ -89,14 +93,42 @@ export function kpiSql(t: string) {
       -- Last season as of the same point: what had been applied for by then.
       SELECT 'comparison', * FROM ${t}
       WHERE ${FILTER} AND ${DRILL} AND season = @season - 1 AND (application_date IS NULL OR application_date <= @prev_cutoff)
+    ),
+    -- Families among the matching camper-sessions: campers each, and weeks with two or more at camp together.
+    fam AS (
+      SELECT period, family_hash, COUNT(DISTINCT camper_hash) AS n
+      FROM scoped
+      WHERE status_code = 'EN' AND family_hash IS NOT NULL
+      GROUP BY 1, 2
+    ),
+    together AS (
+      SELECT period, COUNT(*) AS weeks
+      FROM (
+        SELECT period, family_hash, week
+        FROM scoped, UNNEST(GENERATE_ARRAY(week_start, week_end)) AS week
+        WHERE status_code = 'EN' AND is_weekly AND family_hash IS NOT NULL
+        GROUP BY 1, 2, 3
+        HAVING COUNT(DISTINCT camper_hash) >= 2
+      )
+      GROUP BY 1
+    ),
+    main AS (
+      SELECT
+        period,
+        ${COUNTS},
+        COUNT(DISTINCT IF(status_code = 'EN' AND years_as_camper = 1, camper_hash, NULL)) AS new_campers,
+        COUNT(DISTINCT IF(status_code = 'EN' AND years_as_camper > 1, camper_hash, NULL)) AS returning_campers
+      FROM scoped
+      GROUP BY 1
     )
     SELECT
-      period,
-      ${COUNTS},
-      COUNT(DISTINCT IF(status_code = 'EN' AND years_as_camper = 1, camper_hash, NULL)) AS new_campers,
-      COUNT(DISTINCT IF(status_code = 'EN' AND years_as_camper > 1, camper_hash, NULL)) AS returning_campers
-    FROM scoped
-    GROUP BY 1`;
+      m.*,
+      COALESCE(f.families, 0) AS families,
+      COALESCE(f.sibling_families, 0) AS sibling_families,
+      COALESCE(t.weeks, 0) AS sibling_weeks_together
+    FROM main AS m
+    LEFT JOIN (SELECT period, COUNT(*) AS families, COUNTIF(n >= 2) AS sibling_families FROM fam GROUP BY 1) AS f USING (period)
+    LEFT JOIN together AS t USING (period)`;
 }
 
 export function byWeekSql(t: string) {

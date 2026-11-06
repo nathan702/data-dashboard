@@ -9,7 +9,7 @@ import { isIsoDate } from "./dates.js";
  * word always means the same thing.
  */
 
-export const REPORT_DATASETS = ["enrollments", "camper_seasons", "program_families", "campminder_finance", "revenue", "store_sales"] as const;
+export const REPORT_DATASETS = ["enrollments", "camper_seasons", "program_families", "families", "campminder_finance", "revenue", "store_sales"] as const;
 export type ReportDataset = (typeof REPORT_DATASETS)[number];
 
 /** How a field's values sort: numbers, school grades, weekdays, or text. */
@@ -70,6 +70,11 @@ const CAMPER_FIELDS = [
     "parent_occupation",
     "Parent occupation",
     "Field each parent works in (up to four parents, both households). A family with parents in two fields counts under each, so totals can add up to more than the whole.",
+  ),
+  f(
+    "campers_in_family",
+    "Campers in family",
+    "Enrolled campers in the camper's household that season and business line: 1 camper, 2 campers… (siblings at camp).",
   ),
   f("signup_month", "Sign-up month", "Month the camper's application was submitted (YYYY-MM).", "numeric"),
   f("signup_week", "Sign-up week", "Week the camper's application was submitted (the Monday it starts, YYYY-MM-DD).", "numeric"),
@@ -177,6 +182,45 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
     measures: [
       m("campers", "Campers", "Distinct campers.", "count", true),
       m("avg_branches", "Average branches per camper", "Mean number of branches done.", "decimal", false),
+    ],
+  },
+  families: {
+    id: "families",
+    label: "Families",
+    description:
+      "One row per household per season and business line, built from its enrolled campers (a household = Campminder's primary household). Siblings = two or more campers from the household that season.",
+    dated: false,
+    defaultMeasure: "families",
+    fields: [
+      f("season", "Season", "Campminder season.", "numeric"),
+      f("business_line", "Business line", "Camp, CHAPs, School Year Programs…"),
+      f("household", "Household", "One household (scrambled ID, the same across seasons and data sets)."),
+      f("campers_in_family", "Campers in family", "Enrolled campers from the household that season: 1 camper, 2 campers, 3 campers, 4+ campers."),
+      f("siblings", "Siblings at camp", "Siblings at camp (two or more campers) or One camper."),
+      f("weeks_together", "Weeks with siblings together", "Weeks two or more of the family's campers were at camp at the same time.", "numeric"),
+      f("last_season_campers", "Campers last season", "The household's enrolled campers the season before (0 = none).", "numeric"),
+      f(
+        "change_vs_last",
+        "Compared with last season",
+        "New family, More campers, Same number or Fewer campers than the season before. (none) for the first season with data.",
+      ),
+      f("returned", "Came back next season", "Returned / Didn't return / Not known yet (the next season hasn't happened)."),
+      f("state", "Home state", "Household's state."),
+      f("zip", "Home ZIP", "Household's 5-digit ZIP code."),
+      f("parent_occupation", "Parent occupation", "Field each parent works in. A family with parents in two fields counts under each as a row."),
+      f("session_group", "Session group attended", "Families with a camper in the group. As rows, a family counts under each group."),
+      f("week", "Week attended", "Families with a camper at camp that week. As rows, a family counts under each week.", "numeric"),
+    ],
+    measures: [
+      m("families", "Families", "Distinct households with an enrolled camper.", "count", true),
+      m("campers", "Campers", "Enrolled campers, summed over families.", "count", true),
+      m("avg_campers", "Average campers per family", "Mean enrolled campers per household.", "decimal", false),
+      m("sibling_families", "Families with siblings", "Households with two or more enrolled campers.", "count", true),
+      m("pct_sibling_families", "% of families with siblings", "Share of households with two or more enrolled campers.", "percent", false),
+      m("campers_in_sibling_families", "Campers with siblings at camp", "Campers whose household had two or more campers enrolled.", "count", true),
+      m("weeks_together", "Sibling weeks together", "Weeks with two or more of a family's campers at camp at once, summed over families.", "count", true),
+      m("pct_together", "% of sibling families together", "Of families with siblings, the share whose campers overlapped at least one week.", "percent", false),
+      m("return_rate", "% of families who came back", "Share of households enrolled again the next season (seasons with a known next season only).", "percent", false),
     ],
   },
   campminder_finance: {
@@ -427,6 +471,18 @@ export const STARTER_REPORTS: SavedReport[] = [
     "Sessions per camper by session group",
     "For campers who attended each session group, their average sessions that season (in any group). Change the measure to Campers and add Sessions that season as a row to see the spread.",
     { dataset: "camper_seasons", rows: ["session_group"], column: "season", measure: "avg_sessions", filters: { business_line: ["camp"] } },
+  ),
+  starter(
+    "siblings",
+    "Families with siblings at camp",
+    "How many families send one camper, two, three or more, per season, with the share of families in each.",
+    { dataset: "families", rows: ["campers_in_family"], column: "season", measure: "families", filters: { business_line: ["camp"] }, percent: "column" },
+  ),
+  starter(
+    "family-change",
+    "Families compared with last season",
+    "Whether each season's families are new, or sent more, the same or fewer campers than the season before.",
+    { dataset: "families", rows: ["change_vs_last"], column: "season", measure: "families", filters: { business_line: ["camp"] } },
   ),
   starter(
     "tuition-by-group",

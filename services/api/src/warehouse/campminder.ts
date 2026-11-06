@@ -30,6 +30,9 @@ export function toEnrollmentKpis(r: Partial<Record<string, unknown>> | undefined
     cancelled: n("cancelled"),
     withdrawn: n("withdrawn"),
     waitlisted: n("waitlisted"),
+    families: n("families"),
+    siblingFamilies: n("sibling_families"),
+    siblingWeeksTogether: n("sibling_weeks_together"),
   };
 }
 

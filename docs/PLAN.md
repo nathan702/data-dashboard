@@ -137,9 +137,13 @@ unmatched is "Unassigned" and flagged.
    discounts and credits, net tuition, payments, refunds, balances owed,
    households owing); a tuition and balances card on the Camp, CHAPs and
    School Year pages.
-6. **Family and sibling reporting**: keep the household ID as a scrambled ID;
-   sibling status week by week.
-7. **Registration open dates**: returning MD families, returning VA families and
+6. **Family and sibling reporting** ✅ Siblings = two or more enrolled campers
+   from one household (scrambled ID) in a season and business line. Camp
+   pages: Families, Families with siblings and Sibling weeks together tiles,
+   and a Campers in family breakdown and filter. Reports: Campers in family on
+   the camper data sets, and a Families data set (campers per family, weeks
+   together, compared with last season, came back).
+7. **Registration open dates** ← *next*: returning MD families, returning VA families and
    new families, set per year; pace charts align by days since opening.
 8. **Decision-making features**: forecasts and behind-pace alerts, capacity and
    waitlists, returning families not yet re-enrolled, campers per age group per

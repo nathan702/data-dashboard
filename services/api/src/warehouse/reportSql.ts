@@ -61,6 +61,18 @@ interface ReportContext {
 const programFamilySql = (program: string, pf: string) =>
   `IF(${pf}.program IS NULL, IF(STRPOS(${program}, ' - ') > 0, TRIM(SUBSTR(${program}, 1, STRPOS(${program}, ' - ') - 1)), TRIM(${program})), ${pf}.family)`;
 
+/** Enrolled campers in the household that season and business line, as "1 camper" … "4+ campers". */
+export const FAMILY_BUCKET = (n: string) =>
+  `CASE WHEN ${n} IS NULL OR ${n} = 0 THEN NULL WHEN ${n} = 1 THEN '1 camper' WHEN ${n} >= 4 THEN '4+ campers' ELSE CONCAT(CAST(${n} AS STRING), ' campers') END`;
+
+/** Enrolled campers per household, season and business line, to join to an enrollments table (as fc, on those three). */
+export const familyCampersSql = (table: string) => `(
+      SELECT season, business_line, family_hash, COUNT(DISTINCT IF(status_code = 'EN', camper_hash, NULL)) AS family_campers
+      FROM ${table}
+      WHERE family_hash IS NOT NULL
+      GROUP BY 1, 2, 3
+    )`;
+
 const ENROLLMENTS = (marts: string) => `\`${marts}.fct_campminder_enrollments\``;
 
 /**
@@ -77,12 +89,15 @@ const ENR_BASE = (marts: string) => `
       sm.school_type,
       sm.school_state,
       sm.school_county,
+      fc.family_campers,
       ${programFamilySql("e.program", "pf")} AS program_family,
       IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, NULLIF(TRIM(SUBSTR(e.program, STRPOS(e.program, ' - ') + 3)), ''), NULL), pf.branch) AS program_branch,
       IF(e.is_weekly, ARRAY(SELECT CAST(w AS STRING) FROM UNNEST(GENERATE_ARRAY(e.week_start, e.week_end)) AS w), CAST([] AS ARRAY<STRING>)) AS week_list
     FROM ${ENROLLMENTS(marts)} AS e
     LEFT JOIN pfmap AS pf ON pf.program = e.program
     LEFT JOIN schoolmap AS sm ON sm.entered = e.school
+    LEFT JOIN ${familyCampersSql(ENROLLMENTS(marts))} AS fc
+      ON fc.season = e.season AND fc.business_line = e.business_line AND fc.family_hash = e.family_hash
   )`;
 
 /** Per camper (and season, business line …) attributes; the same names in every Campminder data set. */
@@ -99,6 +114,7 @@ const CAMPER_FIELDS = {
   school_type: "school_type",
   school_state: "school_state",
   school_county: "school_county",
+  campers_in_family: FAMILY_BUCKET("family_campers"),
   signup_month: "FORMAT_DATE('%Y-%m', application_date)",
   signup_week: "CAST(DATE_TRUNC(application_date, WEEK(MONDAY)) AS STRING)",
   gender: "gender",
@@ -120,7 +136,8 @@ const CAMPER_ROLLUP = `
       ANY_VALUE(gender) AS gender,
       ANY_VALUE(home_state) AS home_state,
       ANY_VALUE(home_zip) AS home_zip,
-      MIN(application_date) AS application_date`;
+      MIN(application_date) AS application_date,
+      MAX(family_campers) AS family_campers`;
 
 /** Multi-valued fields of every Campminder data set. */
 const CAMPER_MULTI = { parent_occupation: "parent_occupations" };
@@ -270,6 +287,82 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           avg_branches: "AVG(branches)",
         },
       };
+    case "families":
+      return {
+        ctes: [
+          ENR_BASE(marts),
+          `fam0 AS (
+    SELECT
+      season, business_line, family_hash,
+      COUNT(DISTINCT camper_hash) AS campers,
+      ANY_VALUE(home_state) AS home_state,
+      ANY_VALUE(home_zip) AS home_zip,
+      ANY_VALUE(parent_occupations) AS parent_occupations,
+      ARRAY_AGG(DISTINCT session_group IGNORE NULLS) AS attended_session_groups,
+      ARRAY_CONCAT_AGG(week_list) AS attended_week_list
+    FROM enr_base
+    WHERE status_code = 'EN' AND family_hash IS NOT NULL
+    GROUP BY season, business_line, family_hash
+  )`,
+          `fam_weeks AS (
+    -- Weeks with two or more of the family's campers at camp.
+    SELECT season, business_line, family_hash, COUNT(*) AS weeks_together
+    FROM (
+      SELECT season, business_line, family_hash, w
+      FROM enr_base, UNNEST(week_list) AS w
+      WHERE status_code = 'EN' AND family_hash IS NOT NULL
+      GROUP BY 1, 2, 3, 4
+      HAVING COUNT(DISTINCT camper_hash) >= 2
+    )
+    GROUP BY 1, 2, 3
+  )`,
+          `families AS (
+    SELECT
+      a.*,
+      ARRAY(SELECT DISTINCT w FROM UNNEST(a.attended_week_list) AS w) AS attended_weeks,
+      COALESCE(fw.weeks_together, 0) AS weeks_together,
+      p.campers AS last_season_campers,
+      a.season <= (SELECT MIN(season) FROM fam0) AS first_season_of_data,
+      -- Unknown for the newest season: its next season hasn't happened.
+      CASE WHEN a.season >= (SELECT MAX(season) FROM fam0) THEN NULL ELSE nx.family_hash IS NOT NULL END AS returned
+    FROM fam0 AS a
+    LEFT JOIN fam_weeks AS fw ON fw.season = a.season AND fw.business_line = a.business_line AND fw.family_hash = a.family_hash
+    LEFT JOIN fam0 AS p ON p.family_hash = a.family_hash AND p.business_line = a.business_line AND p.season = a.season - 1
+    LEFT JOIN fam0 AS nx ON nx.family_hash = a.family_hash AND nx.business_line = a.business_line AND nx.season = a.season + 1
+  )`,
+        ],
+        from: "families",
+        fields: {
+          season: "CAST(season AS STRING)",
+          business_line: "business_line",
+          household: "SUBSTR(family_hash, 1, 10)",
+          campers_in_family: FAMILY_BUCKET("campers"),
+          siblings: "IF(campers >= 2, 'Siblings at camp', 'One camper')",
+          weeks_together: "CAST(weeks_together AS STRING)",
+          last_season_campers: "IF(first_season_of_data, NULL, CAST(COALESCE(last_season_campers, 0) AS STRING))",
+          change_vs_last:
+            "CASE WHEN first_season_of_data THEN NULL WHEN last_season_campers IS NULL THEN 'New family' WHEN campers > last_season_campers THEN 'More campers' WHEN campers = last_season_campers THEN 'Same number' ELSE 'Fewer campers' END",
+          returned: "CASE returned WHEN TRUE THEN 'Returned' WHEN FALSE THEN 'Didn''t return' ELSE 'Not known yet' END",
+          state: "home_state",
+          zip: "home_zip",
+        },
+        multi: {
+          parent_occupation: "parent_occupations",
+          session_group: "attended_session_groups",
+          week: "attended_weeks",
+        },
+        measures: {
+          families: "COUNT(DISTINCT CONCAT(CAST(season AS STRING), business_line, family_hash))",
+          campers: "SUM(campers)",
+          avg_campers: "AVG(campers)",
+          sibling_families: "COUNT(DISTINCT IF(campers >= 2, CONCAT(CAST(season AS STRING), business_line, family_hash), NULL))",
+          pct_sibling_families: "AVG(IF(campers >= 2, 1, 0))",
+          campers_in_sibling_families: "SUM(IF(campers >= 2, campers, 0))",
+          weeks_together: "SUM(weeks_together)",
+          pct_together: "AVG(IF(campers >= 2, IF(weeks_together > 0, 1, 0), NULL))",
+          return_rate: "AVG(IF(returned IS NULL, NULL, IF(returned, 1, 0)))",
+        },
+      };
     case "campminder_finance":
       return {
         ctes: [
@@ -397,7 +490,7 @@ function campersComputed({ exploded, filterParam }: ReportContext): string[] {
   ];
 }
 
-const CAMPMINDER: ReportDataset[] = ["enrollments", "camper_seasons", "program_families"];
+const CAMPMINDER: ReportDataset[] = ["enrollments", "camper_seasons", "program_families", "families"];
 
 /** Revenue counts by program/service date unless the report says otherwise. */
 export function effectiveFilters(spec: ReportSpec): Record<string, string[]> {

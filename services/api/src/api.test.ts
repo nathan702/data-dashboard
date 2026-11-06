@@ -523,6 +523,24 @@ describe("campminder endpoints", () => {
     expect(girls.charges + boys.charges).toBeCloseTo(all.charges, 2);
   });
 
+  it("counts families and siblings on the Camp pages, with a Campers in family breakdown and filter", async () => {
+    const app = api();
+    const s = (await request(app).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200)).body;
+    expect(s.current.families).toBeGreaterThan(0);
+    expect(s.current.siblingFamilies).toBeGreaterThan(0);
+    expect(s.current.siblingFamilies).toBeLessThan(s.current.families);
+    expect(s.current.siblingWeeksTogether).toBeGreaterThan(0);
+    expect(s.comparison.families).toBeGreaterThan(0);
+    const b = (await request(app).get("/api/campminder/breakdown?season=2026&businessLine=camp&dimension=family").expect(200)).body;
+    const keys = b.rows.map((r: { key: string }) => r.key);
+    expect(keys).toEqual(expect.arrayContaining(["1 camper", "2 campers"]));
+    const two = b.rows.find((r: { key: string }) => r.key === "2 campers");
+    const f = encodeURIComponent(JSON.stringify({ family: ["2 campers"] }));
+    const only = (await request(app).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${f}`).expect(200)).body;
+    expect(only.current.campers).toBe(two.campers);
+    expect(only.current.siblingFamilies).toBe(only.current.families);
+  });
+
   it("maps homes with the same filters", async () => {
     const all = await request(api()).get("/api/campminder/map?season=2026&businessLine=camp").expect(200);
     const f = encodeURIComponent(JSON.stringify({ week: ["9"], program: ["Rock Climbing with THURSDAY CAMPOUT"] }));
@@ -760,6 +778,33 @@ describe("report builder", () => {
     expect(sql).toContain("PARTITION BY t.family_hash, t.season, t.business_line");
     expect(params).toHaveProperty("pf");
     expect(params).not.toHaveProperty("schools");
+  });
+
+  it("reports on families: siblings, weeks together, change from last season", async () => {
+    const app = api();
+    const total = async (spec: object) =>
+      (await run(app, spec).expect(200)).body.cells.find((c: { kind: string }) => c.kind === "total").value as number;
+    const camp26 = { season: ["2026"], business_line: ["camp"] };
+    const summary = (await request(app).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200)).body.current;
+    expect(await total({ dataset: "families", measure: "families", filters: camp26 })).toBe(summary.families);
+    expect(await total({ dataset: "families", measure: "sibling_families", filters: camp26 })).toBe(summary.siblingFamilies);
+    expect(await total({ dataset: "families", measure: "campers", filters: camp26 })).toBe(summary.campers);
+    expect(await total({ dataset: "families", measure: "weeks_together", filters: camp26 })).toBe(summary.siblingWeeksTogether);
+    const change = (await run(app, { dataset: "families", rows: ["change_vs_last"], column: "season", measure: "families", filters: { business_line: ["camp"] } }).expect(200)).body;
+    const cells = change.cells.filter((c: { kind: string }) => c.kind === "cell");
+    expect(cells.filter((c: { column: string }) => c.column === "2026").map((c: { rows: string[] }) => c.rows[0])).toEqual(
+      expect.arrayContaining(["New family", "Same number"]),
+    );
+    // The first season with data has nothing to compare with.
+    expect(cells.filter((c: { column: string }) => c.column === "2025").map((c: { rows: string[] }) => c.rows[0])).toEqual(["(none)"]);
+    // Campers in family on the camper data sets agrees with the families' own count.
+    const campersWithSiblings = await total({ dataset: "camper_seasons", measure: "campers", filters: { ...camp26, campers_in_family: ["2 campers", "3 campers", "4+ campers"] } });
+    expect(campersWithSiblings).toBe(await total({ dataset: "families", measure: "campers_in_sibling_families", filters: camp26 }));
+
+    const { compileReport } = await import("./warehouse/reportSql.js");
+    const { sql } = compileReport(reportSpecSchema.parse({ dataset: "families", rows: ["week"], measure: "pct_together" }), "marts", { overrides: {} });
+    expect(sql).toContain("HAVING COUNT(DISTINCT camper_hash) >= 2");
+    expect(sql).toContain("AS mv_week");
   });
 
   it("lists filter values with counts", async () => {
