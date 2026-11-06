@@ -10,23 +10,30 @@ const camper = (id: string, status: string, year = 2026) => [id, "Male", "5/5/20
 class FakeSheet implements SheetReader {
   /** Tabs of the history sheet (sheet id "history"). */
   history: Record<string, string[][]> = {};
+  /** The daily sheet's Financial tab, when it has one. */
+  financial: string[][] | null = null;
   reads: string[] = [];
   constructor(public values: string[][]) {}
   async read(sheetId: string, tab: string) {
     this.reads.push(`${sheetId}/${tab}`);
-    return sheetId === "history" ? this.history[tab]! : this.values;
+    if (sheetId === "history") return this.history[tab]!;
+    return tab === "Financial" ? this.financial! : this.values;
   }
-  async tabs() {
-    return Object.keys(this.history);
+  async tabs(sheetId: string) {
+    return sheetId === "history" ? Object.keys(this.history) : ["Sheet1", ...(this.financial ? ["Financial"] : [])];
   }
 }
 
 /** Mirrors what's been written, like the BigQuery table would. */
 class StoredRows implements CurrentRows {
-  constructor(private readonly writer: MemoryRawWriter) {}
+  constructor(
+    private readonly writer: MemoryRawWriter,
+    private readonly entity = "sessions",
+  ) {}
   async load(season: number) {
     const latest = new Map<string, { hash: string; deleted: boolean }>();
     for (const { record } of this.writer.rows) {
+      if (record.entity !== this.entity) continue;
       const p = record.payload as { season: number; rowHash?: string };
       if (p.season !== season) continue;
       latest.set(record.recordId, { hash: p.rowHash ?? "", deleted: !!record.isDeleted });
@@ -57,6 +64,8 @@ function setup(values: string[][], env: Record<string, string> = {}, historyShee
     sheet,
     current: new StoredRows(writer),
     tab: "Sheet1",
+    financialTab: "Financial",
+    currentTransactions: new StoredRows(writer, "transactions"),
     historySheetId,
     geo,
     schools,
@@ -89,6 +98,33 @@ describe("campminder connector", () => {
       { deleted: true, status: undefined },
     ]));
     expect(added).toHaveLength(3);
+  });
+
+  it("imports the Financial tab as transactions, only what changed, without names or card details", async () => {
+    const FIN = ["ID", "Season", "Post Date", "Transaction Type", "Financial Category", "Amount", "Session Name", "Person ID", "Last Name", "Household ID", "Credit Card: Last 4"];
+    const t = (id: string, amount = "$100.00") => [id, "2026", "1/5/2026", "Debit", "Summer Camp", amount, "Farm Week 1", "900", "Testperson", "555", "4242"];
+    const { c, deps, writer, sheet } = setup([HEADER, ...many(3)]);
+    // No Financial tab yet: enrollments import as before.
+    await runSync(c, deps, "incremental");
+    expect(writer.rows.filter((r) => r.record.entity === "transactions")).toHaveLength(0);
+
+    sheet.financial = [FIN, t("1"), t("2"), t("3")];
+    await runSync(c, deps, "incremental");
+    const txs = () => writer.rows.filter((r) => r.record.entity === "transactions");
+    expect(txs()).toHaveLength(3);
+    expect(JSON.stringify(txs())).not.toMatch(/Testperson|4242|"900"|"555"/);
+
+    // Unchanged: nothing new. One changed, one removed: two rows.
+    await runSync(c, deps, "incremental");
+    expect(txs()).toHaveLength(3);
+    sheet.financial = [FIN, t("1"), t("2", "$150.00")];
+    await runSync(c, deps, "incremental");
+    expect(txs().slice(3).map((r) => [r.record.recordId, !!r.record.isDeleted])).toEqual(
+      expect.arrayContaining([["2", false], ["3", true]]),
+    );
+    expect(txs()).toHaveLength(5);
+    // Enrollments weren't touched.
+    expect(writer.rows.filter((r) => r.record.entity === "sessions")).toHaveLength(3);
   });
 
   it("refuses a report that looks half-written", async () => {

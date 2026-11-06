@@ -6,6 +6,7 @@ import { NotConfiguredError, requireSecret, type SecretStore } from "../core/sec
 import type { Connector, RawRecord, SyncContext } from "../core/types.js";
 import { Firestore } from "@google-cloud/firestore";
 import { NOT_A_SCHOOL } from "@dash/shared";
+import { FINANCE_PARSER_VERSION, isFinancialTab, toTransactions, transactionSummary } from "./campminderFinance.js";
 import { PARSER_VERSION, reportSeason, sessionRecordId, toSessions } from "./campminderParse.js";
 import { CensusGeocoder, FirestoreGeoCache, homeAddress, locateHomes, type GeoCache, type Geocoder, type HomeAddress } from "./geocode.js";
 
@@ -26,7 +27,7 @@ export interface SheetReader {
   tabs(sheetId: string): Promise<string[]>;
 }
 
-/** What's currently stored for a season: record id → row hash. */
+/** What's currently stored for a season (camper-sessions or transactions): record id → row hash. */
 export interface CurrentRows {
   load(season: number): Promise<Map<string, string>>;
 }
@@ -49,6 +50,10 @@ export interface CampminderConfig {
   /** Sheet id; else the campminder-sheet-id secret. */
   sheetId?: string;
   tab: string;
+  /** Tab of the same sheet with Campminder's financial transactions; skipped when the sheet has no such tab. */
+  financialTab?: string;
+  /** Stored transactions; without it, the financial tab isn't imported. */
+  currentTransactions?: CurrentRows;
   /** Optional sheet of past seasons, one tab per season named by its year. */
   historySheetId?: string;
   /** Places homes on the map; without it, coordinates are left empty. */
@@ -127,12 +132,18 @@ export class FirestoreSchoolExclusions implements SchoolExclusions {
 }
 
 export class BigQueryCurrentRows implements CurrentRows {
-  constructor(private readonly bq: BigQuery) {}
+  constructor(
+    private readonly bq: BigQuery,
+    private readonly table = "sessions",
+  ) {}
   async load(season: number) {
+    // The transactions table is created by the first import that writes to it.
+    const [exists] = await this.bq.dataset("raw_campminder").table(this.table).exists();
+    if (!exists) return new Map<string, string>();
     const [rows] = await this.bq.query({
       query: `
         SELECT record_id, JSON_VALUE(payload, '$.rowHash') AS row_hash
-        FROM \`raw_campminder.sessions\`
+        FROM \`raw_campminder.${this.table}\`
         WHERE JSON_VALUE(payload, '$.season') = CAST(@season AS STRING)
         QUALIFY ROW_NUMBER() OVER (PARTITION BY record_id ORDER BY source_updated_at DESC, ingested_at DESC) = 1
           AND NOT is_deleted`,
@@ -151,6 +162,8 @@ export function campminderConfigFromEnv(env: NodeJS.ProcessEnv, secrets: SecretS
     current: new BigQueryCurrentRows(new BigQuery({ projectId: project })),
     sheetId: env.CAMPMINDER_SHEET_ID?.trim() || undefined,
     tab: env.CAMPMINDER_SHEET_TAB?.trim() || "Sheet1",
+    financialTab: env.CAMPMINDER_FINANCIAL_TAB?.trim() || "Financial",
+    currentTransactions: new BigQueryCurrentRows(new BigQuery({ projectId: project }), "transactions"),
     historySheetId: env.CAMPMINDER_HISTORY_SHEET_ID?.trim() || undefined,
     geo: { cache: new FirestoreGeoCache(new Firestore({ projectId: project })), geocoder: new CensusGeocoder() },
     schools: new FirestoreSchoolExclusions(new Firestore({ projectId: project }), new BigQuery({ projectId: project })),
@@ -185,10 +198,74 @@ export class CampminderConnector implements Connector {
     });
 
     try {
-      if (this.cfg.historySheetId) await this.importHistory(ctx, key, this.cfg.historySheetId, current, exclude, excludeHash);
+      // Financials don't hold up enrollments: each is imported on its own, and either failing fails the run.
+      const problems: string[] = [];
+      for (const step of [
+        () => this.importFinancial(ctx, key, sheetId),
+        () => (this.cfg.historySheetId ? this.importHistory(ctx, key, this.cfg.historySheetId, current, exclude, excludeHash) : undefined),
+      ]) {
+        try {
+          await step();
+        } catch (err) {
+          problems.push(err instanceof Error ? err.message : String(err));
+        }
+      }
+      if (problems.length) throw new Error(problems.join("; "));
     } finally {
       await this.purgeNotSchools(ctx, notSchools, excludeHash);
     }
+  }
+
+  /**
+   * The Financial tab: one row per transaction, imported as transactions
+   * (only what changed), for each season the tab lists. Rows gone from the
+   * tab are marked deleted. Read again only when the tab changes.
+   */
+  private async importFinancial(ctx: SyncContext, key: string, sheetId: string) {
+    const tab = this.cfg.financialTab;
+    if (!tab || !this.cfg.currentTransactions) return;
+    if (!(await this.cfg.sheet.tabs(sheetId)).includes(tab)) {
+      ctx.log("campminder financial tab not found; skipped", { tab });
+      return;
+    }
+    const values = await this.cfg.sheet.read(sheetId, tab);
+    const contentHash = createHash("sha256").update(`${FINANCE_PARSER_VERSION}|`).update(JSON.stringify(values)).digest("hex");
+    if (ctx.state.cursors.financial_hash === contentHash) {
+      ctx.log("campminder financial tab unchanged");
+      return;
+    }
+    const [header, ...body] = values;
+    if (!header || !isFinancialTab(header)) throw new Error(`The "${tab}" tab is missing the ID, Season, Transaction Type or Amount column`);
+    const rows = body
+      .filter((r) => r.some((c) => c && c.trim()))
+      .map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ""])));
+    const txs = toTransactions(rows, key);
+    const seasons = [...new Set(txs.map((t) => t.season))].sort();
+
+    const now = new Date();
+    const records: RawRecord[] = [];
+    for (const season of seasons) {
+      const inSeason = txs.filter((t) => t.season === season);
+      const previous = await this.cfg.currentTransactions.load(season);
+      if (previous.size > 0 && inSeason.length < previous.size * MIN_FRACTION_OF_PREVIOUS) {
+        throw new Error(
+          `The "${tab}" tab has ${inSeason.length} transactions for ${season} but ${previous.size} are stored; ` +
+            "it looks incomplete (maybe mid-update), so nothing was changed",
+        );
+      }
+      const seen = new Set<string>();
+      for (const t of inSeason) {
+        seen.add(t.transactionId);
+        if (previous.get(t.transactionId) !== t.rowHash) records.push({ entity: "transactions", recordId: t.transactionId, sourceUpdatedAt: now, payload: t });
+      }
+      for (const id of previous.keys()) {
+        if (!seen.has(id)) records.push({ entity: "transactions", recordId: id, sourceUpdatedAt: now, isDeleted: true, payload: { season } });
+      }
+    }
+    await ctx.emit(records);
+    await ctx.saveCursor("financial_hash", contentHash);
+    // Totals by type (no family detail), to check how Campminder signs each type.
+    ctx.log("campminder financial tab imported", { seasons, transactions: txs.length, written: records.length, byType: transactionSummary(txs) });
   }
 
   /**
