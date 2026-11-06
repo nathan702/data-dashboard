@@ -49,7 +49,7 @@ export interface Warehouse {
   /** Report builder: run one report (program families decide the family fields). */
   runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap): Promise<ReportResult>;
   /** A season's Campminder tuition, payments and balances (marts.fct_campminder_transactions). */
-  campminderFinance(q: CampminderFinanceQuery): Promise<CampminderFinanceSummary>;
+  campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap): Promise<CampminderFinanceSummary>;
   /** Every Campminder program with its enrolled sessions, for Settings → Program families. */
   programList(): Promise<Array<{ program: string; enrollments: number }>>;
   /** Every school spelling with its enrolled campers (all seasons), for Settings → Schools and report grouping. */

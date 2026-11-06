@@ -302,6 +302,8 @@ export function demoEnrollmentMap(q: EnrollmentMapQuery, schools?: SchoolMap): E
 /** One line of the demo Financial report (signed like Campminder's: charges and refunds +, credits and payments −). */
 export interface DemoTransaction {
   transactionId: string;
+  /** The camper-session it belongs to (demo rows), as the person and session tie it to an enrollment. */
+  row: Row;
   season: number;
   businessLine: BusinessLineOrUnassigned;
   family: string;
@@ -329,6 +331,7 @@ export function demoTransactions(): DemoTransaction[] {
     const id = `D${i}`;
     const serviceStart = r.weekStart !== null ? addDays(`${r.season}-06-22`, 7 * (r.weekStart - 1)) : null;
     const base = {
+      row: r,
       season: r.season,
       businessLine: r.businessLine,
       family: r.camper,
@@ -353,8 +356,11 @@ export function demoTransactions(): DemoTransaction[] {
   return out;
 }
 
-export function demoCampminderFinance(q: CampminderFinanceQuery): CampminderFinanceSummary {
-  const txs = demoTransactions().filter((t) => t.season === q.season && (!q.businessLine || t.businessLine === q.businessLine));
+export function demoCampminderFinance(q: CampminderFinanceQuery, schools: SchoolMap = new Map()): CampminderFinanceSummary {
+  const filtered = Object.values(q.filters ?? {}).some((v) => v && v.length > 0);
+  const txs = demoTransactions().filter(
+    (t) => t.season === q.season && (!q.businessLine || t.businessLine === q.businessLine) && (!filtered || matches(t.row, q.filters, schools)),
+  );
   const sum = (type: DemoTransaction["type"]) => txs.filter((t) => t.type === type).reduce((a, t) => a + t.amount, 0);
   const balances = new Map<string, number>();
   for (const t of txs) balances.set(t.family, (balances.get(t.family) ?? 0) + t.amount);
@@ -377,5 +383,6 @@ export function demoCampminderFinance(q: CampminderFinanceQuery): CampminderFina
     householdsOwing: owed.length,
     creditHeld: r2(-[...balances.values()].filter((b) => b < -0.005).reduce((a, b) => a + b, 0)),
     households: balances.size,
+    filtered,
   };
 }

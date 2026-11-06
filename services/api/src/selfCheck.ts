@@ -175,7 +175,11 @@ export async function runSelfCheck(
       { overrides: {} },
     );
     const e = (ref as ReferenceTotals | null)?.enrollments;
-    if (e) await warehouse.campminderFinance({ season: e.season });
+    if (e) {
+      await warehouse.campminderFinance({ season: e.season, filters: {} });
+      // With a drill-down filter, lines are matched to enrollments.
+      await warehouse.campminderFinance({ season: e.season, filters: { week: ["1"], school: ["(self-check)"] } }, new Map());
+    }
     return null;
   });
 

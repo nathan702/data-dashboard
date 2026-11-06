@@ -212,7 +212,7 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
             ))}
           </div>
 
-          <TuitionCard season={season} businessLine={businessLine} />
+          <TuitionCard season={season} businessLine={businessLine} filters={filters} />
 
           {s.byWeek.length > 0 && (
             <div className="card">

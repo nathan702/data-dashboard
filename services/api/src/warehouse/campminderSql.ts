@@ -35,6 +35,9 @@ const DRILL = ENROLLMENT_DIMENSIONS.map((d) =>
       : `(COALESCE(ARRAY_LENGTH(@f_${d}), 0) = 0 OR COALESCE(${KEY_SQL[d]}, '${UNKNOWN_KEY}') IN UNNEST(@f_${d}))`,
 ).join("\n      AND ");
 
+/** The drill-down filter clauses, over a table with the enrollment columns (see drillParams). */
+export const drillWhere = () => DRILL;
+
 /**
  * The enrollments table with each camper's school grouped as on Settings →
  * Schools (@schools: spelling → school, see schoolParams); a spelling newer

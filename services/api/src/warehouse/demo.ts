@@ -192,8 +192,8 @@ export class DemoWarehouse implements Warehouse {
     return demoRunReport(spec, families, schools);
   }
 
-  async campminderFinance(q: CampminderFinanceQuery) {
-    return demoCampminderFinance(q);
+  async campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap) {
+    return demoCampminderFinance(q, schools);
   }
 
   async schoolList() {
