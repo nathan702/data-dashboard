@@ -201,7 +201,8 @@ export function mapSql(t: string) {
  */
 export function registrationPaceSql(t: string, enrollments: string) {
   return `
-    WITH opens AS (SELECT * FROM UNNEST(@opens)),
+    -- Dates travel as text (YYYY-MM-DD): DATE fields inside an array parameter arrive empty.
+    WITH opens AS (SELECT season, wave, SAFE.PARSE_DATE('%Y-%m-%d', open_date) AS open_date FROM UNNEST(@opens) WHERE SAFE.PARSE_DATE('%Y-%m-%d', open_date) IS NOT NULL),
     locs AS (SELECT * FROM UNNEST(@locations)),
     prev AS (
       SELECT DISTINCT e.season + 1 AS season, COALESCE(e.family_hash, e.camper_hash) AS fam, l.location AS wave
@@ -223,7 +224,8 @@ export function registrationPaceSql(t: string, enrollments: string) {
     SELECT
       s.season,
       COALESCE(fw.wave, 'new') AS wave,
-      GREATEST(DATE_DIFF(s.application_date, o.open_date, DAY), 0) AS day,
+      -- Applications before opening all count on day -1 ("before opening").
+      GREATEST(DATE_DIFF(s.application_date, o.open_date, DAY), -1) AS day,
       COUNT(*) AS enrollments,
       COUNT(DISTINCT s.camper_hash) AS campers
     FROM scoped AS s

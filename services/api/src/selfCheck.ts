@@ -173,7 +173,12 @@ export async function runSelfCheck(
   await check("registration pace runs", async () => {
     const { registration } = DEFAULT_SEASON_SETTINGS;
     await warehouse.registrationPace({ businessLine: "camp", filters: { week: ["1"] } }, registration, new Map());
-    return null;
+    // Sign-ups spread over many days; all on one day means the opening dates didn't reach the query.
+    const { rows } = await warehouse.registrationPace({ businessLine: "camp", filters: {} }, registration, new Map());
+    const seasons = new Map<number, Set<number>>();
+    for (const r of rows) seasons.set(r.season, (seasons.get(r.season) ?? new Set()).add(r.day));
+    const flat = [...seasons].filter(([, days]) => days.size === 1).map(([s]) => s);
+    return rows.length && flat.length === seasons.size ? `every season's sign-ups fall on one day (${flat.join(", ")})` : null;
   });
 
   await check("family reporting runs", async () => {
