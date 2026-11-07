@@ -1,5 +1,9 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import {
+  type RegistrationPaceQuery,
+  type RegistrationPaceResponse,
+  type RegistrationPaceRow,
+  type RegistrationSettings,
   type CampminderFinanceQuery,
   type CampminderFinanceSummary,
   comparisonRange,
@@ -43,6 +47,7 @@ import {
   kpiSql as enrollmentKpiSql,
   mapSql,
   paceSql,
+  registrationPaceSql,
   seasonsSql,
 } from "./campminderSql.js";
 import { compileReport, type SchoolMap } from "./reportSql.js";
@@ -302,6 +307,7 @@ export class BigQueryWarehouse implements Warehouse {
     businessLine: BusinessLineOrUnassigned | undefined,
     filters?: EnrollmentFilters,
     schools?: SchoolMap,
+    types: Record<string, unknown> = {},
   ) {
     const drill = drillParams(filters, schools);
     // Dates travel as strings; say they're DATEs so date functions accept them.
@@ -310,7 +316,7 @@ export class BigQueryWarehouse implements Warehouse {
       .query({
         query,
         params: { ...params, ...drill.params, business_line: businessLine ?? null },
-        types: { ...drill.types, ...dates, business_line: "STRING" },
+        types: { ...drill.types, ...dates, ...types, business_line: "STRING" },
         location: this.location,
       })
       .then(([rows]) => rows as T[]);
@@ -386,6 +392,30 @@ export class BigQueryWarehouse implements Warehouse {
       creditHeld: n("credit_held"),
       households: Number(r.households ?? 0),
       filtered,
+    };
+  }
+
+  async registrationPace(q: RegistrationPaceQuery, registration: RegistrationSettings, schools?: SchoolMap): Promise<RegistrationPaceResponse> {
+    const opens = Object.entries(registration.opens).flatMap(([season, waves]) =>
+      Object.entries(waves).map(([wave, date]) => ({ season: Number(season), wave, open_date: date })),
+    );
+    const locations = Object.entries(registration.locations).map(([session_group, location]) => ({ session_group, location }));
+    const rows = await this.enrollmentQuery<{ season: number; wave: string; day: number; enrollments: number; campers: number }>(
+      registrationPaceSql(this.enrollmentsView, this.enrollments),
+      { opens, locations },
+      q.businessLine,
+      q.filters,
+      schools,
+      { opens: [{ season: "INT64", wave: "STRING", open_date: "DATE" }], locations: [{ session_group: "STRING", location: "STRING" }] },
+    );
+    return {
+      rows: rows.map((r) => ({
+        season: Number(r.season),
+        wave: r.wave as RegistrationPaceRow["wave"],
+        day: Number(r.day),
+        enrollments: Number(r.enrollments),
+        campers: Number(r.campers),
+      })),
     };
   }
 

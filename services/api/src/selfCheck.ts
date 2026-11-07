@@ -2,6 +2,7 @@ import {
   addDays,
   CALENDAR_YEAR,
   campminderCalendar,
+  DEFAULT_SEASON_SETTINGS,
   easternDate,
   RETAIL_SOURCES,
   reportSpecSchema,
@@ -166,6 +167,12 @@ export async function runSelfCheck(
       );
     }
     await warehouse.runReport(reportSpecSchema.parse({ dataset: "enrollments", rows: ["signup_month", "weeks_before_session"], measure: "enrollments" }), { overrides: {} });
+    return null;
+  });
+
+  await check("registration pace runs", async () => {
+    const { registration } = DEFAULT_SEASON_SETTINGS;
+    await warehouse.registrationPace({ businessLine: "camp", filters: { week: ["1"] } }, registration, new Map());
     return null;
   });
 

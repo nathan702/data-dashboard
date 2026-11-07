@@ -24,12 +24,49 @@ export const SEASON_RULE_LABEL: Record<SeasonRule, string> = {
   end_dates: "Ends on a date set each year",
 };
 
+/**
+ * Camp registration opens in waves: returning Virginia families, returning
+ * Maryland families, then new families. A family is returning (in the wave of
+ * the camp locations it attended last season, the earliest-opening one if
+ * several) when one of its campers was enrolled at a camp location last
+ * season; every other family is new.
+ */
+export const REGISTRATION_WAVES = ["va", "md", "new"] as const;
+export type RegistrationWave = (typeof REGISTRATION_WAVES)[number];
+export const REGISTRATION_WAVE_LABEL: Record<RegistrationWave, string> = {
+  va: "Returning VA families",
+  md: "Returning MD families",
+  new: "New families",
+};
+export type CampLocation = Exclude<RegistrationWave, "new">;
+
+export interface RegistrationSettings {
+  /** Season year → the day each wave opened. */
+  opens: Record<string, Partial<Record<RegistrationWave, IsoDate>>>;
+  /** Camp session group → the state its location is in (other groups don't decide a wave). */
+  locations: Record<string, CampLocation>;
+}
+
+export const DEFAULT_REGISTRATION: RegistrationSettings = {
+  opens: {
+    // 2022 wasn't recorded; the 2024 pattern on 2022's calendar.
+    "2022": { va: "2022-01-11", md: "2022-01-13", new: "2022-01-18" },
+    "2023": { va: "2023-01-05", md: "2023-01-05", new: "2023-01-10" },
+    "2024": { va: "2024-01-09", md: "2024-01-11", new: "2024-01-16" },
+    "2025": { va: "2025-01-14", md: "2025-01-16", new: "2025-01-21" },
+    "2026": { va: "2026-01-06", md: "2026-01-08", new: "2026-01-12" },
+  },
+  locations: { Farm: "md", "Riley's": "md", Madeira: "va", Fraser: "va" },
+};
+
 export interface SeasonSettings {
   rules: Record<BusinessLine, SeasonRule>;
   /** For "end_dates" lines: season year → its last day. */
   endDates: Partial<Record<BusinessLine, Record<string, IsoDate>>>;
   /** Campminder seasons that don't start on Labor Day: season year → its first day. */
   campminderStarts: Record<string, IsoDate>;
+  /** Camp registration waves (sign-up pace since registration opened). */
+  registration: RegistrationSettings;
 }
 
 export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
@@ -46,6 +83,7 @@ export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
   },
   endDates: { haunted_forest: { "2026": "2026-11-08" } },
   campminderStarts: {},
+  registration: DEFAULT_REGISTRATION,
 };
 
 const yearKey = z.string().regex(/^\d{4}$/);
@@ -55,6 +93,10 @@ export const seasonSettingsSchema = z.object({
   rules: z.record(z.enum(BUSINESS_LINES), z.enum(SEASON_RULES)),
   endDates: z.partialRecord(z.enum(BUSINESS_LINES), z.record(yearKey, isoDate)),
   campminderStarts: z.record(yearKey, isoDate),
+  registration: z.object({
+    opens: z.record(yearKey, z.partialRecord(z.enum(REGISTRATION_WAVES), isoDate)),
+    locations: z.record(z.string().min(1).max(200), z.enum(["va", "md"])),
+  }),
 });
 
 /** Fill anything missing (e.g. a new business line) from the defaults. */
@@ -64,6 +106,7 @@ export function cleanSeasonSettings(raw: unknown): SeasonSettings {
     rules: { ...DEFAULT_SEASON_SETTINGS.rules, ...(r.rules ?? {}) },
     endDates: r.endDates ?? DEFAULT_SEASON_SETTINGS.endDates,
     campminderStarts: r.campminderStarts ?? {},
+    registration: r.registration ?? DEFAULT_REGISTRATION,
   };
   const parsed = seasonSettingsSchema.safeParse(merged);
   return parsed.success ? (parsed.data as SeasonSettings) : DEFAULT_SEASON_SETTINGS;

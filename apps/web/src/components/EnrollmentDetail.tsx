@@ -23,6 +23,7 @@ import { formatDate, formatInt, formatPercent, percentChange } from "../lib/form
 import { useDrill } from "../lib/drill";
 import { DataTable, type Column } from "./DataTable";
 import { FilterChips } from "./FilterChips";
+import { RegistrationPaceCard } from "./RegistrationPace";
 import { TuitionCard } from "./TuitionCard";
 import { TopBarChart } from "./TopBarChart";
 
@@ -258,6 +259,9 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
             <p className="card-subtitle">Total enrollments by application date, season {s.season} against season {s.season - 1}.</p>
             <PaceChart summary={s} />
           </div>
+
+          {/* Registration waves are camp's; other lines register on their own schedules. */}
+          {businessLine === "camp" && <RegistrationPaceCard businessLine={businessLine} filters={filters} />}
         </>
       )}
 

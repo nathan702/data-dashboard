@@ -371,6 +371,19 @@ describe("revenue SQL", () => {
     expect(queries[1]).not.toContain("kept AS");
   });
 
+  it("passes registration waves and camp locations as typed parameters", async () => {
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const { DEFAULT_REGISTRATION } = await import("@dash/shared");
+    const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
+    const fake = { query: async (o: (typeof calls)[number]) => (calls.push(o), [[]]) };
+    await new BigQueryWarehouse(fake as never, "marts").registrationPace({ businessLine: "camp", filters: {} }, DEFAULT_REGISTRATION);
+    const c = calls[0]!;
+    expect(c.query).toContain("ARRAY_AGG(p.wave ORDER BY o.open_date, p.wave LIMIT 1)");
+    expect(c.params.opens).toContainEqual({ season: 2026, wave: "va", open_date: "2026-01-06" });
+    expect(c.params.locations).toContainEqual({ session_group: "Madeira", location: "va" });
+    expect(c.types.opens).toEqual([{ season: "INT64", wave: "STRING", open_date: "DATE" }]);
+  });
+
   it("buckets seasons from the line's season starts, passed as DATEs", async () => {
     const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
     const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
@@ -554,6 +567,26 @@ describe("campminder endpoints", () => {
     const only = (await request(app).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${f}`).expect(200)).body;
     expect(only.current.campers).toBe(two.campers);
     expect(only.current.siblingFamilies).toBe(only.current.families);
+  });
+
+  it("counts sign-ups by days since each family's registration wave opened", async () => {
+    const app = api();
+    const pace = (await request(app).get("/api/campminder/registration-pace?businessLine=camp").expect(200)).body.rows as Array<{
+      season: number; wave: string; day: number; enrollments: number; campers: number;
+    }>;
+    const s26 = pace.filter((r) => r.season === 2026);
+    expect(new Set(s26.map((r) => r.wave))).toEqual(new Set(["va", "md", "new"]));
+    expect(s26.every((r) => r.day >= 0)).toBe(true);
+    // Every enrolled camper-session counts in exactly one wave.
+    const summary = (await request(app).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200)).body;
+    expect(s26.reduce((t, r) => t + r.enrollments, 0)).toBe(summary.current.enrollments);
+    // Without camp locations no family is returning: everyone is in the new-families wave.
+    const settings = (await request(app).get("/api/settings/seasons").expect(200)).body;
+    expect(settings.registration.opens["2026"]).toEqual({ va: "2026-01-06", md: "2026-01-08", new: "2026-01-12" });
+    await request(app).put("/api/settings/seasons").send({ ...settings, registration: { ...settings.registration, locations: {} } }).expect(200);
+    const allNew = (await request(app).get("/api/campminder/registration-pace?businessLine=camp").expect(200)).body.rows;
+    expect(new Set(allNew.map((r: { wave: string }) => r.wave))).toEqual(new Set(["new"]));
+    await request(app).put("/api/settings/seasons").send({ ...settings, registration: { ...settings.registration, locations: { Farm: "pa" } } }).expect(400);
   });
 
   it("maps homes with the same filters", async () => {

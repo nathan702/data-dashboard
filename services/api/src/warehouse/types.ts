@@ -2,6 +2,9 @@ import type {
   AssignmentRow,
   CampminderFinanceQuery,
   CampminderFinanceSummary,
+  RegistrationPaceQuery,
+  RegistrationPaceResponse,
+  RegistrationSettings,
   AssignmentUpdate,
   BusinessLineOrUnassigned,
   EnrollmentBreakdownQuery,
@@ -50,6 +53,8 @@ export interface Warehouse {
   runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap): Promise<ReportResult>;
   /** A season's Campminder tuition, payments and balances (marts.fct_campminder_transactions). */
   campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap): Promise<CampminderFinanceSummary>;
+  /** Sign-ups by days since each family's registration wave opened (Settings → Seasons → Registration). */
+  registrationPace(q: RegistrationPaceQuery, registration: RegistrationSettings, schools?: SchoolMap): Promise<RegistrationPaceResponse>;
   /** Every Campminder program with its enrolled sessions, for Settings → Program families. */
   programList(): Promise<Array<{ program: string; enrollments: number }>>;
   /** Every school spelling with its enrolled campers (all seasons), for Settings → Schools and report grouping. */

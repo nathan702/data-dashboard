@@ -143,9 +143,13 @@ unmatched is "Unassigned" and flagged.
    and a Campers in family breakdown and filter. Reports: Campers in family on
    the camper data sets, and a Families data set (campers per family, weeks
    together, compared with last season, came back).
-7. **Registration open dates** ← *next*: returning MD families, returning VA families and
-   new families, set per year; pace charts align by days since opening.
-8. **Decision-making features**: forecasts and behind-pace alerts, capacity and
+7. **Registration open dates** ✅ Camp registration opens in waves (returning
+   VA families, returning MD families, new families), set per season on
+   Settings → Seasons, with each camp session group's state. A family is
+   returning when a camper was at a camp location last season. The Camp page's
+   "Sign-ups since registration opened" chart lines seasons up by days since
+   each family's wave opened (all waves or one; enrollments or campers).
+8. **Decision-making features** ← *next*: forecasts and behind-pace alerts, capacity and
    waitlists, returning families not yet re-enrolled, campers per age group per
    week (staffing), where new families come from, weekly email/Slack digest,
    revenue per camper.
