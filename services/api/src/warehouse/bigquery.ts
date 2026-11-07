@@ -406,10 +406,11 @@ export class BigQueryWarehouse implements Warehouse {
       q.businessLine,
       q.filters,
       schools,
-      { opens: [{ season: "INT64", wave: "STRING", open_date: "DATE" }], locations: [{ session_group: "STRING", location: "STRING" }] },
+      { opens: [{ season: "INT64", wave: "STRING", open_date: "STRING" }], locations: [{ session_group: "STRING", location: "STRING" }] },
     );
     return {
-      rows: rows.map((r) => ({
+      // A row without a day would otherwise read as day 0 (Number(null)) and flatten the chart.
+      rows: rows.filter((r) => r.day !== null && r.day !== undefined).map((r) => ({
         season: Number(r.season),
         wave: r.wave as RegistrationPaceRow["wave"],
         day: Number(r.day),

@@ -381,7 +381,9 @@ describe("revenue SQL", () => {
     expect(c.query).toContain("ARRAY_AGG(p.wave ORDER BY o.open_date, p.wave LIMIT 1)");
     expect(c.params.opens).toContainEqual({ season: 2026, wave: "va", open_date: "2026-01-06" });
     expect(c.params.locations).toContainEqual({ session_group: "Madeira", location: "va" });
-    expect(c.types.opens).toEqual([{ season: "INT64", wave: "STRING", open_date: "DATE" }]);
+    // Dates as text, parsed in the query: DATE fields inside an array parameter arrive empty.
+    expect(c.types.opens).toEqual([{ season: "INT64", wave: "STRING", open_date: "STRING" }]);
+    expect(c.query).toContain("SAFE.PARSE_DATE('%Y-%m-%d', open_date)");
   });
 
   it("buckets seasons from the line's season starts, passed as DATEs", async () => {

@@ -201,7 +201,8 @@ export function mapSql(t: string) {
  */
 export function registrationPaceSql(t: string, enrollments: string) {
   return `
-    WITH opens AS (SELECT * FROM UNNEST(@opens)),
+    -- Dates travel as text (YYYY-MM-DD): DATE fields inside an array parameter arrive empty.
+    WITH opens AS (SELECT season, wave, SAFE.PARSE_DATE('%Y-%m-%d', open_date) AS open_date FROM UNNEST(@opens) WHERE SAFE.PARSE_DATE('%Y-%m-%d', open_date) IS NOT NULL),
     locs AS (SELECT * FROM UNNEST(@locations)),
     prev AS (
       SELECT DISTINCT e.season + 1 AS season, COALESCE(e.family_hash, e.camper_hash) AS fam, l.location AS wave
