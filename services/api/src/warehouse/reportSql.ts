@@ -555,9 +555,10 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   if (ds.dateColumn) {
     params.start = spec.start;
     params.end = spec.end;
-    types.start = "DATE";
-    types.end = "DATE";
-    where.push(`${ds.dateColumn} BETWEEN @start AND @end`);
+    // Dates as text, cast here: parameters typed DATE arrive empty.
+    types.start = "STRING";
+    types.end = "STRING";
+    where.push(`${ds.dateColumn} BETWEEN CAST(@start AS DATE) AND CAST(@end AS DATE)`);
   }
   if (CAMPMINDER.includes(spec.dataset) || spec.dataset === "campminder_finance") {
     params.pf = Object.entries(families.overrides).map(([program, v]) => ({ program, family: v.family, branch: v.branch }));

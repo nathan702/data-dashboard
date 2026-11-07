@@ -111,6 +111,29 @@ export async function runSelfCheck(
     return null;
   });
 
+  // Dates reach the queries as text: a date that arrives empty puts every sign-up in week 0 (a flat pace
+  // line), drops last season's comparison to nothing, or empties dated reports.
+  await check("dates reach the queries", async () => {
+    if (!ref) return "no reference";
+    const r = ref as ReferenceTotals;
+    const byWeek = await warehouse.runReport(
+      reportSpecSchema.parse({ dataset: "revenue", measure: "gross", filters: { date_basis: ["Date booked"] }, start, end }),
+      { overrides: {} },
+    );
+    if (!close(byWeek.cells.find((c) => c.kind === "total")?.value ?? 0, r.revenueGross)) return "dated report differs from table total";
+    const seasonView = await warehouse.revenueSummary({ ...base, granularity: "season", groupBy: "business_line" }, CALENDAR_YEAR);
+    if (!close(sum(seasonView.series.map((p) => p.value)), r.revenueGross)) return "revenue by season differs from table total";
+    const e = r.enrollments;
+    if (e && e.count > 0) {
+      const s = await warehouse.enrollmentSummary({ season: e.season, filters: {} }, campminderCalendar());
+      const values = new Set(s.pace.map((p) => p.current).filter((v) => v !== null));
+      if (values.size <= 1) return "sign-up pace is flat (every sign-up in one week)";
+      const prev = s.pace.at(-1)?.previous ?? 0;
+      if (prev > 0 && s.comparison && s.comparison.enrollments === 0) return "last season's comparison is empty";
+    }
+    return null;
+  });
+
   await check("report builder matches tables", async () => {
     if (!ref) return "no reference";
     const e = (ref as ReferenceTotals).enrollments;

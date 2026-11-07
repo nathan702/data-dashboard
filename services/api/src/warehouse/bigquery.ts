@@ -71,7 +71,7 @@ function bucketSql(g: Granularity, d: string): string {
       return `DATE_TRUNC(${d}, MONTH)`;
     case "season":
       // First day of the season containing d; @season_starts comes from the line's season settings.
-      return `(SELECT MAX(s) FROM UNNEST(@season_starts) AS s WHERE s <= ${d})`;
+      return `(SELECT MAX(CAST(s AS DATE)) FROM UNNEST(@season_starts) AS s WHERE CAST(s AS DATE) <= ${d})`;
   }
 }
 
@@ -114,7 +114,8 @@ export class BigQueryWarehouse implements Warehouse {
       shift_days: comparisonShiftDays({ start: q.start, end: q.end }, q.compare) ?? 0,
       season_starts: seasonStarts(seasons, cmp && cmp.start < q.start ? cmp.start : q.start, q.end),
     };
-    const types = { business_lines: ["STRING"], sources: ["STRING"], season_starts: ["DATE"] };
+    // Dates travel as text and are cast in the query: parameters typed DATE arrive empty.
+    const types = { business_lines: ["STRING"], sources: ["STRING"], season_starts: ["STRING"] };
     // The client sends an empty array parameter as NULL, and ARRAY_LENGTH(NULL)
     // is NULL, so "no filter" must be spelled with COALESCE or every row drops.
     const filters = `
@@ -311,7 +312,8 @@ export class BigQueryWarehouse implements Warehouse {
   ) {
     const drill = drillParams(filters, schools);
     // Dates travel as strings; say they're DATEs so date functions accept them.
-    const dates = Object.fromEntries(["prev_cutoff", "cur_start", "prev_start"].filter((k) => k in params).map((k) => [k, "DATE"]));
+    // Dates travel as text (YYYY-MM-DD) and the queries cast them: parameters typed DATE arrive empty.
+    const dates = Object.fromEntries(["prev_cutoff", "cur_start", "prev_start"].filter((k) => k in params).map((k) => [k, "STRING"]));
     return this.bq
       .query({
         query,
