@@ -223,7 +223,8 @@ export function registrationPaceSql(t: string, enrollments: string) {
     SELECT
       s.season,
       COALESCE(fw.wave, 'new') AS wave,
-      GREATEST(DATE_DIFF(s.application_date, o.open_date, DAY), 0) AS day,
+      -- Applications before opening all count on day -1 ("before opening").
+      GREATEST(DATE_DIFF(s.application_date, o.open_date, DAY), -1) AS day,
       COUNT(*) AS enrollments,
       COUNT(DISTINCT s.camper_hash) AS campers
     FROM scoped AS s

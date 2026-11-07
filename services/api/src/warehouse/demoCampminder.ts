@@ -456,7 +456,7 @@ export function demoRegistrationPace(q: RegistrationPaceQuery, registration: Reg
     const wave = waveOf(r.season, r.family);
     const open = opens[r.season]?.[wave];
     if (!open) continue;
-    const day = Math.max(0, Math.round((Date.parse(`${r.applicationDate}T00:00:00Z`) - Date.parse(`${open}T00:00:00Z`)) / 86_400_000));
+    const day = Math.max(-1, Math.round((Date.parse(`${r.applicationDate}T00:00:00Z`) - Date.parse(`${open}T00:00:00Z`)) / 86_400_000));
     const k = `${r.season}|${wave}|${day}`;
     const g = groups.get(k) ?? { row: { season: r.season, wave, day, enrollments: 0, campers: 0 }, campers: new Set() };
     g.row.enrollments++;

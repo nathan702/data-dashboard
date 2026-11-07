@@ -576,7 +576,8 @@ describe("campminder endpoints", () => {
     }>;
     const s26 = pace.filter((r) => r.season === 2026);
     expect(new Set(s26.map((r) => r.wave))).toEqual(new Set(["va", "md", "new"]));
-    expect(s26.every((r) => r.day >= 0)).toBe(true);
+    expect(s26.every((r) => r.day >= -1)).toBe(true);
+    expect(s26.some((r) => r.day === -1)).toBe(true);
     // Every enrolled camper-session counts in exactly one wave.
     const summary = (await request(app).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200)).body;
     expect(s26.reduce((t, r) => t + r.enrollments, 0)).toBe(summary.current.enrollments);

@@ -147,7 +147,7 @@ export type RegistrationPaceQuery = z.infer<typeof registrationPaceQuerySchema>;
 export interface RegistrationPaceRow {
   season: number;
   wave: "va" | "md" | "new";
-  /** Days from the wave's opening to the application (applications before opening count on day 0). */
+  /** Days from the wave's opening to the application: 0 = opening day, -1 = any day before opening. */
   day: number;
   enrollments: number;
   campers: number;
