@@ -139,3 +139,20 @@ export function gradeOrder(g: string): number {
   const n = parseInt(t, 10);
   return Number.isFinite(n) ? n + (t.endsWith("+") ? 0.5 : 0) : 99;
 }
+
+/** Sign-ups by days since each family's registration wave opened (see REGISTRATION_WAVES). */
+export const registrationPaceQuerySchema = z.object({ businessLine, filters: filtersParam });
+export type RegistrationPaceQuery = z.infer<typeof registrationPaceQuerySchema>;
+
+export interface RegistrationPaceRow {
+  season: number;
+  wave: "va" | "md" | "new";
+  /** Days from the wave's opening to the application (applications before opening count on day 0). */
+  day: number;
+  enrollments: number;
+  campers: number;
+}
+
+export interface RegistrationPaceResponse {
+  rows: RegistrationPaceRow[];
+}

@@ -3,6 +3,7 @@ import { encodeEnrollmentFilters, encodeFilters } from "@dash/shared";
 import type {
   AssignmentsResponse,
   CampminderFinanceSummary,
+  RegistrationPaceResponse,
   AssignmentUpdate,
   BusinessLineOrUnassigned,
   ComparisonMode,
@@ -108,6 +109,7 @@ export function useSaveSeasonSettings() {
     ["season-settings"],
     ["revenue"],
     ["enrollment-summary"],
+    ["registration-pace"],
   ]);
 }
 
@@ -201,6 +203,11 @@ const enrollmentQs = (q: EnrollmentScope, extra: Record<string, string> = {}) =>
 export function useEnrollmentSummary(q: EnrollmentScope) {
   const qs = enrollmentQs(q);
   return useApiWhen<EnrollmentSummaryResponse>(!!q.season, ["enrollment-summary", qs], `/api/campminder/summary?${qs}`);
+}
+
+export function useRegistrationPace(q: Omit<EnrollmentScope, "season">) {
+  const qs = enrollmentQs({ ...q, season: undefined });
+  return useApi<RegistrationPaceResponse>(["registration-pace", qs], `/api/campminder/registration-pace?${qs}`);
 }
 
 export function useCampminderFinance(q: EnrollmentScope) {

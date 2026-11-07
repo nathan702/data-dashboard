@@ -191,3 +191,43 @@ export function mapSql(t: string) {
       AND (COALESCE(ARRAY_LENGTH(@f_status), 0) > 0 OR status_code = 'EN')
     GROUP BY 1, 2`;
 }
+
+/**
+ * Sign-ups by days since each family's registration wave opened. A family is
+ * returning when one of its campers was enrolled at a camp location (@locations:
+ * session group → va/md) the season before, in the earliest-opening wave of those
+ * locations (@opens: season, wave, open_date); every other family is new. The
+ * drill-down filters apply to the counted camper-sessions, not to deciding the wave.
+ */
+export function registrationPaceSql(t: string, enrollments: string) {
+  return `
+    WITH opens AS (SELECT * FROM UNNEST(@opens)),
+    locs AS (SELECT * FROM UNNEST(@locations)),
+    prev AS (
+      SELECT DISTINCT e.season + 1 AS season, COALESCE(e.family_hash, e.camper_hash) AS fam, l.location AS wave
+      FROM ${enrollments} AS e
+      JOIN locs AS l ON l.session_group = e.session_group
+      WHERE e.status_code = 'EN'
+    ),
+    fam_wave AS (
+      SELECT p.season, p.fam, ARRAY_AGG(p.wave ORDER BY o.open_date, p.wave LIMIT 1)[OFFSET(0)] AS wave
+      FROM prev AS p
+      JOIN opens AS o ON o.season = p.season AND o.wave = p.wave
+      GROUP BY 1, 2
+    ),
+    scoped AS (
+      SELECT season, camper_hash, application_date, COALESCE(family_hash, camper_hash) AS fam
+      FROM ${t}
+      WHERE ${FILTER} AND ${DRILL} AND status_code = 'EN' AND application_date IS NOT NULL
+    )
+    SELECT
+      s.season,
+      COALESCE(fw.wave, 'new') AS wave,
+      GREATEST(DATE_DIFF(s.application_date, o.open_date, DAY), 0) AS day,
+      COUNT(*) AS enrollments,
+      COUNT(DISTINCT s.camper_hash) AS campers
+    FROM scoped AS s
+    LEFT JOIN fam_wave AS fw ON fw.season = s.season AND fw.fam = s.fam
+    JOIN opens AS o ON o.season = s.season AND o.wave = COALESCE(fw.wave, 'new')
+    GROUP BY 1, 2, 3`;
+}

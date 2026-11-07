@@ -24,6 +24,8 @@ import {
   CALENDAR_YEAR,
   campminderCalendar,
   campminderFinanceQuerySchema,
+  registrationPaceQuerySchema,
+  type RegistrationPaceQuery,
   type CampminderFinanceQuery,
   isBusinessLine,
   lineCalendar,
@@ -258,6 +260,10 @@ export function createApi(opts: ApiOptions) {
   enrollmentRoute("/campminder/map", (q) => enrollmentMapQuerySchema.safeParse(q), async (d: EnrollmentMapQuery) =>
     opts.warehouse.enrollmentMap(d, (await schoolMap()).map),
   );
+  enrollmentRoute("/campminder/registration-pace", (q) => registrationPaceQuerySchema.safeParse(q), async (d: RegistrationPaceQuery) => {
+    const [s, schools] = await Promise.all([opts.seasons.get(), schoolMap()]);
+    return opts.warehouse.registrationPace(d, s.registration, schools.map);
+  });
   enrollmentRoute("/campminder/finance", (q) => campminderFinanceQuerySchema.safeParse(q), async (d: CampminderFinanceQuery) =>
     opts.warehouse.campminderFinance(d, (await schoolMap()).map),
   );

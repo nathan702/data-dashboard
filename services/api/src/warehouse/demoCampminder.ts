@@ -17,6 +17,10 @@ import {
   type CampminderFinanceQuery,
   type CampminderFinanceSummary,
   type OccupationCategory,
+  type RegistrationPaceQuery,
+  type RegistrationPaceResponse,
+  type RegistrationPaceRow,
+  type RegistrationSettings,
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import { noise } from "./demo.js";
@@ -429,4 +433,35 @@ export function demoCampminderFinance(q: CampminderFinanceQuery, schools: School
     households: balances.size,
     filtered,
   };
+}
+
+/** Same rule as registrationPaceSql: each family's wave from last season's camp locations, then days since it opened. */
+export function demoRegistrationPace(q: RegistrationPaceQuery, registration: RegistrationSettings, schools: SchoolMap = new Map()): RegistrationPaceResponse {
+  const opens = registration.opens;
+  const prev = new Map<string, Set<string>>();
+  for (const r of rows()) {
+    const loc = registration.locations[r.sessionGroup];
+    if (r.statusCode !== "EN" || !loc) continue;
+    const k = `${r.season + 1}|${r.family}`;
+    prev.set(k, (prev.get(k) ?? new Set()).add(loc));
+  }
+  const waveOf = (season: number, family: string): RegistrationPaceRow["wave"] => {
+    const locs = [...(prev.get(`${season}|${family}`) ?? [])].filter((l) => opens[season]?.[l as "va" | "md"]);
+    locs.sort((a, b) => (opens[season]![a as "va"]! < opens[season]![b as "va"]! ? -1 : opens[season]![a as "va"]! > opens[season]![b as "va"]! ? 1 : a < b ? -1 : 1));
+    return (locs[0] as RegistrationPaceRow["wave"] | undefined) ?? "new";
+  };
+  const groups = new Map<string, { row: RegistrationPaceRow; campers: Set<string> }>();
+  for (const r of scoped(q.businessLine, q.filters, schools)) {
+    if (r.statusCode !== "EN" || !r.applicationDate) continue;
+    const wave = waveOf(r.season, r.family);
+    const open = opens[r.season]?.[wave];
+    if (!open) continue;
+    const day = Math.max(0, Math.round((Date.parse(`${r.applicationDate}T00:00:00Z`) - Date.parse(`${open}T00:00:00Z`)) / 86_400_000));
+    const k = `${r.season}|${wave}|${day}`;
+    const g = groups.get(k) ?? { row: { season: r.season, wave, day, enrollments: 0, campers: 0 }, campers: new Set() };
+    g.row.enrollments++;
+    g.campers.add(r.camper);
+    groups.set(k, g);
+  }
+  return { rows: [...groups.values()].map((g) => ({ ...g.row, campers: g.campers.size })) };
 }

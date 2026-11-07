@@ -7,13 +7,17 @@ import {
   isIsoDate,
   laborDay,
   lineCalendar,
+  REGISTRATION_WAVE_LABEL,
+  REGISTRATION_WAVES,
   SEASON_RULE_LABEL,
   SEASON_RULES,
   type BusinessLine,
+  type CampLocation,
+  type RegistrationSettings,
   type SeasonRule,
   type SeasonSettings,
 } from "@dash/shared";
-import { useSaveSeasonSettings, useSeasonSettings } from "../lib/api";
+import { useAssignments, useSaveSeasonSettings, useSeasonSettings } from "../lib/api";
 import { formatDate } from "../lib/format";
 
 const thisYear = () => Number(easternDate().slice(0, 4));
@@ -83,7 +87,11 @@ export function SeasonSettingsCard({ canEdit }: { canEdit: boolean }) {
 
   const s = draft ?? data;
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(data);
-  const invalid = [...Object.values(s.endDates).flatMap((m) => Object.values(m ?? {})), ...Object.values(s.campminderStarts)].some((d) => !isIsoDate(d));
+  const invalid = [
+    ...Object.values(s.endDates).flatMap((m) => Object.values(m ?? {})),
+    ...Object.values(s.campminderStarts),
+    ...Object.values(s.registration.opens).flatMap((o) => Object.values(o)),
+  ].some((d) => !isIsoDate(d));
   const update = (next: SeasonSettings) => {
     setSaved(false);
     setDraft(next);
@@ -196,6 +204,87 @@ export function SeasonSettingsCard({ canEdit }: { canEdit: boolean }) {
           onChange={(v) => update({ ...s, campminderStarts: v })}
         />
       </div>
+      <RegistrationSection value={s.registration} canEdit={canEdit} onChange={(registration) => update({ ...s, registration })} />
     </section>
+  );
+}
+
+/** Camp registration waves: when each opened, and which camp session groups are in Virginia or Maryland. */
+function RegistrationSection({ value, canEdit, onChange }: { value: RegistrationSettings; canEdit: boolean; onChange(v: RegistrationSettings): void }) {
+  const assignments = useAssignments().data?.rows ?? [];
+  const campGroups = assignments.filter((r) => r.source === "campminder" && r.kind === "session" && r.businessLine === "camp").map((r) => r.key);
+  const groups = [...new Set([...campGroups, ...Object.keys(value.locations)])].sort((a, b) => a.localeCompare(b));
+  const years = Object.keys(value.opens).sort().reverse();
+  const nextYear = years.length ? Number(years[0]) + 1 : thisYear();
+  const setDate = (year: string, wave: (typeof REGISTRATION_WAVES)[number], date: string) =>
+    onChange({ ...value, opens: { ...value.opens, [year]: { ...value.opens[year], [wave]: date } } });
+  const setLocation = (group: string, loc: CampLocation | "") => {
+    const locations = { ...value.locations };
+    if (loc) locations[group] = loc;
+    else delete locations[group];
+    onChange({ ...value, locations });
+  };
+  return (
+    <div className="season-campminder">
+      <h3 className="card-title">Camp registration</h3>
+      <p className="card-subtitle">
+        The day registration opened for each group of families, for the Camp page's “Sign-ups since registration opened” chart. A family is
+        returning when one of its campers was at a camp location below last season (the earlier wave if it was at both); everyone else is
+        new.
+      </p>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Season</th>
+              {REGISTRATION_WAVES.map((w) => (
+                <th key={w}>{REGISTRATION_WAVE_LABEL[w]}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {years.map((y) => (
+              <tr key={y}>
+                <td>{y}</td>
+                {REGISTRATION_WAVES.map((w) => (
+                  <td key={w}>
+                    <input
+                      type="date"
+                      value={value.opens[y]?.[w] ?? ""}
+                      disabled={!canEdit}
+                      aria-label={`${y} ${REGISTRATION_WAVE_LABEL[w]} opened`}
+                      onChange={(e) => setDate(y, w, e.target.value)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canEdit && (
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => onChange({ ...value, opens: { ...value.opens, [String(nextYear)]: { va: `${nextYear}-01-06`, md: `${nextYear}-01-08`, new: `${nextYear}-01-13` } } })}
+        >
+          + {nextYear}
+        </button>
+      )}
+      <h3 className="card-title">Camp locations</h3>
+      <p className="card-subtitle">Which state each camp session group meets in. Groups left blank (LIT, trips…) don't decide a family's wave.</p>
+      <div className="year-dates">
+        {groups.map((g) => (
+          <label key={g} className="year-date">
+            <span className="chip-label">{g}</span>
+            <select value={value.locations[g] ?? ""} disabled={!canEdit} onChange={(e) => setLocation(g, e.target.value as CampLocation | "")} aria-label={`${g} location`}>
+              <option value="">—</option>
+              <option value="va">Virginia</option>
+              <option value="md">Maryland</option>
+            </select>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
