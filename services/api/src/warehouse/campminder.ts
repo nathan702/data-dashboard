@@ -46,7 +46,8 @@ export function buildPace(
   const weeksSoFar = Math.floor((Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${seasonStart}T00:00:00Z`)) / (7 * 86_400_000));
   const perWeek = (s: number) => {
     const m = new Map<number, number>();
-    for (const r of rows) if (Number(r.season) === s) m.set(Number(r.week_of_season), (m.get(Number(r.week_of_season)) ?? 0) + Number(r.enrollments));
+    // A row without a week would otherwise read as week 0 (Number(null)) and flatten the chart.
+    for (const r of rows) if (Number(r.season) === s && r.week_of_season !== null && r.week_of_season !== undefined) m.set(Number(r.week_of_season), (m.get(Number(r.week_of_season)) ?? 0) + Number(r.enrollments));
     return m;
   };
   const cur = perWeek(season);

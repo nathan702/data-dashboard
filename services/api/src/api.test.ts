@@ -386,7 +386,7 @@ describe("revenue SQL", () => {
     expect(c.query).toContain("SAFE.PARSE_DATE('%Y-%m-%d', open_date)");
   });
 
-  it("buckets seasons from the line's season starts, passed as DATEs", async () => {
+  it("buckets seasons from the line's season starts, passed as text and cast in the query", async () => {
     const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
     const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
     const fake = { query: async (o: never) => (calls.push(o), [[]]) };
@@ -396,18 +396,23 @@ describe("revenue SQL", () => {
     }, campminderCalendar());
     const series = calls.find((c) => c.query.includes("UNNEST(@season_starts)"))!;
     expect(series.params.season_starts).toEqual(["2024-09-02", "2025-09-01", "2026-09-07"]);
-    expect(series.types.season_starts).toEqual(["DATE"]);
+    expect(series.types.season_starts).toEqual(["STRING"]);
+    expect(series.query).toContain("CAST(s AS DATE)");
   });
 
-  it("starts Campminder pace on each season's first day, passed as DATEs", async () => {
+  it("starts Campminder pace on each season's first day, passed as text and cast in the query", async () => {
     const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
     const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
     const fake = { query: async (o: never) => (calls.push(o), [[]]) };
     await new BigQueryWarehouse(fake as never, "marts").enrollmentSummary({ season: 2026, filters: {} }, campminderCalendar());
     const pace = calls.find((c) => c.query.includes("week_of_season"))!;
     expect(pace.params).toMatchObject({ cur_start: "2025-09-01", prev_start: "2024-09-02" });
-    expect(pace.types).toMatchObject({ cur_start: "DATE", prev_start: "DATE" });
-    expect(calls.find((c) => c.query.includes("@prev_cutoff"))!.types).toMatchObject({ prev_cutoff: "DATE" });
+    // Parameters typed DATE arrive empty (the chart went flat): dates travel as text.
+    expect(pace.types).toMatchObject({ cur_start: "STRING", prev_start: "STRING" });
+    expect(pace.query).toContain("CAST(IF(season = @season, @cur_start, @prev_start) AS DATE)");
+    const kpi = calls.find((c) => c.query.includes("@prev_cutoff"))!;
+    expect(kpi.types).toMatchObject({ prev_cutoff: "STRING" });
+    expect(kpi.query).toContain("CAST(@prev_cutoff AS DATE)");
   });
 });
 
@@ -431,7 +436,21 @@ describe("deploy self-check", () => {
     expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual([
       "revenue summary by business_line matches tables",
       "revenue summary by source matches tables",
+      "dates reach the queries",
     ]);
+  });
+
+  it("fails when a date doesn't reach the pace query (a flat sign-up pace line)", async () => {
+    const { runSelfCheck } = await import("./selfCheck.js");
+    const demo = new DemoWarehouse();
+    const broken = Object.create(demo) as DemoWarehouse;
+    broken.enrollmentSummary = async (q, seasons) => {
+      const r = await demo.enrollmentSummary(q, seasons);
+      const total = r.pace.at(-1)?.current ?? 0;
+      return { ...r, pace: r.pace.map((p) => ({ ...p, current: total })) };
+    };
+    const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
+    expect(result.checks.find((c) => c.name === "dates reach the queries")).toMatchObject({ ok: false, detail: expect.stringContaining("flat") });
   });
 
   it("catches enrollment totals that disagree with the table", async () => {

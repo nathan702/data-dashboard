@@ -92,7 +92,7 @@ export function kpiSql(t: string) {
       UNION ALL
       -- Last season as of the same point: what had been applied for by then.
       SELECT 'comparison', * FROM ${t}
-      WHERE ${FILTER} AND ${DRILL} AND season = @season - 1 AND (application_date IS NULL OR application_date <= @prev_cutoff)
+      WHERE ${FILTER} AND ${DRILL} AND season = @season - 1 AND (application_date IS NULL OR application_date <= CAST(@prev_cutoff AS DATE))
     ),
     -- Families among the matching camper-sessions: campers each, and weeks with two or more at camp together.
     fam AS (
@@ -145,7 +145,9 @@ export function paceSql(t: string) {
     SELECT
       season,
       -- Weeks since the season started (@cur_start / @prev_start: Campminder's calendar).
-      LEAST(DIV(DATE_DIFF(GREATEST(application_date, IF(season = @season, @cur_start, @prev_start)), IF(season = @season, @cur_start, @prev_start), DAY), 7), 52) AS week_of_season,
+      LEAST(DIV(DATE_DIFF(
+        GREATEST(application_date, CAST(IF(season = @season, @cur_start, @prev_start) AS DATE)),
+        CAST(IF(season = @season, @cur_start, @prev_start) AS DATE), DAY), 7), 52) AS week_of_season,
       COUNT(*) AS enrollments
     FROM ${t}
     WHERE ${FILTER} AND ${DRILL} AND season IN (@season, @season - 1) AND status_code = 'EN' AND application_date IS NOT NULL
