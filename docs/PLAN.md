@@ -152,11 +152,12 @@ unmatched is "Unassigned" and flagged.
 ### Platform connections
 
 8. **FareHarbor** ← *in progress* (River School, Events, Haunted Forest): one
-    FareHarbor company per line. Built: the API sync (all history since 2019,
-    upcoming dates re-read every 6 hours), revenue by business line on all three
-    date bases, and a webhook endpoint for live changes. *Needs:* the API keys
-    stored as secrets, then webhooks requested from FareHarbor. Next: booking and
-    guest counts, capacity and sell-through per time slot (Haunted Forest nights).
+    FareHarbor company per line, read through FareHarbor's Public API (one key
+    per company). Built: bookings since 2019 (new ones hourly; recent and
+    upcoming re-read every 6 hours, all weekly), time-slot capacity, revenue by
+    business line, and a webhook endpoint. *Needs:* each company's Client ID and
+    Secret stored as secrets. Next: booking and guest counts, sell-through per
+    time slot (Haunted Forest nights).
 9. **Shopify** (River Store): built; needs the app credentials.
 10. **HubSpot** (Education Programs, CHAPs group bookings): one pipeline per line.
 11. **Digests and alerts**: email and Slack.

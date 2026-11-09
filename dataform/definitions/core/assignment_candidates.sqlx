@@ -69,24 +69,19 @@ campminder_money AS (
   GROUP BY 1, 2
 ),
 fareharbor AS (
-  -- One FareHarbor company (dashboard) per business line; matched by name until set on Settings.
+  -- One FareHarbor company per business line; matched by its shortname until set on Settings.
   SELECT
     c.assign_key,
-    COALESCE(c.label, c.assign_key) AS label,
+    c.assign_key AS label,
     MAX(b.service_date) AS last_activity,
-    COALESCE(SUM(IF(b.status = 'booked' AND b.service_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), b.subtotal, 0)), 0) AS net_12m,
-    COUNTIF(b.status = 'booked' AND b.service_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH)) AS activity_12m,
+    COALESCE(SUM(IF(b.status IS DISTINCT FROM 'rebooked' AND b.service_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), b.net, 0)), 0) AS net_12m,
+    COUNTIF(b.status IN ('active', 'uncancelled') AND b.service_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH)) AS activity_12m,
     CASE
-      WHEN REGEXP_CONTAINS(LOWER(ANY_VALUE(c.label)), r'haunt') THEN 'haunted_forest'
-      WHEN REGEXP_CONTAINS(LOWER(ANY_VALUE(c.label)), r'river') THEN 'river_school'
-      WHEN REGEXP_CONTAINS(LOWER(ANY_VALUE(c.label)), r'event') THEN 'events'
+      WHEN REGEXP_CONTAINS(c.assign_key, r'haunt') THEN 'haunted_forest'
+      WHEN REGEXP_CONTAINS(c.assign_key, r'river') THEN 'river_school'
+      WHEN REGEXP_CONTAINS(c.assign_key, r'event') THEN 'events'
     END AS default_hint
-  FROM (
-    SELECT JSON_VALUE(payload, '$.shortname') AS assign_key, JSON_VALUE(payload, '$.name') AS label
-    FROM ${ref("raw_fareharbor", "companies")}
-    WHERE TRUE
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY record_id ORDER BY source_updated_at DESC, ingested_at DESC) = 1
-  ) AS c
+  FROM (SELECT DISTINCT record_id AS assign_key FROM ${ref("raw_fareharbor", "companies")}) AS c
   LEFT JOIN ${ref("stg_fareharbor_bookings")} AS b ON b.company = c.assign_key
   GROUP BY 1, 2
 )

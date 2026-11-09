@@ -274,33 +274,52 @@ is changed and the sync shows as failed until a complete report arrives.
 
 ### FareHarbor
 
-FareHarbor gives API access on request: ask your FareHarbor account manager
-(or FareHarbor Support) for **External API** access for every company the
-dashboard should read (River School, Events, Haunted Forest). They send two
-keys: an **app key** and a **user key**. The user's permissions decide what
-the dashboard can see, so the user needs **View amounts** on each company.
+The dashboard uses FareHarbor's **Public API**. Each FareHarbor company (River
+School, Events, Haunted Forest) has its own key, made in that company's
+dashboard:
 
-1. Store the two keys as secrets (never paste them anywhere else):
-   - `fareharbor-app-key`
-   - `fareharbor-user-key`
-2. That's all for data: the hourly sync (at :35) finds every company the keys
-   can see, then reads all bookings since 2019, a month at a time (the first
-   import takes a few hours of runs; FareHarbor allows about 10 requests a
-   second). Upcoming and recent dates (the last 35 days and the next 400) are
-   re-read every 6 hours.
-3. **Settings → Business lines → FareHarbor**: check each company is assigned
-   to the right business line (names containing "Haunt", "River" or "Event"
-   are assigned automatically).
+1. FareHarbor dashboard for the company → **Settings → Users & Permissions** →
+   open the user who will own the key (they need permission to **view amounts**,
+   or prices come through blank) → **API Keys → Public API → Add API key**.
+   Name it `Business dashboard`. Copy the **Client ID** and **Client Secret**
+   (the secret is shown only once; **Rotate** makes a new one).
+2. Note the company's **shortname**: the part after `fareharbor.com/` in the
+   dashboard's address (e.g. `fareharbor.com/riverschool/dashboard` → `riverschool`).
+3. Store the keys in Cloud Shell, replacing `SHORTNAME` (paste each value, Enter, Ctrl+D):
 
-What's stored: for each booking, its company, item, date and time, status,
-number of guests and their customer types (Adult, Child…), prices, payments
-and refunds. **Never** the contact's name, phone or email, notes, custom
-field answers, voucher numbers or links.
+   ```bash
+   gcloud secrets create fareharbor-SHORTNAME-client-id --replication-policy=automatic
+   gcloud secrets versions add fareharbor-SHORTNAME-client-id --data-file=-
+   gcloud secrets create fareharbor-SHORTNAME-client-secret --replication-policy=automatic
+   gcloud secrets versions add fareharbor-SHORTNAME-client-secret --data-file=-
+   ```
+4. List the companies to read, comma-separated, in the `fareharbor-companies`
+   secret (e.g. `riverschool,calleva-events,hauntedforest`). Add a company here
+   only once its keys are stored: until every listed company has keys, FareHarbor
+   shows as "Not connected".
+
+The hourly sync (at :35) then reads every booking since 2019, 100 at a time,
+and afterwards only new bookings. Bookings with recent or upcoming activity
+are re-read every 6 hours (cancellations, refunds) and all bookings weekly.
+
+**Settings → Business lines → FareHarbor**: check each company is assigned to
+the right business line (shortnames containing "haunt", "river" or "event" are
+assigned automatically).
+
+What's stored: for each booking, its company, item, activity date and time,
+status, number of guests and customer types ("2 Adult, 1 Child"), totals,
+refunds and amount paid; and each time slot's capacity. **Never** the
+customer's name, email or phone, custom field answers, voucher numbers or tags.
+
+FareHarbor's Public API gives booking totals, not individual payments, so
+"collected" revenue for FareHarbor is what's been paid, dated the day the
+booking was made.
 
 **Webhooks (optional, for changes within the hour).** Generate a random key
 and store it:
 
 ```bash
+gcloud secrets create fareharbor-webhook-key --replication-policy=automatic
 openssl rand -hex 24 | tr -d '\n' | gcloud secrets versions add fareharbor-webhook-key --data-file=-
 gcloud secrets versions access latest --secret=fareharbor-webhook-key; echo
 ```

@@ -1,54 +1,27 @@
 config {
   type: "view",
   schema: "staging",
-  description: "FareHarbor revenue per day in the fct_revenue_daily contract, before sales tax. Service date (the activity's date) and booked date: a live booking's subtotal; a cancelled booking counts only what was kept (paid minus refunded); rebooked bookings count on their new booking. Collected: payments on their date and refunds on theirs. Assigned to business lines by FareHarbor company."
+  description: "FareHarbor revenue per day in the fct_revenue_daily contract. Service date = the activity's date; booked = the day it was booked. Each booking counts its total less its refunds (a cancelled booking with a full refund nets to zero); bookings moved by a rebooking count once, on the new booking. FareHarbor's Public API has no payment dates, so 'collected' is what has been paid, dated the day the booking was made. Assigned to business lines by FareHarbor company."
 }
-js { const { easternDate, ts } = require("includes/sql"); }
 
 WITH b AS (
-  SELECT * FROM ${ref("stg_fareharbor_bookings")} WHERE status IN ('booked', 'cancelled')
-),
-earned AS (
-  SELECT
-    basis,
-    IF(basis = 'service', service_date, booked_date) AS d,
-    company, company_name, channel,
-    SUM(IF(status = 'booked', subtotal, GREATEST(net_paid, 0) * pre_tax_share)) AS gross,
-    0 AS refunds,
-    COUNTIF(status = 'booked') AS transactions
-  FROM b
-  CROSS JOIN UNNEST(['service', 'booked']) AS basis
-  GROUP BY 1, 2, 3, 4, 5
-),
-payments AS (
-  SELECT b.company, b.company_name, b.channel, b.pre_tax_share, p
-  FROM ${ref("stg_fareharbor_bookings")} AS b, UNNEST(JSON_QUERY_ARRAY(b.payments_json)) AS p
-  WHERE b.status IN ('booked', 'cancelled') AND JSON_VALUE(p, '$.status') = 'succeeded'
-),
-collected AS (
-  SELECT 'collected' AS basis, ${easternDate(ts("p", "$.createdAt"))} AS d, company, company_name, channel,
-    SUM(SAFE_CAST(JSON_VALUE(p, '$.amountPaid') AS NUMERIC) / 100 * pre_tax_share) AS gross, 0 AS refunds, COUNT(*) AS transactions
-  FROM payments
-  GROUP BY 1, 2, 3, 4, 5
-  UNION ALL
-  SELECT 'collected', ${easternDate(ts("r", "$.createdAt"))}, company, company_name, channel,
-    0, SUM(SAFE_CAST(JSON_VALUE(r, '$.amount') AS NUMERIC) / 100 * pre_tax_share), 0
-  FROM payments, UNNEST(JSON_QUERY_ARRAY(p, '$.refunds')) AS r
-  GROUP BY 1, 2, 3, 4, 5
+  SELECT * FROM ${ref("stg_fareharbor_bookings")}
+  WHERE status IS DISTINCT FROM 'rebooked'
 )
 SELECT
   'fareharbor' AS source,
-  -- Each FareHarbor company (dashboard) is assigned to a business line on the Settings page.
+  -- Each FareHarbor company is assigned to a business line on the Settings page.
   company AS assign_key,
-  d AS revenue_date,
+  IF(basis = 'service', service_date, booked_date) AS revenue_date,
   basis AS date_basis,
-  company_name AS location,
-  channel,
-  SUM(gross) AS gross,
+  company AS location,
+  item_name AS channel,
+  SUM(IF(basis = 'collected', paid, gross)) AS gross,
   CAST(0 AS NUMERIC) AS discounts,
   SUM(refunds) AS refunds,
   CAST(0 AS NUMERIC) AS fees,
-  SUM(transactions) AS transactions
-FROM (SELECT * FROM earned UNION ALL SELECT * FROM collected)
-WHERE d IS NOT NULL
+  COUNTIF(status IS DISTINCT FROM 'cancelled') AS transactions
+FROM b
+CROSS JOIN UNNEST(['service', 'booked', 'collected']) AS basis
+WHERE IF(basis = 'service', service_date, booked_date) IS NOT NULL
 GROUP BY 1, 2, 3, 4, 5, 6

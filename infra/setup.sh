@@ -50,7 +50,7 @@ for t in $RAW_TABLES; do
 done
 
 echo "==> Secrets (values are added later in the console: Security → Secret Manager → secret → New version)"
-for s in pseudonymization-key shopify-shop shopify-client-id shopify-client-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret campminder-season fareharbor-app-key fareharbor-user-key fareharbor-webhook-key; do
+for s in pseudonymization-key shopify-shop shopify-client-id shopify-client-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret campminder-season fareharbor-companies fareharbor-webhook-key; do
   gcloud secrets describe "$s" >/dev/null 2>&1 || gcloud secrets create "$s" --replication-policy=automatic
 done
 if [ "$(gcloud secrets versions list pseudonymization-key --format='value(name)' | wc -l)" = "0" ]; then
