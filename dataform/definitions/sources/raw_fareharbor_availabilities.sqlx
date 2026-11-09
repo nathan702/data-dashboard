@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_fareharbor",
+  name: "availabilities",
+  description: "FareHarbor availabilities (time slots): item, start/end, capacity. Written only when they change."
+}

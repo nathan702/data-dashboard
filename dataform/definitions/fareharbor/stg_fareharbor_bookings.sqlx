@@ -1,0 +1,65 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Latest version of each FareHarbor booking, in dollars. booked_date is the first payment's date; for a booking never paid online, the day it was first seen (or its service date, whichever is earlier, so history imported later isn't dated at import). Net paid = payments that succeeded minus refunds.",
+  assertions: { uniqueKey: ["booking_uuid"] }
+}
+js { const { latestRaw, easternDate, ts } = require("includes/sql"); }
+
+WITH latest AS (
+  SELECT * FROM (${latestRaw(ref("raw_fareharbor", "bookings"))})
+),
+first_seen AS (
+  SELECT record_id, MIN(ingested_at) AS first_seen_at
+  FROM ${ref("raw_fareharbor", "bookings")}
+  GROUP BY 1
+),
+money AS (
+  SELECT
+    record_id,
+    (SELECT MIN(${ts("p", "$.createdAt")}) FROM UNNEST(JSON_QUERY_ARRAY(payload, '$.payments')) AS p
+      WHERE JSON_VALUE(p, '$.status') = 'succeeded') AS first_paid_at,
+    (SELECT COALESCE(SUM(SAFE_CAST(JSON_VALUE(p, '$.amountPaid') AS NUMERIC)), 0) FROM UNNEST(JSON_QUERY_ARRAY(payload, '$.payments')) AS p
+      WHERE JSON_VALUE(p, '$.status') = 'succeeded') / 100 AS paid,
+    (SELECT COALESCE(SUM(SAFE_CAST(JSON_VALUE(r, '$.amount') AS NUMERIC)), 0)
+      FROM UNNEST(JSON_QUERY_ARRAY(payload, '$.payments')) AS p, UNNEST(JSON_QUERY_ARRAY(p, '$.refunds')) AS r
+      WHERE JSON_VALUE(p, '$.status') = 'succeeded') / 100 AS refunded
+  FROM latest
+)
+SELECT
+  l.record_id AS booking_uuid,
+  JSON_VALUE(l.payload, '$.company') AS company,
+  c.company_name,
+  JSON_VALUE(l.payload, '$.status') AS status,
+  SAFE_CAST(JSON_VALUE(l.payload, '$.itemPk') AS INT64) AS item_pk,
+  COALESCE(i.item_name, JSON_VALUE(l.payload, '$.itemName')) AS item_name,
+  SAFE_CAST(JSON_VALUE(l.payload, '$.availabilityPk') AS INT64) AS availability_pk,
+  ${ts("l.payload", "$.startAt")} AS start_at,
+  SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(l.payload, '$.startDate')) AS service_date,
+  COALESCE(
+    ${easternDate("m.first_paid_at")},
+    LEAST(${easternDate("f.first_seen_at")}, COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(l.payload, '$.startDate')), ${easternDate("f.first_seen_at")}))
+  ) AS booked_date,
+  JSON_VALUE(l.payload, '$.channel') AS channel,
+  COALESCE(SAFE_CAST(JSON_VALUE(l.payload, '$.customerCount') AS INT64), ARRAY_LENGTH(JSON_QUERY_ARRAY(l.payload, '$.customers'))) AS guests,
+  COALESCE(SAFE_CAST(JSON_VALUE(l.payload, '$.receiptSubtotal') AS NUMERIC), 0) / 100 AS subtotal,
+  COALESCE(SAFE_CAST(JSON_VALUE(l.payload, '$.receiptTaxes') AS NUMERIC), 0) / 100 AS taxes,
+  COALESCE(SAFE_CAST(JSON_VALUE(l.payload, '$.receiptTotal') AS NUMERIC), 0) / 100 AS total,
+  m.paid,
+  m.refunded,
+  m.paid - m.refunded AS net_paid,
+  -- Share of a payment that isn't sales tax (payments include tax; revenue doesn't).
+  COALESCE(SAFE_DIVIDE(SAFE_CAST(JSON_VALUE(l.payload, '$.receiptSubtotal') AS NUMERIC), NULLIF(SAFE_CAST(JSON_VALUE(l.payload, '$.receiptTotal') AS NUMERIC), 0)), 1) AS pre_tax_share,
+  JSON_VALUE(l.payload, '$.rebookedFrom') AS rebooked_from,
+  JSON_QUERY(l.payload, '$.payments') AS payments_json
+FROM latest AS l
+JOIN money AS m USING (record_id)
+JOIN first_seen AS f USING (record_id)
+LEFT JOIN (
+  SELECT JSON_VALUE(payload, '$.shortname') AS company, JSON_VALUE(payload, '$.name') AS company_name
+  FROM (${latestRaw(ref("raw_fareharbor", "companies"))})
+) AS c ON c.company = JSON_VALUE(l.payload, '$.company')
+LEFT JOIN (
+  SELECT JSON_VALUE(payload, '$.company') AS company, SAFE_CAST(JSON_VALUE(payload, '$.pk') AS INT64) AS item_pk, JSON_VALUE(payload, '$.name') AS item_name
+  FROM (${latestRaw(ref("raw_fareharbor", "items"))})
+) AS i ON i.company = JSON_VALUE(l.payload, '$.company') AND i.item_pk = SAFE_CAST(JSON_VALUE(l.payload, '$.itemPk') AS INT64)

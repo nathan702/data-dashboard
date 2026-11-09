@@ -18,6 +18,8 @@ export interface RawRecord {
 
 export interface RawWriter {
   write(source: Source, path: IngestPath, runId: string, records: RawRecord[]): Promise<number>;
+  /** Create empty raw tables, so SQL transforms that read them run before the first data arrives. */
+  ensureTables?(source: Source, entities: string[]): Promise<void>;
 }
 
 export interface SourceState {
@@ -94,6 +96,8 @@ export interface WebhookRequest {
 
 export interface Connector {
   source: Source;
+  /** Raw tables the SQL transforms read; created empty at startup and before each sync. */
+  rawEntities?: string[];
   /** Pull from the source. Called by Cloud Scheduler and for backfills. */
   sync?(ctx: SyncContext): Promise<void>;
   /**

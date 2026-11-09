@@ -272,6 +272,49 @@ matcher prefers when two schools share a name; the list is in the script.
 already stored for its season, it's treated as a half-written sheet: nothing
 is changed and the sync shows as failed until a complete report arrives.
 
-### HubSpot, FareHarbor
+### FareHarbor
 
-Instructions arrive with their phases.
+FareHarbor gives API access on request: ask your FareHarbor account manager
+(or FareHarbor Support) for **External API** access for every company the
+dashboard should read (River School, Events, Haunted Forest). They send two
+keys: an **app key** and a **user key**. The user's permissions decide what
+the dashboard can see, so the user needs **View amounts** on each company.
+
+1. Store the two keys as secrets (never paste them anywhere else):
+   - `fareharbor-app-key`
+   - `fareharbor-user-key`
+2. That's all for data: the hourly sync (at :35) finds every company the keys
+   can see, then reads all bookings since 2019, a month at a time (the first
+   import takes a few hours of runs; FareHarbor allows about 10 requests a
+   second). Upcoming and recent dates (the last 35 days and the next 400) are
+   re-read every 6 hours.
+3. **Settings → Business lines → FareHarbor**: check each company is assigned
+   to the right business line (names containing "Haunt", "River" or "Event"
+   are assigned automatically).
+
+What's stored: for each booking, its company, item, date and time, status,
+number of guests and their customer types (Adult, Child…), prices, payments
+and refunds. **Never** the contact's name, phone or email, notes, custom
+field answers, voucher numbers or links.
+
+**Webhooks (optional, for changes within the hour).** Generate a random key
+and store it:
+
+```bash
+openssl rand -hex 24 | tr -d '\n' | gcloud secrets versions add fareharbor-webhook-key --data-file=-
+gcloud secrets versions access latest --secret=fareharbor-webhook-key; echo
+```
+
+Then ask FareHarbor to send **booking webhooks** for each company to:
+
+```
+https://dashboard-connectors-webhooks-PROJECT_NUMBER.us-east1.run.app/webhooks/fareharbor?key=THE_KEY
+```
+
+(`PROJECT_NUMBER` is on the Cloud console home page; the region is the one in
+`infra/config.sh`.) Each webhook is checked against the key, and the booking
+is then re-read from the API, so a forged one can't change any numbers.
+
+### HubSpot
+
+Instructions arrive with its phase.

@@ -52,7 +52,7 @@ unmatched is "Unassigned" and flagged.
  Shopify ─┤                                  │ Cloud Run: connectors       │
  Campminder report ─▶ Google Sheet (daily) ─▶│  • jobs (private, Scheduler)│
  Campminder history ─▶ Google Sheet (tabs) ─▶│  • webhooks (public, signed)│
- FareHarbor (planned) webhooks + API ───────▶└──────────┬──────────────────┘
+ FareHarbor          API + webhooks ───────▶└──────────┬──────────────────┘
                      US Census geocoder ◀── home addresses (once each, cached)
                                                         │ raw JSON rows
                                              BigQuery raw_<source>.*
@@ -151,11 +151,12 @@ unmatched is "Unassigned" and flagged.
    each family's wave opened (all waves or one; enrollments or campers).
 ### Platform connections
 
-8. **FareHarbor** ← *next* (River School, Events, Haunted Forest): webhooks per
-    dashboard for live changes, a one-time export for history, and the API as a
-    nightly check. Bookings carry the activity date. *Needs:* API and webhook
-    documentation, a sample webhook message, the export's column headers, and
-    which dashboard feeds which line.
+8. **FareHarbor** ← *in progress* (River School, Events, Haunted Forest): one
+    FareHarbor company per line. Built: the API sync (all history since 2019,
+    upcoming dates re-read every 6 hours), revenue by business line on all three
+    date bases, and a webhook endpoint for live changes. *Needs:* the API keys
+    stored as secrets, then webhooks requested from FareHarbor. Next: booking and
+    guest counts, capacity and sell-through per time slot (Haunted Forest nights).
 9. **Shopify** (River Store): built; needs the app credentials.
 10. **HubSpot** (Education Programs, CHAPs group bookings): one pipeline per line.
 11. **Digests and alerts**: email and Slack.

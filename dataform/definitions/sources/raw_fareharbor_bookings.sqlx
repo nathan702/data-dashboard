@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_fareharbor",
+  name: "bookings",
+  description: "FareHarbor bookings, written by services/connectors only when they change. Allow-listed fields only: never the contact's name, phone or email, notes, custom field answers or voucher numbers. Money in cents."
+}

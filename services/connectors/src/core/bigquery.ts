@@ -79,6 +79,10 @@ export class BigQueryRawWriter implements RawWriter {
     return records.length;
   }
 
+  async ensureTables(source: Source, entities: string[]) {
+    await Promise.all(entities.map((e) => this.table(rawDataset(source), rawTableName(e))));
+  }
+
   /** Create the dataset/table on first use so new entities need no manual setup. */
   private table(datasetId: string, tableId: string): Promise<Table> {
     const key = `${datasetId}.${tableId}`;

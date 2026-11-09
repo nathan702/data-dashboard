@@ -53,7 +53,8 @@ JOBS_URL=$(gcloud run services describe dashboard-connectors-jobs --region="$REG
 
 # Sources without credentials yet just report "not connected", so every source is scheduled.
 # Campminder's sheet only changes once a day; hourly checks are cheap (unchanged sheets are skipped).
-for ENTRY in "shopify|*/15 * * * *" "square|*/15 * * * *" "campminder|5 * * * *"; do
+# FareHarbor has no "changed since" listing: hourly runs re-read upcoming dates every 6 hours and walk history in between.
+for ENTRY in "shopify|*/15 * * * *" "square|*/15 * * * *" "campminder|5 * * * *" "fareharbor|35 * * * *"; do
   SRC="${ENTRY%%|*}"
   if gcloud scheduler jobs describe "sync-$SRC" --location="$REGION" >/dev/null 2>&1; then SCHED_CMD=update; else SCHED_CMD=create; fi
   gcloud scheduler jobs "$SCHED_CMD" http "sync-$SRC" --location="$REGION" \

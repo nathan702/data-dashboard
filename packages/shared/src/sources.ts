@@ -50,7 +50,7 @@ export const SOURCE_INFO: Record<Source, SourceInfo> = {
   fareharbor: {
     id: "fareharbor",
     label: "FareHarbor",
-    ingestion: "Booking notification emails (Gmail)",
+    ingestion: "External API (hourly) + booking webhooks",
     phase: 5,
   },
 };
