@@ -64,6 +64,7 @@ interface Setup {
   stored?: Map<string, string>;
   env?: Record<string, string>;
   bookings?: unknown[];
+  itemsForbidden?: boolean;
 }
 
 function setup(opts: Setup = {}) {
@@ -72,6 +73,7 @@ function setup(opts: Setup = {}) {
   const bookings = opts.bookings ?? [listBooking("b-1", "2026-09-01T14:00:00Z"), listBooking("b-2", "2026-09-02T14:00:00Z")];
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
+    if (url.host === "wrong.test") return new Response("Forbidden", { status: 403 });
     calls.push(url.pathname + url.search);
     if (url.pathname.endsWith("/token/")) {
       const body = JSON.parse(String(init?.body));
@@ -83,6 +85,7 @@ function setup(opts: Setup = {}) {
     expect(url.searchParams.get("company_shortname")).toBe("hauntedforest");
     const offset = Number(url.searchParams.get("offset"));
     const page = (rows: unknown[]) => new Response(JSON.stringify({ data: rows.slice(offset, offset + 100), meta: { total_count: rows.length, limit: 100, offset } }));
+    if (url.pathname === "/v1/items/" && opts.itemsForbidden) return new Response('{"title":"Forbidden"}', { status: 403 });
     if (url.pathname === "/v1/items/") return page([{ pk: 1867, name: "Haunted Trail", description: "long", images: ["x"] }]);
     if (url.pathname === "/v1/bookings/") return page(bookings);
     if (url.pathname === "/v1/availabilities/") return page(url.searchParams.get("start_after")!.startsWith("2026-08") ? [{ id: 55, item: { pk: 1867 }, start_at_utc: "2026-10-31T00:00:00Z", capacity: 120, status: "auto" }] : []);
@@ -97,7 +100,7 @@ function setup(opts: Setup = {}) {
       FAREHARBOR_HAUNTEDFOREST_CLIENT_SECRET: "secret",
       ...opts.env,
     }),
-    baseUrl: "https://fh.test/v1",
+    baseUrls: ["https://wrong.test/api", "https://fh.test/v1"],
     tokenUrls: ["https://first.test/token/", "https://fh.test/auth/token/"],
     historyStart: "2019-01-01",
     stored,
@@ -145,6 +148,14 @@ describe("fareharbor sync", () => {
     const second = setup({ bookings: many, stored });
     await runSync(second.c, second.deps, "backfill");
     expect(ids(second.deps, "bookings")).toEqual([]);
+  });
+
+  it("carries on with bookings when the item list is refused", async () => {
+    const { c, deps } = setup({ itemsForbidden: true });
+    const result = await runSync(c, deps, "incremental");
+    expect(result.status).toBe("ok");
+    expect(ids(deps, "items")).toEqual([]);
+    expect(ids(deps, "bookings")).toEqual(["b-1", "b-2"]);
   });
 
   it("reports not connected until a company's keys are stored", async () => {

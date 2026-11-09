@@ -55,8 +55,8 @@ export interface StoredHashes {
 
 export interface FareharborConfig {
   secrets: SecretStore;
-  /** Public API base, e.g. https://fareharbor.com/api/public/v1 */
-  baseUrl: string;
+  /** Public API bases, tried in order until one answers (the first that works is kept). */
+  baseUrls: string[];
   /** Token endpoints, tried in order until one answers. */
   tokenUrls: string[];
   /** Bookings created before this date aren't read. */
@@ -70,7 +70,8 @@ export interface FareharborConfig {
 export function fareharborConfigFromEnv(env: NodeJS.ProcessEnv, secrets: SecretStore): FareharborConfig {
   return {
     secrets,
-    baseUrl: env.FAREHARBOR_BASE_URL ?? "https://fareharbor.com/api/public/v1",
+    // The portal's API reference and its guide name different hosts; try both.
+    baseUrls: env.FAREHARBOR_BASE_URL ? [env.FAREHARBOR_BASE_URL] : ["https://api.fareharbor.com/v1", "https://fareharbor.com/api/public/v1"],
     // The portal's guide and its API reference name different hosts; try both.
     tokenUrls: env.FAREHARBOR_TOKEN_URL
       ? [env.FAREHARBOR_TOKEN_URL]
@@ -211,6 +212,8 @@ export class FareharborConnector implements Connector {
   readonly rawEntities = FAREHARBOR_ENTITIES;
   private lastRequest = 0;
   private readonly tokens = new Map<string, string>();
+  /** The API base that answered, once one has. */
+  private base: string | null = null;
 
   constructor(private readonly cfg: FareharborConfig) {}
 
@@ -273,18 +276,39 @@ export class FareharborConnector implements Connector {
     throw new Error(`FareHarbor sign-in failed for ${company} (${detail}); check its Client ID and Secret`);
   }
 
-  /** GET a company-scoped path; a 401 gets a fresh token once. */
+  /**
+   * GET a company-scoped path. Until one API base has answered, a 403/404 or
+   * network failure moves on to the next base; a 401 gets a fresh token once.
+   */
   async get<T>(company: string, path: string, params: Record<string, string | number> = {}): Promise<T> {
     const qs = new URLSearchParams({ company_shortname: company });
     for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
+    const bases = this.base ? [this.base] : this.cfg.baseUrls;
+    let last: unknown;
+    for (const base of bases) {
+      try {
+        const res = await this.getFrom<T>(base, company, `${path}?${qs}`);
+        this.base = base;
+        return res;
+      } catch (err) {
+        last = err;
+        const wrongHost = !(err instanceof HttpError) || err.status === 403 || err.status === 404;
+        if (this.base || !wrongHost) throw err;
+      }
+    }
+    throw last;
+  }
+
+  private async getFrom<T>(base: string, company: string, pathAndQuery: string): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const token = await this.token(company, attempt > 0);
       await this.pace();
       try {
-        return await requestJson<T>(`${this.cfg.baseUrl}${path}?${qs}`, {
+        return await requestJson<T>(`${base}${pathAndQuery}`, {
           headers: { Authorization: `Bearer ${token}` },
           fetchImpl: this.cfg.fetchImpl,
           sleep: this.cfg.sleep,
+          maxRetries: this.base ? undefined : 2,
         });
       } catch (err) {
         if (err instanceof HttpError && err.status === 401 && attempt === 0) continue;
@@ -333,17 +357,23 @@ export class FareharborConnector implements Connector {
     const now = this.now();
     const cursors = ctx.state.cursors;
     const stored = await this.cfg.stored.load(company);
+    ctx.log("fareharbor company", { company, api: this.base ?? "not chosen yet" });
     const older = (key: string, ms: number) => !cursors[key] || now.getTime() - Date.parse(cursors[key]!) >= ms;
     const historyStart = `${this.cfg.historyStart}T00:00:00.000Z`;
 
-    // Items (names only).
-    await this.eachPage<Json>(company, "/items/", {}, async (rows) => {
-      await ctx.emit(
-        rows.flatMap((i) =>
-          num(i.pk) === null ? [] : [{ entity: "items", recordId: `${company}:${i.pk}`, payload: { company, pk: num(i.pk), name: str(i.name), shortName: str(i.short_name), type: str(i.type) } }],
-        ),
-      );
-    });
+    // Bookings carry their item's name, so the item list is optional.
+    try {
+      await this.eachPage<Json>(company, "/items/", {}, async (rows) => {
+        await ctx.emit(
+          rows.flatMap((i) =>
+            num(i.pk) === null ? [] : [{ entity: "items", recordId: `${company}:${i.pk}`, payload: { company, pk: num(i.pk), name: str(i.name), shortName: str(i.short_name), type: str(i.type) } }],
+          ),
+        );
+      });
+    } catch (err) {
+      if (!(err instanceof HttpError && err.status === 403)) throw err;
+      ctx.log("fareharbor items not readable with this key; skipped", { company });
+    }
 
     let written = 0;
     const write = async (rows: unknown[]) => {
