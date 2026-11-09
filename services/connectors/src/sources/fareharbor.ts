@@ -70,12 +70,9 @@ export interface FareharborConfig {
 export function fareharborConfigFromEnv(env: NodeJS.ProcessEnv, secrets: SecretStore): FareharborConfig {
   return {
     secrets,
-    // The portal's API reference and its guide name different hosts; try both.
-    baseUrls: env.FAREHARBOR_BASE_URL ? [env.FAREHARBOR_BASE_URL] : ["https://api.fareharbor.com/v1", "https://fareharbor.com/api/public/v1"],
-    // The portal's guide and its API reference name different hosts; try both.
-    tokenUrls: env.FAREHARBOR_TOKEN_URL
-      ? [env.FAREHARBOR_TOKEN_URL]
-      : ["https://fareharbor.com/api/authentication/v1/token/", "https://api.fareharbor.com/v1/authentication/token/"],
+    baseUrls: [env.FAREHARBOR_BASE_URL ?? "https://api.fareharbor.com/v1"],
+    // Confirmed live: api.fareharbor.com answers for sign-in and data (the guide's fareharbor.com/api/... paths don't).
+    tokenUrls: [env.FAREHARBOR_TOKEN_URL ?? "https://api.fareharbor.com/v1/authentication/token/"],
     historyStart: env.FAREHARBOR_HISTORY_START ?? "2019-01-01",
     stored: new BigQueryStoredHashes(new BigQuery({ projectId: env.GCP_PROJECT_ID })),
   };

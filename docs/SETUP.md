@@ -274,7 +274,7 @@ is changed and the sync shows as failed until a complete report arrives.
 
 ### FareHarbor
 
-The dashboard uses FareHarbor's **Public API**. Each FareHarbor company (River
+The dashboard uses FareHarbor's **Public API** (at `api.fareharbor.com/v1`). Each FareHarbor company (River
 School, Events, Haunted Forest) has its own key, made in that company's
 dashboard:
 
