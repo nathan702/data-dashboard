@@ -1,0 +1,27 @@
+config {
+  type: "view",
+  schema: "staging",
+  description: "FareHarbor revenue per day in the fct_revenue_daily contract. Service date = the activity's date; booked = the day it was booked. Each booking counts its total less its refunds (a cancelled booking with a full refund nets to zero); bookings moved by a rebooking count once, on the new booking. FareHarbor's Public API has no payment dates, so 'collected' is what has been paid, dated the day the booking was made. Assigned to business lines by FareHarbor company."
+}
+
+WITH b AS (
+  SELECT * FROM ${ref("stg_fareharbor_bookings")}
+  WHERE status IS DISTINCT FROM 'rebooked'
+)
+SELECT
+  'fareharbor' AS source,
+  -- Each FareHarbor company is assigned to a business line on the Settings page.
+  company AS assign_key,
+  IF(basis = 'service', service_date, booked_date) AS revenue_date,
+  basis AS date_basis,
+  company AS location,
+  item_name AS channel,
+  SUM(IF(basis = 'collected', paid, gross)) AS gross,
+  CAST(0 AS NUMERIC) AS discounts,
+  SUM(refunds) AS refunds,
+  CAST(0 AS NUMERIC) AS fees,
+  COUNTIF(status IS DISTINCT FROM 'cancelled') AS transactions
+FROM b
+CROSS JOIN UNNEST(['service', 'booked', 'collected']) AS basis
+WHERE IF(basis = 'service', service_date, booked_date) IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6

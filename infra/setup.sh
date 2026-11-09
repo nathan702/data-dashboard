@@ -41,7 +41,8 @@ echo "==> Raw tables (created empty so the SQL transforms run before a source is
 # Must match RAW_TABLE_SCHEMA in services/connectors/src/core/bigquery.ts
 RAW_TABLES="raw_shopify.orders raw_shopify.products raw_shopify.inventory_levels
   raw_square.locations raw_square.catalog_objects raw_square.orders raw_square.payments raw_square.refunds
-  raw_campminder.sessions"
+  raw_campminder.sessions
+  raw_fareharbor.companies raw_fareharbor.items raw_fareharbor.availabilities raw_fareharbor.bookings"
 for t in $RAW_TABLES; do
   bq show "$PROJECT_ID:$t" >/dev/null 2>&1 || bq mk --table \
     --time_partitioning_field ingested_at --time_partitioning_type DAY --clustering_fields record_id \
@@ -49,7 +50,7 @@ for t in $RAW_TABLES; do
 done
 
 echo "==> Secrets (values are added later in the console: Security → Secret Manager → secret → New version)"
-for s in pseudonymization-key shopify-shop shopify-client-id shopify-client-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret campminder-season; do
+for s in pseudonymization-key shopify-shop shopify-client-id shopify-client-secret square-access-token square-webhook-signature-key hubspot-private-app-token hubspot-client-secret campminder-season fareharbor-companies fareharbor-webhook-key; do
   gcloud secrets describe "$s" >/dev/null 2>&1 || gcloud secrets create "$s" --replication-policy=automatic
 done
 if [ "$(gcloud secrets versions list pseudonymization-key --format='value(name)' | wc -l)" = "0" ]; then

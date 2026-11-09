@@ -272,6 +272,68 @@ matcher prefers when two schools share a name; the list is in the script.
 already stored for its season, it's treated as a half-written sheet: nothing
 is changed and the sync shows as failed until a complete report arrives.
 
-### HubSpot, FareHarbor
+### FareHarbor
 
-Instructions arrive with their phases.
+The dashboard uses FareHarbor's **Public API**. Each FareHarbor company (River
+School, Events, Haunted Forest) has its own key, made in that company's
+dashboard:
+
+1. FareHarbor dashboard for the company → **Settings → Users & Permissions** →
+   open the user who will own the key (they need permission to **view amounts**,
+   or prices come through blank) → **API Keys → Public API → Add API key**.
+   Name it `Business dashboard`. Copy the **Client ID** and **Client Secret**
+   (the secret is shown only once; **Rotate** makes a new one).
+2. Note the company's **shortname**: the part after `fareharbor.com/` in the
+   dashboard's address (e.g. `fareharbor.com/riverschool/dashboard` → `riverschool`).
+3. Store the keys in Cloud Shell, replacing `SHORTNAME` (paste each value, Enter, Ctrl+D):
+
+   ```bash
+   gcloud secrets create fareharbor-SHORTNAME-client-id --replication-policy=automatic
+   gcloud secrets versions add fareharbor-SHORTNAME-client-id --data-file=-
+   gcloud secrets create fareharbor-SHORTNAME-client-secret --replication-policy=automatic
+   gcloud secrets versions add fareharbor-SHORTNAME-client-secret --data-file=-
+   ```
+4. List the companies to read, comma-separated, in the `fareharbor-companies`
+   secret (e.g. `riverschool,calleva-events,hauntedforest`). Add a company here
+   only once its keys are stored: until every listed company has keys, FareHarbor
+   shows as "Not connected".
+
+The hourly sync (at :35) then reads every booking since 2019, 100 at a time,
+and afterwards only new bookings. Bookings with recent or upcoming activity
+are re-read every 6 hours (cancellations, refunds) and all bookings weekly.
+
+**Settings → Business lines → FareHarbor**: check each company is assigned to
+the right business line (shortnames containing "haunt", "river" or "event" are
+assigned automatically).
+
+What's stored: for each booking, its company, item, activity date and time,
+status, number of guests and customer types ("2 Adult, 1 Child"), totals,
+refunds and amount paid; and each time slot's capacity. **Never** the
+customer's name, email or phone, custom field answers, voucher numbers or tags.
+
+FareHarbor's Public API gives booking totals, not individual payments, so
+"collected" revenue for FareHarbor is what's been paid, dated the day the
+booking was made.
+
+**Webhooks (optional, for changes within the hour).** Generate a random key
+and store it:
+
+```bash
+gcloud secrets create fareharbor-webhook-key --replication-policy=automatic
+openssl rand -hex 24 | tr -d '\n' | gcloud secrets versions add fareharbor-webhook-key --data-file=-
+gcloud secrets versions access latest --secret=fareharbor-webhook-key; echo
+```
+
+Then ask FareHarbor to send **booking webhooks** for each company to:
+
+```
+https://dashboard-connectors-webhooks-PROJECT_NUMBER.us-east1.run.app/webhooks/fareharbor?key=THE_KEY
+```
+
+(`PROJECT_NUMBER` is on the Cloud console home page; the region is the one in
+`infra/config.sh`.) Each webhook is checked against the key, and the booking
+is then re-read from the API, so a forged one can't change any numbers.
+
+### HubSpot
+
+Instructions arrive with its phase.

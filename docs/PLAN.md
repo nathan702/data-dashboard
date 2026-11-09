@@ -52,7 +52,7 @@ unmatched is "Unassigned" and flagged.
  Shopify ─┤                                  │ Cloud Run: connectors       │
  Campminder report ─▶ Google Sheet (daily) ─▶│  • jobs (private, Scheduler)│
  Campminder history ─▶ Google Sheet (tabs) ─▶│  • webhooks (public, signed)│
- FareHarbor (planned) webhooks + API ───────▶└──────────┬──────────────────┘
+ FareHarbor          API + webhooks ───────▶└──────────┬──────────────────┘
                      US Census geocoder ◀── home addresses (once each, cached)
                                                         │ raw JSON rows
                                              BigQuery raw_<source>.*
@@ -149,37 +149,41 @@ unmatched is "Unassigned" and flagged.
    returning when a camper was at a camp location last season. The Camp page's
    "Sign-ups since registration opened" chart lines seasons up by days since
    each family's wave opened (all waves or one; enrollments or campers).
-8. **Decision-making features** ← *next*: forecasts and behind-pace alerts, capacity and
+### Platform connections
+
+8. **FareHarbor** ← *in progress* (River School, Events, Haunted Forest): one
+    FareHarbor company per line, read through FareHarbor's Public API (one key
+    per company). Built: bookings since 2019 (new ones hourly; recent and
+    upcoming re-read every 6 hours, all weekly), time-slot capacity, revenue by
+    business line, and a webhook endpoint. *Needs:* each company's Client ID and
+    Secret stored as secrets. Next: booking and guest counts, sell-through per
+    time slot (Haunted Forest nights).
+9. **Shopify** (River Store): built; needs the app credentials.
+10. **HubSpot** (Education Programs, CHAPs group bookings): one pipeline per line.
+11. **Digests and alerts**: email and Slack.
+12. **Targets**: goals to compare against.
+
+### Then
+
+13. **Decision-making features**: forecasts and behind-pace alerts, capacity and
    waitlists, returning families not yet re-enrolled, campers per age group per
    week (staffing), where new families come from, weekly email/Slack digest,
    revenue per camper.
-9. **Test and live separation**: a second website (`…-test`) in the same Google
+14. **Test and live separation**: a second website (`…-test`) in the same Google
    Cloud project, reading the same raw data into its own tables; changes deploy
    to test first and are promoted to live.
-10. **Merged customer database + email sync** (Emma today; the tool may change):
+15. **Merged customer database + email sync** (Emma today; the tool may change):
     read-only, rebuilt from the source systems, in BigQuery in its own
     access-restricted dataset. Matching: email, then phone, then standardized
     address + last name (apartment numbers must match); people and households as
     separate layers; "always/never merge" rules only if needed; preview matches
     before turning it on. The email tool holds subscription status and the sync
     never re-adds unsubscribes. Lookups ~1–2 s, audience searches ~1–5 s.
-11. **Intranet with single sign-on**: launcher at `tools.calleva.org` (the
+16. **Intranet with single sign-on**: launcher at `tools.calleva.org` (the
     webmaster delegates that subdomain with one NS record); apps at
     `<app>.tools.calleva.org`, each in its own Firebase project with automatic
     Google sign-in; SAML sign-in for outside tools where plans allow (Fleetio
     first).
-
-### Platform connections
-
-12. **FareHarbor** (River School, Events, Haunted Forest): webhooks per
-    dashboard for live changes, a one-time export for history, and the API as a
-    nightly check. Bookings carry the activity date. *Needs:* API and webhook
-    documentation, a sample webhook message, the export's column headers, and
-    which dashboard feeds which line.
-13. **Shopify** (River Store): built; needs the app credentials.
-14. **HubSpot** (Education Programs, CHAPs group bookings): one pipeline per line.
-15. **Digests and alerts**: email and Slack.
-16. **Targets**: goals to compare against.
 
 ### Running costs
 

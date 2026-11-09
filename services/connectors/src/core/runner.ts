@@ -39,6 +39,9 @@ export async function runSync(connector: Connector, deps: Deps, mode: SyncMode, 
   }
   const state = await deps.state.get(source);
   log.info("sync started");
+  if (connector.rawEntities?.length && deps.writer.ensureTables) {
+    await deps.writer.ensureTables(source, connector.rawEntities).catch((err) => log.error("could not create raw tables", { error: String(err) }));
+  }
 
   let status: "ok" | "error" = "ok";
   let error: string | null = null;

@@ -13,6 +13,6 @@
  *                                     discounts are amounts subtracted, not negatives)
  *   transactions  INT64
  */
-const revenueSources = ["stg_shopify_revenue_daily", "stg_square_revenue_daily", "stg_campminder_revenue_daily"];
+const revenueSources = ["stg_shopify_revenue_daily", "stg_square_revenue_daily", "stg_campminder_revenue_daily", "stg_fareharbor_revenue_daily"];
 
 module.exports = { revenueSources };

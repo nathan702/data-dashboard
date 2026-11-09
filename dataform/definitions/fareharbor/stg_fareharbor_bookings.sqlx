@@ -1,0 +1,28 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Latest version of each FareHarbor booking, in dollars. Dates are Eastern. gross = booking total; refunds = refunds on it; net = gross − refunds; paid = payments collected. FareHarbor's Public API gives totals, not individual payments.",
+  assertions: { uniqueKey: ["booking_uuid"] }
+}
+js { const { latestRaw, ts } = require("includes/sql"); }
+
+SELECT
+  record_id AS booking_uuid,
+  JSON_VALUE(payload, '$.company') AS company,
+  JSON_VALUE(payload, '$.status') AS status,
+  JSON_VALUE(payload, '$.paidStatus') AS paid_status,
+  SAFE_CAST(JSON_VALUE(payload, '$.itemPk') AS INT64) AS item_pk,
+  JSON_VALUE(payload, '$.itemName') AS item_name,
+  ${ts("payload", "$.activityAt")} AS activity_at,
+  SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(payload, '$.activityDate')) AS service_date,
+  ${ts("payload", "$.createdAt")} AS created_at,
+  SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(payload, '$.createdDate')) AS booked_date,
+  SAFE_CAST(JSON_VALUE(payload, '$.customerCount') AS INT64) AS guests,
+  JSON_VALUE(payload, '$.customerBreakdown') AS customer_breakdown,
+  COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.grossTotal') AS NUMERIC), 0) / 100 AS gross,
+  COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.refundTotal') AS NUMERIC), 0) / 100 AS refunds,
+  COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.netTotal') AS NUMERIC), 0) / 100 AS net,
+  COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.amountPaid') AS NUMERIC), 0) / 100 AS paid,
+  JSON_VALUE(payload, '$.grossTotal') IS NULL AS amounts_hidden,
+  JSON_VALUE(payload, '$.rebookedFrom') AS rebooked_from
+FROM (${latestRaw(ref("raw_fareharbor", "bookings"))})
