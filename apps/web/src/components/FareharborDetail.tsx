@@ -86,17 +86,17 @@ function TotalsTable({ s, rows, nightly }: { s: FareharborSummary; rows: Array<{
   );
 }
 
-function DayChart({ s, measure, held }: { s: FareharborSummary; measure: "revenue" | "guests"; held: boolean }) {
+function DayChart({ s, measure, held }: { s: FareharborSummary; measure: "revenue" | "guests"; held: boolean | "all" }) {
   const data = s.days
-    .filter((d) => d.held === held)
+    .filter((d) => held === "all" || d.held === held)
     .map((d) => ({
       label: d.label,
       date: d.day ?? d.aligned,
       closed: d.day !== null && d.current === null,
       current: d.current?.[measure] ?? 0,
-      previous: (held ? d.previous : d.previousAtSamePoint)?.[measure] ?? 0,
+      previous: (held === false ? d.previousAtSamePoint : d.previous)?.[measure] ?? 0,
     }));
-  if (data.length === 0) return <div className="empty">{held ? "No days held yet this season." : "No upcoming days with sales."}</div>;
+  if (data.length === 0) return <div className="empty">{held === false ? "No upcoming days with sales." : "No days held yet this season."}</div>;
   const fmt = (v: number) => (measure === "revenue" ? formatUsdCompact(v) : formatInt(v));
   return (
     <div className="chart-plot" style={{ height: 260 }}>
@@ -118,18 +118,18 @@ function DayChart({ s, measure, held }: { s: FareharborSummary; measure: "revenu
                   </div>
                   <div className="chart-tooltip-row">
                     <span className="line-key" style={{ background: CUR }} aria-hidden />
-                    <strong>{fmt(p.current)}</strong> <span className="muted">this season{held ? "" : " so far"}</span>
+                    <strong>{fmt(p.current)}</strong> <span className="muted">this season{held === true ? "" : " so far"}</span>
                   </div>
                   <div className="chart-tooltip-row">
                     <span className="line-key" style={{ background: PREV }} aria-hidden />
-                    <strong>{fmt(p.previous)}</strong> <span className="muted">last season{held ? "" : " at the same point"}</span>
+                    <strong>{fmt(p.previous)}</strong> <span className="muted">last season{held === false ? " at the same point" : ""}</span>
                   </div>
                 </div>
               );
             }}
           />
-          <Bar dataKey="previous" name={held ? "Last season" : "Last season at the same point"} fill={PREV} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-          <Bar dataKey="current" name={held ? "This season" : "This season so far"} fill={CUR} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="previous" name={held === false ? "Last season at the same point" : "Last season"} fill={PREV} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="current" name={held === true ? "This season" : "This season so far"} fill={CUR} radius={[2, 2, 0, 0]} isAnimationActive={false} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
         </BarChart>
       </ResponsiveContainer>
@@ -261,6 +261,43 @@ function TicketTypes({ items, itemTypes }: { items: string[]; itemTypes: Record<
   );
 }
 
+/** River School, Events: each item this season (so far) against last season (final). */
+function ItemTable({ s }: { s: FareharborSummary }) {
+  const cur = (g: string) => {
+    const a = s.held.current.current.byGroup[g];
+    const b = s.upcoming.current.current.byGroup[g];
+    return { revenue: (a?.revenue ?? 0) + (b?.revenue ?? 0), guests: (a?.guests ?? 0) + (b?.guests ?? 0) };
+  };
+  const prev = (g: string) => s.held.previous.current.byGroup[g] ?? { revenue: 0, guests: 0 };
+  const rows = s.groups.map((g) => ({ g, c: cur(g), p: prev(g) })).sort((a, b) => b.c.revenue - a.c.revenue || b.p.revenue - a.p.revenue);
+  return (
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th style={{ padding: "8px 16px" }}>Item</th>
+            <th className="num" style={{ padding: "8px 16px" }}>Revenue</th>
+            <th className="num" style={{ padding: "8px 16px" }}>Last season</th>
+            <th className="num" style={{ padding: "8px 16px" }}>Guests</th>
+            <th className="num" style={{ padding: "8px 16px" }}>Last season</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ g, c, p }) => (
+            <tr key={g}>
+              <td>{s.groupLabel(g)}</td>
+              <td className="num">{formatUsd(c.revenue)}</td>
+              <td className="num muted">{formatUsd(p.revenue)}</td>
+              <td className="num">{formatInt(c.guests)}</td>
+              <td className="num muted">{formatInt(p.guests)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Which season is shown: ?fhs= in the URL, else the server's choice (the season under way). */
 function useSeasonParam() {
   const [params, setParams] = useSearchParams();
@@ -375,6 +412,8 @@ export function FareharborDetail({ businessLine, title }: { businessLine: Busine
         <Tile label={`${nightly ? "Nights" : "Weeks"} held`} value={s.held.current.days} previous={null} note={`${s.held.previous.days} last season`} />
       </div>
 
+      {nightly ? (
+        <>
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-header">
           <h3 className="card-title">{nightly ? "Nights" : "Weeks"} already held — final</h3>
@@ -449,6 +488,35 @@ export function FareharborDetail({ businessLine, title }: { businessLine: Busine
           </>
         )}
       </div>
+        </>
+      ) : (
+        <>
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header">
+          <h3 className="card-title">Week by week</h3>
+          <div className="chips">
+            <label className="field field-inline">
+              <span className="field-label">Show</span>
+              <select value={measure} onChange={(e) => setMeasure(e.target.value as "revenue" | "guests")}>
+                <option value="revenue">Revenue</option>
+                <option value="guests">Guests</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <p className="card-subtitle">This season so far against last season's final numbers, by the week of the activity.</p>
+        <DayChart s={s} measure={measure} held="all" />
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header">
+          <h3 className="card-title">By item</h3>
+        </div>
+        <p className="card-subtitle">This season so far (including booked upcoming activities) against last season's final numbers.</p>
+        <ItemTable s={s} />
+      </div>
+        </>
+      )}
     </section>
   );
 }
