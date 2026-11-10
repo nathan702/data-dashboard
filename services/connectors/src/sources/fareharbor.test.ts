@@ -65,6 +65,7 @@ interface Setup {
   env?: Record<string, string>;
   bookings?: unknown[];
   itemsForbidden?: boolean;
+  runBudgetMs?: number;
 }
 
 function setup(opts: Setup = {}) {
@@ -104,6 +105,7 @@ function setup(opts: Setup = {}) {
     tokenUrls: ["https://first.test/token/", "https://fh.test/auth/token/"],
     historyStart: "2019-01-01",
     stored,
+    runBudgetMs: opts.runBudgetMs ?? 60_000,
     fetchImpl,
     sleep: async () => {},
     now: () => new Date("2026-09-10T12:00:00Z"),
@@ -148,6 +150,21 @@ describe("fareharbor sync", () => {
     const second = setup({ bookings: many, stored });
     await runSync(second.c, second.deps, "backfill");
     expect(ids(second.deps, "bookings")).toEqual([]);
+  });
+
+  it("gives every company a turn even when the first one runs out of time", async () => {
+    const env = {
+      FAREHARBOR_COMPANIES: "hauntedforest,riverschool",
+      FAREHARBOR_RIVERSCHOOL_CLIENT_ID: "id",
+      FAREHARBOR_RIVERSCHOOL_CLIENT_SECRET: "secret",
+    };
+    // A zero budget: each company's share is used up straight away, but each still starts.
+    const { c, calls, deps } = setup({ env, runBudgetMs: 0 });
+    await runSync(c, deps, "incremental");
+    const tokens = calls.filter((p) => p.endsWith("/token/")).length;
+    expect(tokens).toBeGreaterThanOrEqual(2);
+    const cursors = (await deps.state.get("fareharbor")).cursors;
+    expect(Object.keys(cursors).some((k) => k.endsWith(":hauntedforest"))).toBe(true);
   });
 
   it("carries on with bookings when the item list is refused", async () => {

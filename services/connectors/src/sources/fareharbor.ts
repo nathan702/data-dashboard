@@ -62,6 +62,8 @@ export interface FareharborConfig {
   /** Bookings created before this date aren't read. */
   historyStart: string;
   stored: StoredHashes;
+  /** How long a run may take in all (the runner stops a little after 25 minutes). */
+  runBudgetMs: number;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   now?: () => Date;
@@ -75,6 +77,7 @@ export function fareharborConfigFromEnv(env: NodeJS.ProcessEnv, secrets: SecretS
     tokenUrls: [env.FAREHARBOR_TOKEN_URL ?? "https://api.fareharbor.com/v1/authentication/token/"],
     historyStart: env.FAREHARBOR_HISTORY_START ?? "2019-01-01",
     stored: new BigQueryStoredHashes(new BigQuery({ projectId: env.GCP_PROJECT_ID })),
+    runBudgetMs: 24 * 60_000,
   };
 }
 
@@ -336,11 +339,17 @@ export class FareharborConnector implements Connector {
     for (const c of companies) await this.token(c);
     await ctx.emit(companies.map((c) => ({ entity: "companies", recordId: c, payload: { shortname: c } })));
 
+    // Each company gets a fair share of the run, so one long history import
+    // can't keep the others from ever being read. Time a company doesn't use
+    // goes to the ones after it.
+    const runEnds = Date.now() + this.cfg.runBudgetMs;
     const failures: string[] = [];
-    for (const company of companies) {
+    for (const [i, company] of companies.entries()) {
       if (ctx.outOfTime()) return;
+      const companyEnds = Date.now() + Math.max(0, runEnds - Date.now()) / (companies.length - i);
+      const share: SyncContext = { ...ctx, outOfTime: () => ctx.outOfTime() || Date.now() > companyEnds };
       try {
-        await this.syncCompany(ctx, company);
+        await this.syncCompany(share, company);
       } catch (err) {
         // One company's failure doesn't stop the others.
         failures.push(`${company}: ${err instanceof Error ? err.message : String(err)}`);
