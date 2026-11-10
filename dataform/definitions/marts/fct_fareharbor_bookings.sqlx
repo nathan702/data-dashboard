@@ -1,0 +1,24 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "One row per FareHarbor booking with its business line (by company, Settings → Business lines). Rebooked originals are left out (the new booking carries them). revenue = booking total less refunds (a cancelled, fully refunded booking is 0); guests = 0 for cancelled bookings. No customer details.",
+  assertions: { uniqueKey: ["booking_uuid"], nonNull: ["business_line"] }
+}
+
+SELECT
+  b.booking_uuid,
+  COALESCE(a.business_line, 'unassigned') AS business_line,
+  b.company,
+  b.item_pk,
+  COALESCE(b.item_name, '(no item)') AS item_name,
+  b.status,
+  b.service_date,
+  b.booked_date,
+  IF(b.status = 'cancelled', 0, COALESCE(b.guests, 0)) AS guests,
+  b.gross - b.refunds AS revenue,
+  b.amounts_hidden
+FROM ${ref("stg_fareharbor_bookings")} AS b
+LEFT JOIN ${ref("business_line_assignments")} AS a
+  ON a.source = 'fareharbor' AND a.kind = 'company' AND a.assign_key = b.company
+WHERE b.status IS DISTINCT FROM 'rebooked'
+  AND b.service_date IS NOT NULL

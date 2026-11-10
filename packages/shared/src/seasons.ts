@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BUSINESS_LINES, type BusinessLine } from "./businessLines.js";
 import { addDays, isIsoDate, type IsoDate } from "./dates.js";
+import { DEFAULT_FAREHARBOR_SETTINGS, fareharborSettingsSchema, type FareharborSettings } from "./fareharbor.js";
 
 /**
  * Seasons. Each business line groups its numbers into seasons by program or
@@ -67,6 +68,8 @@ export interface SeasonSettings {
   campminderStarts: Record<string, IsoDate>;
   /** Camp registration waves (sign-up pace since registration opened). */
   registration: RegistrationSettings;
+  /** FareHarbor closed days and ticket types. */
+  fareharbor: FareharborSettings;
 }
 
 export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
@@ -84,6 +87,7 @@ export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
   endDates: { haunted_forest: { "2026": "2026-11-08" } },
   campminderStarts: {},
   registration: DEFAULT_REGISTRATION,
+  fareharbor: DEFAULT_FAREHARBOR_SETTINGS,
 };
 
 const yearKey = z.string().regex(/^\d{4}$/);
@@ -97,6 +101,7 @@ export const seasonSettingsSchema = z.object({
     opens: z.record(yearKey, z.partialRecord(z.enum(REGISTRATION_WAVES), isoDate)),
     locations: z.record(z.string().min(1).max(200), z.enum(["va", "md"])),
   }),
+  fareharbor: fareharborSettingsSchema,
 });
 
 /** Fill anything missing (e.g. a new business line) from the defaults. */
@@ -107,6 +112,7 @@ export function cleanSeasonSettings(raw: unknown): SeasonSettings {
     endDates: r.endDates ?? DEFAULT_SEASON_SETTINGS.endDates,
     campminderStarts: r.campminderStarts ?? {},
     registration: r.registration ?? DEFAULT_REGISTRATION,
+    fareharbor: r.fareharbor ?? DEFAULT_FAREHARBOR_SETTINGS,
   };
   const parsed = seasonSettingsSchema.safeParse(merged);
   return parsed.success ? (parsed.data as SeasonSettings) : DEFAULT_SEASON_SETTINGS;

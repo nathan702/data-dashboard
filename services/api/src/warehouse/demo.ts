@@ -24,11 +24,12 @@ import {
   type SourceFreshness,
 } from "@dash/shared";
 import { demoRunReport } from "./demoReports.js";
+import { demoFareharborDays, demoFareharborExtent } from "./demoFareharbor.js";
 import type { SchoolMap } from "./reportSql.js";
 import { DEMO_SESSION_GROUPS, demoCampminderFinance, demoRegistrationPace, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
-import type { DailyRevenueRow, FreshnessSource, Warehouse } from "./types.js";
+import type { DailyRevenueRow, FareharborDaysScope, FreshnessSource, Warehouse } from "./types.js";
 
 /**
  * Deterministic made-up numbers so the dashboard can be developed and
@@ -192,6 +193,14 @@ export class DemoWarehouse implements Warehouse {
 
   async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap) {
     return demoRunReport(spec, families, schools);
+  }
+
+  async fareharborDays(q: FareharborDaysScope) {
+    return demoFareharborDays(q);
+  }
+
+  async fareharborExtent(line: Parameters<typeof demoFareharborExtent>[0]) {
+    return demoFareharborExtent(line);
   }
 
   async registrationPace(q: RegistrationPaceQuery, registration: RegistrationSettings, schools?: SchoolMap) {
