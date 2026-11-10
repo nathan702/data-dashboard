@@ -36,7 +36,11 @@ import {
   type RevenueQuery,
   type RevenueSummaryResponse,
   type Source,
+  type BusinessLine,
+  type FareharborDayRow,
+  type LeadBucket,
 } from "@dash/shared";
+import { fareharborDaysSql, fareharborExtentSql } from "./fareharborSql.js";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import {
   breakdownSql as enrollmentBreakdownSql,
@@ -55,7 +59,7 @@ import { toReportResult } from "./reportResult.js";
 import { toKpis } from "./retail.js";
 import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, filteredKpiSql, inventorySql, kpiSql, retailDrillParams, saveAssignmentsSql } from "./retailSql.js";
 import { groupKeys } from "./summarize.js";
-import type { Warehouse } from "./types.js";
+import type { FareharborDaysScope, Warehouse } from "./types.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
 // comes from the request is passed as a query parameter.
@@ -395,6 +399,36 @@ export class BigQueryWarehouse implements Warehouse {
       households: Number(r.households ?? 0),
       filtered,
     };
+  }
+
+  async fareharborDays(q: FareharborDaysScope): Promise<FareharborDayRow[]> {
+    const [rows] = await this.bq.query({
+      query: fareharborDaysSql(this.martsDataset),
+      params: { business_line: q.businessLine, from: q.from, to: q.to, cutoff: q.cutoff, nightly: q.nightly },
+      types: { business_line: "STRING", from: "STRING", to: "STRING", cutoff: "STRING", nightly: "BOOL" },
+      location: this.location,
+    });
+    return (rows as Array<Record<string, unknown>>).map((r) => ({
+      day: String(r.day),
+      item: String(r.item),
+      lead: r.lead as LeadBucket,
+      revenue: round2(Number(r.revenue ?? 0)),
+      guests: Number(r.guests ?? 0),
+      bookings: Number(r.bookings ?? 0),
+      revenueAtSamePoint: round2(Number(r.revenue_sp ?? 0)),
+      guestsAtSamePoint: Number(r.guests_sp ?? 0),
+    }));
+  }
+
+  async fareharborExtent(businessLine: BusinessLine) {
+    const [rows] = await this.bq.query({
+      query: fareharborExtentSql(this.martsDataset),
+      params: { business_line: businessLine },
+      types: { business_line: "STRING" },
+      location: this.location,
+    });
+    const r = (rows as Array<{ first_day: string | null; last_day: string | null }>)[0];
+    return r?.first_day && r.last_day ? { firstDay: r.first_day, lastDay: r.last_day } : null;
   }
 
   async registrationPace(q: RegistrationPaceQuery, registration: RegistrationSettings, schools?: SchoolMap): Promise<RegistrationPaceResponse> {

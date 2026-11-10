@@ -421,7 +421,8 @@ describe("deploy self-check", () => {
     const res = await request(api()).get("/healthz/deep").expect(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.checks.length).toBeGreaterThanOrEqual(5);
-  });
+    // Runs every check against the demo data: several seconds, more on a busy machine.
+  }, 30_000);
 
   it("fails when summaries come back empty (the zero-revenue bug)", async () => {
     const { runSelfCheck } = await import("./selfCheck.js");
@@ -951,5 +952,26 @@ describe("report builder", () => {
     await request(app).post("/api/settings/schools/actions").send({ action: "assign", spellings: ["RDS"], schoolId: "nope" }).expect(400);
     const found = await request(app).get("/api/settings/schools/search?q=riverbend").expect(200);
     expect(found.body.results[0]).toMatchObject({ id: "nces-demo-3", name: "Riverbend Day School" });
+  });
+});
+
+describe("fareharbor days", () => {
+  it("returns this and last season's nights with closures and the same-point cutoff", async () => {
+    const app = api();
+    const res = await request(app).get("/api/fareharbor/days?businessLine=haunted_forest&season=2026").expect(200);
+    expect(res.body).toMatchObject({ businessLine: "haunted_forest", season: 2026, nightly: true });
+    expect(res.body.previous.end < res.body.current.start).toBe(true);
+    expect(res.body.rows.length).toBeGreaterThan(0);
+    expect(res.body.rows.some((r: { day: string }) => r.day.startsWith("2025-10"))).toBe(true);
+    expect(res.body.closures.map((c: { date: string }) => c.date)).toContain("2026-10-11");
+    expect(res.body.seasons).toContain(2026);
+  });
+
+  it("groups other lines by week and rejects unknown lines", async () => {
+    const app = api();
+    const res = await request(app).get("/api/fareharbor/days?businessLine=river_school&season=2026").expect(200);
+    expect(res.body.nightly).toBe(false);
+    expect(res.body.rows.every((r: { day: string }) => new Date(`${r.day}T00:00:00Z`).getUTCDay() === 1)).toBe(true);
+    await request(app).get("/api/fareharbor/days?businessLine=nope").expect(400);
   });
 });

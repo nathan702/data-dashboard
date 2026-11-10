@@ -6,7 +6,9 @@ import type {
   RegistrationPaceResponse,
   RegistrationSettings,
   AssignmentUpdate,
+  BusinessLine,
   BusinessLineOrUnassigned,
+  FareharborDayRow,
   EnrollmentBreakdownQuery,
   EnrollmentMapQuery,
   EnrollmentMapResponse,
@@ -59,8 +61,22 @@ export interface Warehouse {
   programList(): Promise<Array<{ program: string; enrollments: number }>>;
   /** Every school spelling with its enrolled campers (all seasons), for Settings → Schools and report grouping. */
   schoolList(): Promise<SchoolSpelling[]>;
+  /** FareHarbor bookings by activity day (or week) × item × lead time, for one line and date range. */
+  fareharborDays(q: FareharborDaysScope): Promise<FareharborDayRow[]>;
+  /** First and last activity day with FareHarbor bookings for a line (null when none). */
+  fareharborExtent(businessLine: BusinessLine): Promise<{ firstDay: IsoDate; lastDay: IsoDate } | null>;
   /** Plain totals straight from the tables, for the deploy self-check. */
   referenceTotals(start: string, end: string): Promise<ReferenceTotals>;
+}
+
+export interface FareharborDaysScope {
+  businessLine: BusinessLine;
+  from: IsoDate;
+  to: IsoDate;
+  /** Bookings made on or before this day count "at the same point". */
+  cutoff: IsoDate;
+  /** One row per night, else per week (Mondays). */
+  nightly: boolean;
 }
 
 export interface FreshnessSource {

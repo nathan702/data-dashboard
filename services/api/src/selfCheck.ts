@@ -204,6 +204,15 @@ export async function runSelfCheck(
     return rows.length && flat.length === seasons.size ? `every season's sign-ups fall on one day (${flat.join(", ")})` : null;
   });
 
+  await check("FareHarbor bookings by day run", async () => {
+    await warehouse.fareharborExtent("haunted_forest");
+    const rows = await warehouse.fareharborDays({ businessLine: "haunted_forest", from: "2025-09-01", to: "2025-11-30", cutoff: "2025-10-01", nightly: true });
+    await warehouse.fareharborDays({ businessLine: "river_school", from: "2025-01-01", to: "2025-12-31", cutoff: "2025-06-01", nightly: false });
+    // Same-point figures can't exceed the final ones; if they do, the cutoff didn't reach the query.
+    const over = rows.filter((r) => r.guestsAtSamePoint > r.guests);
+    return over.length ? `${over.length} rows sold more by the same point than in all` : null;
+  });
+
   await check("family reporting runs", async () => {
     await warehouse.runReport(
       reportSpecSchema.parse({ dataset: "families", rows: ["campers_in_family", "change_vs_last"], column: "season", measure: "pct_together" }),

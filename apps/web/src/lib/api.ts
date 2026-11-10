@@ -1,6 +1,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { encodeEnrollmentFilters, encodeFilters } from "@dash/shared";
 import type {
+  BusinessLine,
+  FareharborDaysResponse,
   AssignmentsResponse,
   CampminderFinanceSummary,
   RegistrationPaceResponse,
@@ -110,6 +112,7 @@ export function useSaveSeasonSettings() {
     ["revenue"],
     ["enrollment-summary"],
     ["registration-pace"],
+    ["fareharbor-days"],
   ]);
 }
 
@@ -156,6 +159,11 @@ function retailQs(q: Record<string, string | undefined>) {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
   return p.toString();
+}
+
+export function useFareharborDays(businessLine: BusinessLine, season: number | undefined) {
+  const qs = retailQs({ businessLine, season: season ? String(season) : undefined });
+  return useApi<FareharborDaysResponse>(["fareharbor-days", qs], `/api/fareharbor/days?${qs}`, { refetchInterval: 10 * 60_000 });
 }
 
 export function useRetailKpis(source: RetailSource, q: RetailScope & { compare: ComparisonMode }) {

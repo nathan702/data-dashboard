@@ -16,6 +16,7 @@ import {
   type RegistrationSettings,
   type SeasonRule,
   type SeasonSettings,
+  type FareharborSettings,
 } from "@dash/shared";
 import { useAssignments, useSaveSeasonSettings, useSeasonSettings } from "../lib/api";
 import { formatDate } from "../lib/format";
@@ -205,6 +206,7 @@ export function SeasonSettingsCard({ canEdit }: { canEdit: boolean }) {
         />
       </div>
       <RegistrationSection value={s.registration} canEdit={canEdit} onChange={(registration) => update({ ...s, registration })} />
+      <ClosuresSection value={s.fareharbor} canEdit={canEdit} onChange={(fareharbor) => update({ ...s, fareharbor })} />
     </section>
   );
 }
@@ -285,6 +287,72 @@ function RegistrationSection({ value, canEdit, onChange }: { value: Registration
           </label>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** FareHarbor days the business was closed (weather, cancelled): left out of both seasons' comparisons. */
+function ClosuresSection({ value, canEdit, onChange }: { value: FareharborSettings; canEdit: boolean; onChange(v: FareharborSettings): void }) {
+  const lines = BUSINESS_LINES.filter((l) => BUSINESS_LINE_INFO[l].sources.includes("fareharbor"));
+  const rows = value.closures.map((c, i) => ({ ...c, i })).sort((a, b) => b.date.localeCompare(a.date));
+  const setRow = (i: number, patch: Partial<FareharborSettings["closures"][number]>) =>
+    onChange({ ...value, closures: value.closures.map((c, j) => (j === i ? { ...c, ...patch } : c)) });
+  return (
+    <div className="season-campminder">
+      <h3 className="card-title">Closed days (FareHarbor)</h3>
+      <p className="card-subtitle">
+        Nights or days that were closed (weather) or cancelled. They're left out of the FareHarbor sections on each business line's page, and so is
+        their match the other year (the closest same weekday). Refunded tickets drop out on their own; guests who moved show on their new day.
+      </p>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Business line</th>
+              <th>Date</th>
+              <th>Reason</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c) => (
+              <tr key={c.i}>
+                <td>
+                  <select value={c.businessLine} disabled={!canEdit} onChange={(e) => setRow(c.i, { businessLine: e.target.value as BusinessLine })} aria-label="Business line">
+                    {lines.map((l) => (
+                      <option key={l} value={l}>
+                        {BUSINESS_LINE_INFO[l].label}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <input type="date" value={c.date} disabled={!canEdit} onChange={(e) => isIsoDate(e.target.value) && setRow(c.i, { date: e.target.value })} aria-label="Closed date" />
+                </td>
+                <td>
+                  <input type="text" value={c.note} maxLength={200} disabled={!canEdit} onChange={(e) => setRow(c.i, { note: e.target.value })} aria-label="Reason" placeholder="Weather" />
+                </td>
+                <td>
+                  {canEdit && (
+                    <button type="button" className="link-button" onClick={() => onChange({ ...value, closures: value.closures.filter((_, j) => j !== c.i) })}>
+                      Remove
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canEdit && (
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => onChange({ ...value, closures: [...value.closures, { businessLine: lines[0] ?? "haunted_forest", date: easternDate(), note: "Weather" }] })}
+        >
+          + Add a closed day
+        </button>
+      )}
     </div>
   );
 }

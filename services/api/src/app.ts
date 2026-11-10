@@ -48,6 +48,11 @@ import {
   revenueQuerySchema,
   type AssignmentsResponse,
   type MeResponse,
+  addDays,
+  easternDate,
+  fareharborDaysQuerySchema,
+  NIGHTLY_LINES,
+  type FareharborDaysResponse,
 } from "@dash/shared";
 import { requireAdmin, requireViewer, type AuthDeps } from "./auth.js";
 import { runSelfCheck } from "./selfCheck.js";
@@ -429,6 +434,61 @@ export function createApi(opts: ApiOptions) {
     await opts.schools.set(applySchoolAction(settings, a), req.viewer!.email);
     cache.clear();
     res.json({ ok: true });
+  });
+
+  // ---- FareHarbor ----
+
+  api.get("/fareharbor/days", async (req, res) => {
+    const parsed = fareharborDaysQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    const { businessLine } = parsed.data;
+    const settings = await opts.seasons.get();
+    const today = easternDate();
+    const key = `fh-days:${JSON.stringify(parsed.data)}:${today}:${JSON.stringify(settings.fareharbor)}:${JSON.stringify(settings.endDates)}:${settings.rules[businessLine]}`;
+    res.json(
+      await cached(key, async (): Promise<FareharborDaysResponse> => {
+        const cal = lineCalendar(businessLine, settings);
+        const extent = await opts.warehouse.fareharborExtent(businessLine);
+        const seasons: number[] = [];
+        if (extent) for (let s = cal.seasonFor(extent.lastDay); s >= cal.seasonFor(extent.firstDay); s--) seasons.push(s);
+        const nightly = NIGHTLY_LINES.includes(businessLine);
+        const load = async (season: number) => {
+          const current = cal.range(season);
+          const previous = cal.range(season - 1);
+          const asOf = today <= current.end ? today : addDays(current.end, 1);
+          // Last season's bookings made by the same point: through yesterday, a year (364 days) back.
+          const samePointCutoff = addDays(asOf, -365);
+          const rows = await opts.warehouse.fareharborDays({ businessLine, from: previous.start, to: current.end, cutoff: samePointCutoff, nightly });
+          return { season, current, previous, asOf, samePointCutoff, rows };
+        };
+        // The season under way, else the latest one that has started. Right after a season ends, the
+        // next one only has early sales: keep showing the one just finished until the new one has held a day.
+        const now = cal.seasonFor(today);
+        const pick = seasons.find((s) => s <= now) ?? seasons[seasons.length - 1] ?? now;
+        let view = await load(parsed.data.season ?? pick);
+        if (parsed.data.season === undefined && seasons.includes(pick - 1)) {
+          const started = view.rows.some((r) => r.day >= view.current.start && r.day < today);
+          if (!started) view = await load(pick - 1);
+        }
+        const { season, current, previous, asOf, samePointCutoff, rows } = view;
+        return {
+          businessLine,
+          season,
+          seasons,
+          nightly,
+          current,
+          previous,
+          asOf,
+          samePointCutoff,
+          rows,
+          closures: settings.fareharbor.closures.filter((c) => c.businessLine === businessLine),
+          itemTypes: settings.fareharbor.itemTypes,
+        };
+      }),
+    );
   });
 
   api.get("/settings/seasons", async (_req, res) => {
