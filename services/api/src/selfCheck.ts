@@ -204,6 +204,11 @@ export async function runSelfCheck(
     return rows.length && flat.length === seasons.size ? `every season's sign-ups fall on one day (${flat.join(", ")})` : null;
   });
 
+  await check("HubSpot deals run", async () => {
+    await warehouse.hubspotDeals("education");
+    return null;
+  });
+
   await check("FareHarbor bookings by day run", async () => {
     await warehouse.fareharborExtent("haunted_forest");
     const rows = await warehouse.fareharborDays({ businessLine: "haunted_forest", from: "2025-09-01", to: "2025-11-30", cutoff: "2025-10-01", nightly: true });

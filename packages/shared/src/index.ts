@@ -16,3 +16,4 @@ export * from "./occupations.js";
 export * from "./campminderFinance.js";
 export * from "./fareharbor.js";
 export * from "./fareharborSummary.js";
+export * from "./hubspot.js";

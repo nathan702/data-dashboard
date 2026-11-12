@@ -3,6 +3,7 @@ import { encodeEnrollmentFilters, encodeFilters } from "@dash/shared";
 import type {
   BusinessLine,
   FareharborDaysResponse,
+  HubspotDealsResponse,
   AssignmentsResponse,
   CampminderFinanceSummary,
   RegistrationPaceResponse,
@@ -159,6 +160,10 @@ function retailQs(q: Record<string, string | undefined>) {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
   return p.toString();
+}
+
+export function useHubspotDeals(businessLine: BusinessLine) {
+  return useApi<HubspotDealsResponse>(["hubspot-deals", businessLine], `/api/hubspot/deals?businessLine=${businessLine}`, { refetchInterval: 5 * 60_000 });
 }
 
 export function useFareharborDays(businessLine: BusinessLine, season: number | undefined) {

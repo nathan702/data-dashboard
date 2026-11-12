@@ -975,3 +975,13 @@ describe("fareharbor days", () => {
     await request(app).get("/api/fareharbor/days?businessLine=nope").expect(400);
   });
 });
+
+describe("hubspot deals", () => {
+  it("returns the open pipeline and won deals for a line", async () => {
+    const res = await request(api()).get("/api/hubspot/deals?businessLine=education").expect(200);
+    expect(res.body.businessLine).toBe("education");
+    expect(res.body.open.length).toBeGreaterThan(0);
+    expect(res.body.won.length).toBe(24);
+    await request(api()).get("/api/hubspot/deals?businessLine=nope").expect(400);
+  });
+});

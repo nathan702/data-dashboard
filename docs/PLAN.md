@@ -159,7 +159,10 @@ unmatched is "Unassigned" and flagged.
     Secret stored as secrets. Next: booking and guest counts, sell-through per
     time slot (Haunted Forest nights).
 9. **Shopify** (River Store): built; needs the app credentials.
-10. **HubSpot** (Education Programs, CHAPs group bookings): one pipeline per line.
+10. **HubSpot** ← *in progress* (Education Programs, CHAPs group bookings): deals
+    and pipelines every 15 minutes, revenue by pipeline → business line, open
+    pipeline and won-by-month on each line's page. *Needs:* the private app
+    token, pipeline assignments, and (optional) the program-date property.
 11. **Digests and alerts**: email and Slack.
 12. **Targets**: goals to compare against.
 

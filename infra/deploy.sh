@@ -46,7 +46,7 @@ gcloud run deploy dashboard-connectors-webhooks --image="$REPO/connectors:$TAG" 
 gcloud run deploy dashboard-connectors-jobs --image="$REPO/connectors:$TAG" --region="$REGION" \
   --service-account="$CONN_SA" --no-allow-unauthenticated --timeout=1800 \
   --min-instances=0 --max-instances=2 --memory=1Gi \
-  --set-env-vars="$COMMON_ENV,SERVICE_ROLE=jobs,CAMPMINDER_SHEET_ID=$CAMPMINDER_SHEET_ID,CAMPMINDER_HISTORY_SHEET_ID=$CAMPMINDER_HISTORY_SHEET_ID"
+  --set-env-vars="$COMMON_ENV,SERVICE_ROLE=jobs,CAMPMINDER_SHEET_ID=$CAMPMINDER_SHEET_ID,CAMPMINDER_HISTORY_SHEET_ID=$CAMPMINDER_HISTORY_SHEET_ID,HUBSPOT_SERVICE_DATE_PROPERTY=${HUBSPOT_SERVICE_DATE_PROPERTY:-}"
 gcloud run services add-iam-policy-binding dashboard-connectors-jobs --region="$REGION" \
   --member="serviceAccount:$SCHED_SA" --role=roles/run.invoker >/dev/null
 JOBS_URL=$(gcloud run services describe dashboard-connectors-jobs --region="$REGION" --format='value(status.url)')
@@ -54,7 +54,7 @@ JOBS_URL=$(gcloud run services describe dashboard-connectors-jobs --region="$REG
 # Sources without credentials yet just report "not connected", so every source is scheduled.
 # Campminder's sheet only changes once a day; hourly checks are cheap (unchanged sheets are skipped).
 # FareHarbor has no "changed since" listing: hourly runs re-read upcoming dates every 6 hours and walk history in between.
-for ENTRY in "shopify|*/15 * * * *" "square|*/15 * * * *" "campminder|5 * * * *" "fareharbor|35 * * * *"; do
+for ENTRY in "shopify|*/15 * * * *" "square|*/15 * * * *" "campminder|5 * * * *" "fareharbor|35 * * * *" "hubspot|10,25,40,55 * * * *"; do
   SRC="${ENTRY%%|*}"
   if gcloud scheduler jobs describe "sync-$SRC" --location="$REGION" >/dev/null 2>&1; then SCHED_CMD=update; else SCHED_CMD=create; fi
   gcloud scheduler jobs "$SCHED_CMD" http "sync-$SRC" --location="$REGION" \

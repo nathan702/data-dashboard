@@ -1,0 +1,24 @@
+config {
+  type: "view",
+  schema: "staging",
+  description: "HubSpot revenue per day in the fct_revenue_daily contract: won deals' amounts. Booked = the close date; service = the program/event date (else the close date). HubSpot doesn't carry payments, so collected uses the close date too. Assigned to business lines by pipeline."
+}
+
+SELECT
+  'hubspot' AS source,
+  -- Each pipeline is assigned to a business line on the Settings page.
+  pipeline_id AS assign_key,
+  CASE basis WHEN 'service' THEN service_date ELSE close_date END AS revenue_date,
+  basis AS date_basis,
+  CAST(NULL AS STRING) AS location,
+  pipeline AS channel,
+  SUM(amount) AS gross,
+  CAST(0 AS NUMERIC) AS discounts,
+  CAST(0 AS NUMERIC) AS refunds,
+  CAST(0 AS NUMERIC) AS fees,
+  COUNT(*) AS transactions
+FROM ${ref("stg_hubspot_deals")}
+CROSS JOIN UNNEST(['booked', 'collected', 'service']) AS basis
+WHERE is_won
+  AND (CASE basis WHEN 'service' THEN service_date ELSE close_date END) IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6

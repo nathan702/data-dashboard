@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_hubspot",
+  name: "pipelines",
+  description: "HubSpot deal pipelines with their stages (labels, closed or not)."
+}

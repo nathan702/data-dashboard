@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_hubspot",
+  name: "deals",
+  description: "HubSpot deals, allow-listed fields only: ids, pipeline, stage, amount, dates, and custom date/number properties. Never deal names, contacts, companies, notes or owners."
+}

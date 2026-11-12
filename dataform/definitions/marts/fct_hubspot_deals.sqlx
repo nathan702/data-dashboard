@@ -1,0 +1,23 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "One row per HubSpot deal with its business line (by pipeline, Settings → Business lines). No deal names, contacts or companies.",
+  assertions: { uniqueKey: ["deal_id"], nonNull: ["business_line"] }
+}
+
+SELECT
+  d.deal_id,
+  COALESCE(a.business_line, 'unassigned') AS business_line,
+  d.pipeline_id,
+  d.pipeline,
+  d.stage,
+  d.stage_order,
+  d.amount,
+  d.is_closed,
+  d.is_won,
+  d.created_date,
+  d.close_date,
+  d.service_date
+FROM ${ref("stg_hubspot_deals")} AS d
+LEFT JOIN ${ref("business_line_assignments")} AS a
+  ON a.source = 'hubspot' AND a.kind = 'pipeline' AND a.assign_key = d.pipeline_id
