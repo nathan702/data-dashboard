@@ -207,6 +207,16 @@ descriptions (they often name people). A different tab name can be set with
 the report splits across what it paid for (camp and CHAPs) is several rows
 with the same transaction id; each is kept as its own line.
 
+**Past seasons' financials.** In the same history sheet as the past camper
+reports, add a tab per season named `Financial 2022`, `Financial 2023`, … with
+that season's Campminder Financial report (same columns as the daily
+`Financial` tab; a title line above the headers is fine). Each tab is imported
+as its season on the next hourly sync, and again only when it changes; rows
+for other seasons in a tab are left out. A tab with none of its own season's
+rows is refused. A season with a history tab belongs to it: the daily
+`Financial` tab leaves that season alone even if it lists a few of its rows.
+Tabs for the daily sheet's season or later are ignored.
+
 Amounts keep Campminder's signs (charges and refunds positive, credits and
 payments negative), so a household's balance is the sum of its lines and a
 reversal, its own line with the opposite sign, nets out. Each line's business
