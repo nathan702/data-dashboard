@@ -51,6 +51,7 @@ import {
   addDays,
   easternDate,
   fareharborDaysQuerySchema,
+  hubspotDealsQuerySchema,
   NIGHTLY_LINES,
   type FareharborDaysResponse,
 } from "@dash/shared";
@@ -434,6 +435,17 @@ export function createApi(opts: ApiOptions) {
     await opts.schools.set(applySchoolAction(settings, a), req.viewer!.email);
     cache.clear();
     res.json({ ok: true });
+  });
+
+  // ---- HubSpot ----
+
+  api.get("/hubspot/deals", async (req, res) => {
+    const parsed = hubspotDealsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    res.json(await cached(`hubspot-deals:${parsed.data.businessLine}`, () => opts.warehouse.hubspotDeals(parsed.data.businessLine)));
   });
 
   // ---- FareHarbor ----

@@ -195,6 +195,23 @@ export class DemoWarehouse implements Warehouse {
     return demoRunReport(spec, families, schools);
   }
 
+  async hubspotDeals(businessLine: Parameters<typeof demoFareharborExtent>[0]) {
+    if (businessLine !== "education" && businessLine !== "chaps") return { businessLine, open: [], won: [] };
+    const scale = businessLine === "education" ? 6000 : 900;
+    const open = [
+      { pipeline: businessLine === "education" ? "Field trips" : "CHAPs groups", stage: "Inquiry", stageOrder: 0, deals: 14, amount: 14 * scale * 0.8 },
+      { pipeline: businessLine === "education" ? "Field trips" : "CHAPs groups", stage: "Proposal sent", stageOrder: 1, deals: 9, amount: 9 * scale },
+      { pipeline: businessLine === "education" ? "Field trips" : "CHAPs groups", stage: "Deposit paid", stageOrder: 2, deals: 5, amount: 5 * scale * 1.1 },
+    ];
+    const won = Array.from({ length: 24 }, (_, i) => {
+      const dt = new Date(Date.UTC(2024, 11 + i, 1));
+      const month = dt.toISOString().slice(0, 10);
+      const deals = 3 + ((i * 7) % 6);
+      return { month, deals, amount: deals * scale };
+    });
+    return { businessLine, open, won };
+  }
+
   async fareharborDays(q: FareharborDaysScope) {
     return demoFareharborDays(q);
   }

@@ -84,6 +84,27 @@ fareharbor AS (
   FROM (SELECT DISTINCT record_id AS assign_key FROM ${ref("raw_fareharbor", "companies")}) AS c
   LEFT JOIN ${ref("stg_fareharbor_bookings")} AS b ON b.company = c.assign_key
   GROUP BY 1, 2
+),
+hubspot AS (
+  -- Deal pipelines; matched by name until set on Settings.
+  SELECT
+    p.assign_key,
+    COALESCE(p.label, p.assign_key) AS label,
+    MAX(d.service_date) AS last_activity,
+    COALESCE(SUM(IF(d.is_won AND d.close_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH), d.amount, 0)), 0) AS net_12m,
+    COUNTIF(d.is_won AND d.close_date >= DATE_SUB(CURRENT_DATE("America/New_York"), INTERVAL 12 MONTH)) AS activity_12m,
+    CASE
+      WHEN REGEXP_CONTAINS(LOWER(ANY_VALUE(p.label)), r'chap') THEN 'chaps'
+      WHEN REGEXP_CONTAINS(LOWER(ANY_VALUE(p.label)), r'educat|field trip|school') THEN 'education'
+    END AS default_hint
+  FROM (
+    SELECT JSON_VALUE(payload, '$.id') AS assign_key, JSON_VALUE(payload, '$.label') AS label
+    FROM ${ref("raw_hubspot", "pipelines")}
+    WHERE TRUE
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY record_id ORDER BY source_updated_at DESC, ingested_at DESC) = 1
+  ) AS p
+  LEFT JOIN ${ref("stg_hubspot_deals")} AS d ON d.pipeline_id = p.assign_key
+  GROUP BY 1, 2
 )
 SELECT 'square' AS source, 'location' AS kind, * FROM square
 UNION ALL
@@ -94,3 +115,5 @@ UNION ALL
 SELECT 'campminder', IF(STARTS_WITH(assign_key, 'category:'), 'category', 'session'), * FROM campminder_money
 UNION ALL
 SELECT 'fareharbor', 'company', * FROM fareharbor
+UNION ALL
+SELECT 'hubspot', 'pipeline', * FROM hubspot

@@ -38,9 +38,11 @@ import {
   type Source,
   type BusinessLine,
   type FareharborDayRow,
+  type HubspotDealsResponse,
   type LeadBucket,
 } from "@dash/shared";
 import { fareharborDaysSql, fareharborExtentSql } from "./fareharborSql.js";
+import { hubspotOpenSql, hubspotWonSql } from "./hubspotSql.js";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import {
   breakdownSql as enrollmentBreakdownSql,
@@ -418,6 +420,25 @@ export class BigQueryWarehouse implements Warehouse {
       revenueAtSamePoint: round2(Number(r.revenue_sp ?? 0)),
       guestsAtSamePoint: Number(r.guests_sp ?? 0),
     }));
+  }
+
+  async hubspotDeals(businessLine: BusinessLine): Promise<HubspotDealsResponse> {
+    const run = async (query: string) => {
+      const [rows] = await this.bq.query({ query, params: { business_line: businessLine }, types: { business_line: "STRING" }, location: this.location });
+      return rows as Array<Record<string, unknown>>;
+    };
+    const [open, won] = await Promise.all([run(hubspotOpenSql(this.martsDataset)), run(hubspotWonSql(this.martsDataset))]);
+    return {
+      businessLine,
+      open: open.map((r) => ({
+        pipeline: String(r.pipeline ?? ""),
+        stage: String(r.stage ?? ""),
+        stageOrder: r.stage_order === null || r.stage_order === undefined ? null : Number(r.stage_order),
+        deals: Number(r.deals ?? 0),
+        amount: round2(Number(r.amount ?? 0)),
+      })),
+      won: won.map((r) => ({ month: String(r.month), deals: Number(r.deals ?? 0), amount: round2(Number(r.amount ?? 0)) })),
+    };
   }
 
   async fareharborExtent(businessLine: BusinessLine) {

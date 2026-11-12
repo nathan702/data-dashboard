@@ -9,6 +9,7 @@ import type {
   BusinessLine,
   BusinessLineOrUnassigned,
   FareharborDayRow,
+  HubspotDealsResponse,
   EnrollmentBreakdownQuery,
   EnrollmentMapQuery,
   EnrollmentMapResponse,
@@ -65,6 +66,8 @@ export interface Warehouse {
   fareharborDays(q: FareharborDaysScope): Promise<FareharborDayRow[]>;
   /** First and last activity day with FareHarbor bookings for a line (null when none). */
   fareharborExtent(businessLine: BusinessLine): Promise<{ firstDay: IsoDate; lastDay: IsoDate } | null>;
+  /** HubSpot deals for a line: open pipeline by stage, won by month. */
+  hubspotDeals(businessLine: BusinessLine): Promise<HubspotDealsResponse>;
   /** Plain totals straight from the tables, for the deploy self-check. */
   referenceTotals(start: string, end: string): Promise<ReferenceTotals>;
 }

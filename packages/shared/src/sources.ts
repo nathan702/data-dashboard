@@ -38,7 +38,7 @@ export const SOURCE_INFO: Record<Source, SourceInfo> = {
   hubspot: {
     id: "hubspot",
     label: "HubSpot",
-    ingestion: "Webhooks + 15-min reconciliation",
+    ingestion: "Deals every 15 minutes",
     phase: 3,
   },
   campminder: {

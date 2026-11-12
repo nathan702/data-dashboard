@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Latest version of each HubSpot deal with its pipeline and stage labels. service_date is the program/event date property when one is configured (HUBSPOT_SERVICE_DATE_PROPERTY), else the close date. Dates are Eastern.",
+  assertions: { uniqueKey: ["deal_id"] }
+}
+js { const { latestRaw, ts } = require("includes/sql"); }
+
+WITH d AS (
+  SELECT * FROM (${latestRaw(ref("raw_hubspot", "deals"))})
+),
+p AS (
+  SELECT JSON_VALUE(payload, '$.id') AS pipeline_id, JSON_VALUE(payload, '$.label') AS pipeline_label, payload
+  FROM (${latestRaw(ref("raw_hubspot", "pipelines"))})
+),
+stages AS (
+  SELECT p.pipeline_id, JSON_VALUE(s, '$.id') AS stage_id, JSON_VALUE(s, '$.label') AS stage_label, SAFE_CAST(JSON_VALUE(s, '$.order') AS INT64) AS stage_order
+  FROM p, UNNEST(JSON_QUERY_ARRAY(p.payload, '$.stages')) AS s
+)
+SELECT
+  d.record_id AS deal_id,
+  JSON_VALUE(d.payload, '$.pipeline') AS pipeline_id,
+  COALESCE(p.pipeline_label, JSON_VALUE(d.payload, '$.pipeline')) AS pipeline,
+  JSON_VALUE(d.payload, '$.stage') AS stage_id,
+  COALESCE(s.stage_label, JSON_VALUE(d.payload, '$.stage')) AS stage,
+  s.stage_order,
+  COALESCE(SAFE_CAST(JSON_VALUE(d.payload, '$.amount') AS NUMERIC), 0) AS amount,
+  JSON_VALUE(d.payload, '$.currency') AS currency,
+  JSON_VALUE(d.payload, '$.isClosed') = 'true' AS is_closed,
+  JSON_VALUE(d.payload, '$.isWon') = 'true' AS is_won,
+  ${ts("d.payload", "$.createdAt")} AS created_at,
+  SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(d.payload, '$.createdDate')) AS created_date,
+  SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(d.payload, '$.closeDate')) AS close_date,
+  COALESCE(
+    SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(d.payload, '$.serviceDate')),
+    SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(d.payload, '$.closeDate'))
+  ) AS service_date,
+  JSON_QUERY(d.payload, '$.custom') AS custom
+FROM d
+LEFT JOIN p ON p.pipeline_id = JSON_VALUE(d.payload, '$.pipeline')
+LEFT JOIN stages AS s ON s.pipeline_id = JSON_VALUE(d.payload, '$.pipeline') AND s.stage_id = JSON_VALUE(d.payload, '$.stage')

@@ -64,7 +64,7 @@ describe("scheduled sync", () => {
   it("rejects unknown and unconfigured sources", async () => {
     const { app } = setup(fake);
     await request(app).post("/run/nope").expect(404);
-    await request(app).post("/run/hubspot").expect(404);
+    await request(app).post("/run/campminder").expect(404);
   });
 
   it("does not expose job routes on the public webhooks service", async () => {
