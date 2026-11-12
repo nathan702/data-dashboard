@@ -101,8 +101,8 @@ export interface HubspotProgramsScope {
   currentStart: string;
   /** Last season's deals won on or before this day count "at the same point". */
   cutoff: string;
-  /** The deal property for each role (null = none). */
-  roles: Record<HubspotRole, string | null>;
+  /** The deal properties for each role (counts add them up; choices use the first). */
+  roles: Record<HubspotRole, string[]>;
 }
 
 export interface FreshnessSource {

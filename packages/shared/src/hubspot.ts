@@ -63,27 +63,39 @@ export interface HubspotProperty {
   options: Array<{ value: string; label: string }>;
 }
 
-/** Settings → HubSpot: which deal property plays each role (null = guess from labels). */
-export type HubspotSettings = Record<HubspotRole, string | null>;
-export const DEFAULT_HUBSPOT_SETTINGS: HubspotSettings = { participants: null, chaperones: null, programType: null, food: null, transportation: null };
-export const hubspotSettingsSchema = z.object(
-  Object.fromEntries(HUBSPOT_ROLES.map((r) => [r, z.string().regex(/^[a-z0-9_]{1,100}$/i).nullable()])) as Record<HubspotRole, z.ZodNullable<z.ZodString>>,
-);
+/**
+ * Settings → HubSpot: which deal properties play each role (empty = guess from
+ * labels). Counts (participants, chaperones) can add up several properties,
+ * e.g. free + paid chaperones; a choice role uses one.
+ */
+export type HubspotSettings = Record<HubspotRole, string[]>;
+export const DEFAULT_HUBSPOT_SETTINGS: HubspotSettings = { participants: [], chaperones: [], programType: [], food: [], transportation: [] };
+const propertyName = z.string().regex(/^[a-z0-9_]{1,100}$/i);
+// Older settings stored one name (or null) per role.
+const roleValue = z.preprocess((v) => (typeof v === "string" ? [v] : v === null || v === undefined ? [] : v), z.array(propertyName).max(10));
+export const hubspotSettingsSchema = z.object(Object.fromEntries(HUBSPOT_ROLES.map((r) => [r, roleValue])) as Record<HubspotRole, typeof roleValue>);
 
 const fits = (role: HubspotRole, p: HubspotProperty) =>
   HUBSPOT_ROLE_KIND[role] === "number" ? p.type === "number" : p.type === "enumeration" || p.type === "bool";
+/** Roles where every property whose label fits is added up when guessing (free + paid chaperones). */
+const GUESS_ALL: HubspotRole[] = ["chaperones"];
 
-/** The property for each role: the one set on Settings, else the first whose label matches. */
-export function resolveHubspotRoles(settings: HubspotSettings, properties: HubspotProperty[]): Record<HubspotRole, string | null> {
-  const out = {} as Record<HubspotRole, string | null>;
+/**
+ * The properties for each role: the ones set on Settings (that still exist),
+ * else those whose label fits: all of them for chaperones, the first for the
+ * others. A choice role only ever uses its first property.
+ */
+export function resolveHubspotRoles(settings: HubspotSettings, properties: HubspotProperty[]): Record<HubspotRole, string[]> {
+  const out = {} as Record<HubspotRole, string[]>;
+  const known = new Set(properties.map((p) => p.name));
   for (const role of HUBSPOT_ROLES) {
-    const set = settings[role];
-    if (set) {
-      out[role] = properties.some((p) => p.name === set) ? set : null;
+    const set = (settings[role] ?? []).filter((n) => known.has(n));
+    if (set.length) {
+      out[role] = HUBSPOT_ROLE_KIND[role] === "choice" ? set.slice(0, 1) : set;
       continue;
     }
-    const guess = properties.find((p) => fits(role, p) && (ROLE_GUESS[role].test(p.label) || ROLE_GUESS[role].test(p.name)));
-    out[role] = guess?.name ?? null;
+    const guesses = properties.filter((p) => fits(role, p) && (ROLE_GUESS[role].test(p.label) || ROLE_GUESS[role].test(p.name))).map((p) => p.name);
+    out[role] = GUESS_ALL.includes(role) ? guesses : guesses.slice(0, 1);
   }
   return out;
 }
@@ -137,8 +149,8 @@ export interface HubspotProgramsResponse {
   previous: { start: string; end: string };
   /** Last season's deals count "at the same point" when won (closed) on or before this day. */
   samePointCutoff: string;
-  /** The property used for each role (null when none fits), with its label and choices. */
-  roles: Record<HubspotRole, HubspotProperty | null>;
+  /** The properties used for each role (none when nothing fits), with labels and choices; counts add them up. */
+  roles: Record<HubspotRole, HubspotProperty[]>;
   programs: HubspotProgramRow[];
   lineItems: HubspotLineItemRow[];
 }

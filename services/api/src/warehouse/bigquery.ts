@@ -443,21 +443,21 @@ export class BigQueryWarehouse implements Warehouse {
 
   async hubspotPrograms(q: HubspotProgramsScope) {
     const base = { business_line: q.businessLine, from: q.from, to: q.to, cur_start: q.currentStart, cutoff: q.cutoff };
-    const params = {
-      ...base,
-      // A role without a property matches nothing.
-      p_participants: q.roles.participants ?? "",
-      p_chaperones: q.roles.chaperones ?? "",
-      p_type: q.roles.programType ?? "",
-      p_food: q.roles.food ?? "",
-      p_transport: q.roles.transportation ?? "",
+    // Each role is a list of property names (a role without any matches nothing).
+    const roleParams = {
+      p_participants: q.roles.participants,
+      p_chaperones: q.roles.chaperones,
+      p_type: q.roles.programType,
+      p_food: q.roles.food,
+      p_transport: q.roles.transportation,
     };
-    // Every parameter is text (dates are cast in SQL).
-    const run = async (query: string, p: Record<string, string>) => {
-      const [rows] = await this.bq.query({ query, params: p, types: Object.fromEntries(Object.keys(p).map((k) => [k, "STRING"])), location: this.location });
+    // Dates are text (cast in SQL); role lists are arrays of text.
+    const run = async (query: string, p: Record<string, string | string[]>) => {
+      const types = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, Array.isArray(v) ? ["STRING"] : "STRING"]));
+      const [rows] = await this.bq.query({ query, params: p, types, location: this.location });
       return rows as Array<Record<string, unknown>>;
     };
-    const [programs, lineItems] = await Promise.all([run(hubspotProgramsSql(this.martsDataset), params), run(hubspotLineItemsSql(this.martsDataset), base)]);
+    const [programs, lineItems] = await Promise.all([run(hubspotProgramsSql(this.martsDataset), { ...base, ...roleParams }), run(hubspotLineItemsSql(this.martsDataset), base)]);
     const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
     return {
       programs: programs.map(

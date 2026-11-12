@@ -214,7 +214,7 @@ export async function runSelfCheck(
       to: "2026-12-31",
       currentStart: "2026-01-01",
       cutoff: "2025-06-01",
-      roles: { participants: "x", chaperones: "x", programType: "x", food: "x", transportation: "x" },
+      roles: { participants: ["x", "y"], chaperones: [], programType: ["x"], food: ["x"], transportation: ["x"] },
     });
     return null;
   });

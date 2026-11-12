@@ -323,8 +323,10 @@ export function HubspotDetail({ businessLine, title }: { businessLine: BusinessL
     );
   }
   const { cur, sp, full } = totals;
-  const roles = d.roles;
-  const missing = (["participants", "chaperones", "programType", "food", "transportation"] as const).filter((r) => !roles[r]);
+  const first = (r: keyof typeof d.roles) => d.roles[r][0] ?? null;
+  const roles = { programType: first("programType"), food: first("food"), transportation: first("transportation") };
+  const missing = (["participants", "chaperones", "programType", "food", "transportation"] as const).filter((r) => d.roles[r].length === 0);
+  const counted = (r: "participants" | "chaperones") => (d.roles[r].length > 1 ? `sum of ${d.roles[r].map((p) => p.label).join(" + ")}` : undefined);
   return (
     <section className="page-section" aria-label={title}>
       {header}
@@ -339,8 +341,8 @@ export function HubspotDetail({ businessLine, title }: { businessLine: BusinessL
         <>
           <div className="tiles">
             <Tile label="Programs" value={cur.deals} previous={sp.deals} format={formatInt} note={`${formatInt(full.deals)} last season in all`} />
-            <Tile label="Participants" value={cur.participants} previous={sp.participants} format={formatInt} />
-            <Tile label="Chaperones" value={cur.chaperones} previous={sp.chaperones} format={formatInt} />
+            <Tile label="Participants" value={cur.participants} previous={sp.participants} format={formatInt} note={counted("participants")} />
+            <Tile label="Chaperones" value={cur.chaperones} previous={sp.chaperones} format={formatInt} note={counted("chaperones")} />
             <Tile label="Revenue" value={cur.revenue} previous={sp.revenue} format={formatUsdCompact} note={`${formatUsdCompact(full.revenue)} last season in all`} />
             <Tile
               label="Spend per participant"
