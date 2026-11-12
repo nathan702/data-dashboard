@@ -6,7 +6,7 @@ import { NotConfiguredError, requireSecret, type SecretStore } from "../core/sec
 import type { Connector, RawRecord, SyncContext } from "../core/types.js";
 import { Firestore } from "@google-cloud/firestore";
 import { NOT_A_SCHOOL } from "@dash/shared";
-import { FINANCE_PARSER_VERSION, financialHeaderRow, toTransactions, transactionSummary } from "./campminderFinance.js";
+import { FINANCE_PARSER_VERSION, financialHeaderRow, toTransactions, transactionSummary, type CampminderTransaction } from "./campminderFinance.js";
 import { PARSER_VERSION, reportSeason, sessionRecordId, toSessions } from "./campminderParse.js";
 import { CensusGeocoder, FirestoreGeoCache, homeAddress, locateHomes, type GeoCache, type Geocoder, type HomeAddress } from "./geocode.js";
 
@@ -200,9 +200,17 @@ export class CampminderConnector implements Connector {
     try {
       // Financials don't hold up enrollments: each is imported on its own, and either failing fails the run.
       const problems: string[] = [];
+      const historySheet = this.cfg.historySheetId;
+      let historyFinancial = new Map<number, string>();
+      try {
+        historyFinancial = await this.historyFinancialTabs(historySheet, current);
+      } catch (err) {
+        problems.push(err instanceof Error ? err.message : String(err));
+      }
       for (const step of [
-        () => this.importFinancial(ctx, key, sheetId),
-        () => (this.cfg.historySheetId ? this.importHistory(ctx, key, this.cfg.historySheetId, current, exclude, excludeHash) : undefined),
+        () => this.importFinancial(ctx, key, sheetId, new Set(historyFinancial.keys())),
+        () => (historySheet ? this.importHistory(ctx, key, historySheet, current, exclude, excludeHash) : undefined),
+        () => (historySheet && historyFinancial.size ? this.importHistoryFinancial(ctx, key, historySheet, historyFinancial) : undefined),
       ]) {
         try {
           await step();
@@ -219,9 +227,10 @@ export class CampminderConnector implements Connector {
   /**
    * The Financial tab: one row per transaction, imported as transactions
    * (only what changed), for each season the tab lists. Rows gone from the
-   * tab are marked deleted. Read again only when the tab changes.
+   * tab are marked deleted. Read again only when the tab changes. Seasons a
+   * history tab ("Financial 2024") owns are left to it.
    */
-  private async importFinancial(ctx: SyncContext, key: string, sheetId: string) {
+  private async importFinancial(ctx: SyncContext, key: string, sheetId: string, ownedByHistory: ReadonlySet<number>) {
     const tab = this.cfg.financialTab;
     if (!tab || !this.cfg.currentTransactions) return;
     if (!(await this.cfg.sheet.tabs(sheetId)).includes(tab)) {
@@ -229,44 +238,116 @@ export class CampminderConnector implements Connector {
       return;
     }
     const values = await this.cfg.sheet.read(sheetId, tab);
-    const contentHash = createHash("sha256").update(`${FINANCE_PARSER_VERSION}|`).update(JSON.stringify(values)).digest("hex");
+    // Which seasons history tabs own is part of the hash: adding or removing one re-reads this tab.
+    const owned = [...ownedByHistory].sort();
+    const contentHash = createHash("sha256").update(`${FINANCE_PARSER_VERSION}|${owned.join(",")}|`).update(JSON.stringify(values)).digest("hex");
     if (ctx.state.cursors.financial_hash === contentHash) {
       ctx.log("campminder financial tab unchanged");
       return;
     }
-    const at = financialHeaderRow(values);
-    if (at < 0) throw new Error(`The "${tab}" tab is missing the ID, Season, Transaction Type or Amount column`);
-    const [header, ...body] = values.slice(at) as [string[], ...string[][]];
-    const rows = body
-      .filter((r) => r.some((c) => c && c.trim()))
-      .map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ""])));
-    const txs = toTransactions(rows, key);
-    const seasons = [...new Set(txs.map((t) => t.season))].sort();
+    const txs = this.parseFinancial(values, `The "${tab}" tab`, key);
+    const seasons = [...new Set(txs.map((t) => t.season))].sort().filter((s) => !ownedByHistory.has(s));
+    const skipped = [...new Set(txs.map((t) => t.season))].filter((s) => ownedByHistory.has(s));
+    if (skipped.length) ctx.log("campminder financial tab: seasons left to their history tabs", { seasons: skipped });
 
-    const now = new Date();
     const records: RawRecord[] = [];
     for (const season of seasons) {
-      const inSeason = txs.filter((t) => t.season === season);
-      const previous = await this.cfg.currentTransactions.load(season);
-      if (previous.size > 0 && inSeason.length < previous.size * MIN_FRACTION_OF_PREVIOUS) {
-        throw new Error(
-          `The "${tab}" tab has ${inSeason.length} transactions for ${season} but ${previous.size} are stored; ` +
-            "it looks incomplete (maybe mid-update), so nothing was changed",
-        );
-      }
-      const seen = new Set<string>();
-      for (const t of inSeason) {
-        seen.add(t.lineId);
-        if (previous.get(t.lineId) !== t.rowHash) records.push({ entity: "transactions", recordId: t.lineId, sourceUpdatedAt: now, payload: t });
-      }
-      for (const id of previous.keys()) {
-        if (!seen.has(id)) records.push({ entity: "transactions", recordId: id, sourceUpdatedAt: now, isDeleted: true, payload: { season } });
-      }
+      records.push(...(await this.transactionRecords(`The "${tab}" tab`, season, txs.filter((t) => t.season === season))));
     }
     await ctx.emit(records);
     await ctx.saveCursor("financial_hash", contentHash);
     // Totals by type (no family detail), to check how Campminder signs each type.
     ctx.log("campminder financial tab imported", { seasons, transactions: txs.length, written: records.length, byType: transactionSummary(txs) });
+  }
+
+  /** Seasons with a "Financial YYYY" tab in the history sheet, before the daily sheet's season. */
+  private async historyFinancialTabs(historySheetId: string | undefined, currentSeason: number | null): Promise<Map<number, string>> {
+    const out = new Map<number, string>();
+    if (!historySheetId || !this.cfg.currentTransactions) return out;
+    for (const tab of await this.cfg.sheet.tabs(historySheetId)) {
+      const m = /^\s*financials?\s+(\d{4})\s*$/i.exec(tab);
+      if (!m) continue;
+      const season = Number(m[1]);
+      // The daily Financial tab owns its season and later ones.
+      if (currentSeason !== null && season >= currentSeason) continue;
+      out.set(season, tab);
+    }
+    return out;
+  }
+
+  /**
+   * Past seasons' Financial reports, one history-sheet tab per season named
+   * "Financial 2024". Each is read once and again only when it changes; rows
+   * from other seasons in a tab are left out (they belong to that season's
+   * report). Removing a tab leaves its season as imported.
+   */
+  private async importHistoryFinancial(ctx: SyncContext, key: string, sheetId: string, tabs: Map<number, string>) {
+    const problems: string[] = [];
+    for (const [season, tab] of [...tabs].sort((a, b) => a[0] - b[0])) {
+      try {
+        const values = await this.cfg.sheet.read(sheetId, tab);
+        const cursor = `history_financial_hash_${season}`;
+        const contentHash = createHash("sha256").update(`${FINANCE_PARSER_VERSION}|`).update(JSON.stringify(values)).digest("hex");
+        if (ctx.state.cursors[cursor] === contentHash) {
+          ctx.log("campminder history financial tab unchanged", { season });
+          continue;
+        }
+        const label = `History tab "${tab}"`;
+        const all = this.parseFinancial(values, label, key);
+        const inSeason = all.filter((t) => t.season === season);
+        const others = [...new Set(all.filter((t) => t.season !== season).map((t) => t.season))];
+        if (inSeason.length === 0 && all.length > 0) {
+          throw new Error(`${label} has transactions from season ${others.join(", ")}, none from ${season}; rename the tab or check the report`);
+        }
+        const records = await this.transactionRecords(label, season, inSeason);
+        await ctx.emit(records);
+        await ctx.saveCursor(cursor, contentHash);
+        ctx.log("campminder history financial tab imported", {
+          season,
+          transactions: inSeason.length,
+          written: records.length,
+          otherSeasonsLeftOut: others,
+          byType: transactionSummary(inSeason),
+        });
+      } catch (err) {
+        problems.push(err instanceof Error ? err.message : String(err));
+      }
+    }
+    // One bad tab doesn't hold up the others, but the run still shows as failed.
+    if (problems.length) throw new Error(problems.join("; "));
+  }
+
+  /** A Financial report (title line allowed above the headers) → transactions. */
+  private parseFinancial(values: string[][], label: string, key: string) {
+    const at = financialHeaderRow(values);
+    if (at < 0) throw new Error(`${label} is missing the ID, Season, Transaction Type or Amount column`);
+    const [header, ...body] = values.slice(at) as [string[], ...string[][]];
+    const rows = body
+      .filter((r) => r.some((c) => c && c.trim()))
+      .map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ""])));
+    return toTransactions(rows, key);
+  }
+
+  /** One season's records: changed transactions, and ones no longer in the report marked deleted. */
+  private async transactionRecords(label: string, season: number, inSeason: CampminderTransaction[]): Promise<RawRecord[]> {
+    const previous = await this.cfg.currentTransactions!.load(season);
+    if (previous.size > 0 && inSeason.length < previous.size * MIN_FRACTION_OF_PREVIOUS) {
+      throw new Error(
+        `${label} has ${inSeason.length} transactions for ${season} but ${previous.size} are stored; ` +
+          "it looks incomplete (maybe mid-update), so nothing was changed",
+      );
+    }
+    const now = new Date();
+    const records: RawRecord[] = [];
+    const seen = new Set<string>();
+    for (const t of inSeason) {
+      seen.add(t.lineId);
+      if (previous.get(t.lineId) !== t.rowHash) records.push({ entity: "transactions", recordId: t.lineId, sourceUpdatedAt: now, payload: t });
+    }
+    for (const id of previous.keys()) {
+      if (!seen.has(id)) records.push({ entity: "transactions", recordId: id, sourceUpdatedAt: now, isDeleted: true, payload: { season } });
+    }
+    return records;
   }
 
   /**

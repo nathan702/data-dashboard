@@ -211,6 +211,55 @@ describe("campminder connector", () => {
       expect(writer.rows.filter((x) => x.record.isDeleted)).toHaveLength(0);
     });
 
+    const FIN = ["ID", "Season", "Post Date", "Transaction Type", "Financial Category", "Amount", "Session Name", "Person ID", "Household ID"];
+    const tx = (id: string, season: number, amount = "$100.00") => [id, String(season), `1/5/${season}`, "Debit", "Summer Camp", amount, "Farm Week 1", "900", "555"];
+    const txSeasons = (w: MemoryRawWriter) => {
+      const out: Record<number, number> = {};
+      for (const { record } of w.rows) {
+        if (record.entity !== "transactions" || record.isDeleted) continue;
+        const season = (record.payload as { season: number }).season;
+        out[season] = (out[season] ?? 0) + 1;
+      }
+      return out;
+    };
+
+    it("imports past seasons' Financial reports from \"Financial YYYY\" tabs, which the daily tab leaves alone", async () => {
+      const { c, deps, writer, sheet } = setup([HEADER, ...many(4)], {}, "history");
+      sheet.history = {
+        "Financial 2024": [["Transaction-Report-Detailed-2024"], FIN, tx("1", 2024), tx("2", 2024), tx("9", 2025)],
+        "Financial 2025": [FIN, tx("3", 2025), tx("4", 2025), tx("5", 2025)],
+        // The daily sheet owns 2026.
+        "Financial 2026": [FIN, tx("7", 2026)],
+      };
+      // The daily tab also lists a 2025 straggler: 2025 belongs to its history tab, so it's not touched.
+      sheet.financial = [FIN, tx("6", 2026), tx("8", 2025)];
+      const r = await runSync(c, deps, "incremental");
+      expect(r.status).toBe("ok");
+      // 2024's tab leaves out its 2025 row; the 2026 history tab is ignored.
+      expect(txSeasons(writer)).toEqual({ 2024: 2, 2025: 3, 2026: 1 });
+      expect(sheet.reads).not.toContain("history/Financial 2026");
+
+      // Unchanged tabs aren't read again or rewritten.
+      const before = writer.rows.length;
+      await runSync(c, deps, "incremental");
+      expect(writer.rows.length).toBe(before);
+
+      // A changed history tab updates its season only.
+      sheet.history["Financial 2025"] = [FIN, tx("3", 2025), tx("4", 2025), tx("5", 2025, "$120.00")];
+      await runSync(c, deps, "incremental");
+      expect(writer.rows.slice(before).every((x) => (x.record.payload as { season: number }).season === 2025)).toBe(true);
+      expect(writer.rows.filter((x) => x.record.entity === "transactions" && x.record.isDeleted)).toHaveLength(1);
+    });
+
+    it("refuses a Financial report in the wrong tab", async () => {
+      const { c, deps, writer, sheet } = setup([HEADER, ...many(4)], {}, "history");
+      sheet.history = { "Financial 2023": [FIN, tx("1", 2022)], "Financial 2024": [FIN, tx("2", 2024)] };
+      const r = await runSync(c, deps, "incremental");
+      expect(r.status).toBe("error");
+      expect(r.error).toContain('"Financial 2023" has transactions from season 2022, none from 2023');
+      expect(txSeasons(writer)).toEqual({ 2024: 1 });
+    });
+
     it("refuses a report in the wrong tab without holding up the rest", async () => {
       const { c, deps, writer, sheet } = setup([HEADER, ...many(4)], {}, "history");
       sheet.history = {
