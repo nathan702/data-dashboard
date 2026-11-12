@@ -43,7 +43,7 @@ RAW_TABLES="raw_shopify.orders raw_shopify.products raw_shopify.inventory_levels
   raw_square.locations raw_square.catalog_objects raw_square.orders raw_square.payments raw_square.refunds
   raw_campminder.sessions
   raw_fareharbor.companies raw_fareharbor.items raw_fareharbor.availabilities raw_fareharbor.bookings
-  raw_hubspot.pipelines raw_hubspot.deals"
+  raw_hubspot.pipelines raw_hubspot.deals raw_hubspot.properties raw_hubspot.line_items"
 for t in $RAW_TABLES; do
   bq show "$PROJECT_ID:$t" >/dev/null 2>&1 || bq mk --table \
     --time_partitioning_field ingested_at --time_partitioning_type DAY --clustering_fields record_id \

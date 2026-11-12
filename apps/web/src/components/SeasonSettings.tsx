@@ -17,8 +17,13 @@ import {
   type SeasonRule,
   type SeasonSettings,
   type FareharborSettings,
+  HUBSPOT_ROLES,
+  HUBSPOT_ROLE_KIND,
+  HUBSPOT_ROLE_LABEL,
+  resolveHubspotRoles,
+  type HubspotSettings,
 } from "@dash/shared";
-import { useAssignments, useSaveSeasonSettings, useSeasonSettings } from "../lib/api";
+import { useAssignments, useHubspotProperties, useSaveSeasonSettings, useSeasonSettings } from "../lib/api";
 import { formatDate } from "../lib/format";
 
 const thisYear = () => Number(easternDate().slice(0, 4));
@@ -207,6 +212,7 @@ export function SeasonSettingsCard({ canEdit }: { canEdit: boolean }) {
       </div>
       <RegistrationSection value={s.registration} canEdit={canEdit} onChange={(registration) => update({ ...s, registration })} />
       <ClosuresSection value={s.fareharbor} canEdit={canEdit} onChange={(fareharbor) => update({ ...s, fareharbor })} />
+      <HubspotRolesSection value={s.hubspot} canEdit={canEdit} onChange={(hubspot) => update({ ...s, hubspot })} />
     </section>
   );
 }
@@ -352,6 +358,50 @@ function ClosuresSection({ value, canEdit, onChange }: { value: FareharborSettin
         >
           + Add a closed day
         </button>
+      )}
+    </div>
+  );
+}
+
+/** Which HubSpot deal property is participants, chaperones, program type, food and transportation. */
+function HubspotRolesSection({ value, canEdit, onChange }: { value: HubspotSettings; canEdit: boolean; onChange(v: HubspotSettings): void }) {
+  const properties = useHubspotProperties().data?.properties ?? [];
+  const guessed = resolveHubspotRoles({ participants: null, chaperones: null, programType: null, food: null, transportation: null }, properties);
+  return (
+    <div className="season-campminder">
+      <h3 className="card-title">HubSpot properties</h3>
+      <p className="card-subtitle">
+        Which deal property the Education Programs and CHAPs pages use for each of these. Left on “Automatic”, the first property whose label fits is
+        used. The program date is the <code>start_datetime</code> property.
+      </p>
+      {properties.length === 0 ? (
+        <div className="muted">No HubSpot properties yet (they appear after the first HubSpot sync).</div>
+      ) : (
+        <div className="year-dates">
+          {HUBSPOT_ROLES.map((role) => {
+            const kind = HUBSPOT_ROLE_KIND[role];
+            const choices = properties.filter((p) => (kind === "number" ? p.type === "number" : p.type === "enumeration" || p.type === "bool"));
+            const auto = properties.find((p) => p.name === guessed[role]);
+            return (
+              <label key={role} className="year-date">
+                <span className="chip-label">{HUBSPOT_ROLE_LABEL[role]}</span>
+                <select
+                  value={value[role] ?? ""}
+                  disabled={!canEdit}
+                  onChange={(e) => onChange({ ...value, [role]: e.target.value || null })}
+                  aria-label={`${HUBSPOT_ROLE_LABEL[role]} property`}
+                >
+                  <option value="">Automatic{auto ? ` (${auto.label})` : " (none found)"}</option>
+                  {choices.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          })}
+        </div>
       )}
     </div>
   );

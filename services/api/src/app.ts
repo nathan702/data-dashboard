@@ -52,6 +52,10 @@ import {
   easternDate,
   fareharborDaysQuerySchema,
   hubspotDealsQuerySchema,
+  hubspotProgramsQuerySchema,
+  resolveHubspotRoles,
+  HUBSPOT_ROLES,
+  type HubspotProgramsResponse,
   NIGHTLY_LINES,
   type FareharborDaysResponse,
 } from "@dash/shared";
@@ -446,6 +450,48 @@ export function createApi(opts: ApiOptions) {
       return;
     }
     res.json(await cached(`hubspot-deals:${parsed.data.businessLine}`, () => opts.warehouse.hubspotDeals(parsed.data.businessLine)));
+  });
+
+  api.get("/hubspot/properties", async (_req, res) => {
+    res.json({ properties: await cached("hubspot-properties", async () => ({ list: await opts.warehouse.hubspotProperties() })).then((x) => x.list) });
+  });
+
+  api.get("/hubspot/programs", async (req, res) => {
+    const parsed = hubspotProgramsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    const { businessLine } = parsed.data;
+    const settings = await opts.seasons.get();
+    const today = easternDate();
+    const key = `hubspot-programs:${JSON.stringify(parsed.data)}:${today}:${JSON.stringify(settings.hubspot)}:${settings.rules[businessLine]}:${JSON.stringify(settings.endDates[businessLine] ?? {})}`;
+    res.json(
+      await cached(key, async (): Promise<HubspotProgramsResponse> => {
+        const cal = lineCalendar(businessLine, settings);
+        const [extent, properties] = await Promise.all([opts.warehouse.hubspotExtent(businessLine), opts.warehouse.hubspotProperties()]);
+        const seasons: number[] = [];
+        if (extent) for (let s = cal.seasonFor(extent.lastDay); s >= cal.seasonFor(extent.firstDay); s--) seasons.push(s);
+        const now = cal.seasonFor(today);
+        const season = parsed.data.season ?? (seasons.includes(now) ? now : seasons.find((s) => s <= now) ?? seasons[seasons.length - 1] ?? now);
+        const current = cal.range(season);
+        const previous = cal.range(season - 1);
+        const asOf = today <= current.end ? today : addDays(current.end, 1);
+        const samePointCutoff = addDays(asOf, -365);
+        const names = resolveHubspotRoles(settings.hubspot, properties);
+        const { programs, lineItems } = await opts.warehouse.hubspotPrograms({
+          businessLine,
+          from: previous.start,
+          to: current.end,
+          currentStart: current.start,
+          cutoff: samePointCutoff,
+          roles: names,
+        });
+        const byName = new Map(properties.map((p) => [p.name, p]));
+        const roles = Object.fromEntries(HUBSPOT_ROLES.map((r) => [r, names[r] ? byName.get(names[r]!) ?? null : null])) as HubspotProgramsResponse["roles"];
+        return { businessLine, season, seasons, current, previous, samePointCutoff, roles, programs, lineItems };
+      }),
+    );
   });
 
   // ---- FareHarbor ----

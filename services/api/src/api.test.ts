@@ -985,3 +985,19 @@ describe("hubspot deals", () => {
     await request(api()).get("/api/hubspot/deals?businessLine=nope").expect(400);
   });
 });
+
+describe("hubspot programs", () => {
+  it("returns this and last season's programs with roles guessed from property labels", async () => {
+    const res = await request(api()).get("/api/hubspot/programs?businessLine=education&season=2026").expect(200);
+    expect(res.body.season).toBe(2026);
+    expect(res.body.roles.participants.name).toBe("number_of_participants");
+    expect(res.body.roles.chaperones.name).toBe("chaperone_count");
+    expect(res.body.roles.programType.name).toBe("program_type");
+    expect(res.body.roles.food.name).toBe("food_service");
+    expect(res.body.roles.transportation.name).toBe("transportation");
+    expect(res.body.programs.some((r: { period: string }) => r.period === "previous")).toBe(true);
+    expect(res.body.lineItems.length).toBeGreaterThan(0);
+    const props = await request(api()).get("/api/hubspot/properties").expect(200);
+    expect(props.body.properties.length).toBeGreaterThan(3);
+  });
+});

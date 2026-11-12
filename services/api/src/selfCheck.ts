@@ -206,6 +206,16 @@ export async function runSelfCheck(
 
   await check("HubSpot deals run", async () => {
     await warehouse.hubspotDeals("education");
+    await warehouse.hubspotProperties();
+    await warehouse.hubspotExtent("education");
+    await warehouse.hubspotPrograms({
+      businessLine: "education",
+      from: "2025-01-01",
+      to: "2026-12-31",
+      currentStart: "2026-01-01",
+      cutoff: "2025-06-01",
+      roles: { participants: "x", chaperones: "x", programType: "x", food: "x", transportation: "x" },
+    });
     return null;
   });
 

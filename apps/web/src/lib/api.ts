@@ -4,6 +4,8 @@ import type {
   BusinessLine,
   FareharborDaysResponse,
   HubspotDealsResponse,
+  HubspotProgramsResponse,
+  HubspotProperty,
   AssignmentsResponse,
   CampminderFinanceSummary,
   RegistrationPaceResponse,
@@ -114,6 +116,7 @@ export function useSaveSeasonSettings() {
     ["enrollment-summary"],
     ["registration-pace"],
     ["fareharbor-days"],
+    ["hubspot-programs"],
   ]);
 }
 
@@ -160,6 +163,15 @@ function retailQs(q: Record<string, string | undefined>) {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
   return p.toString();
+}
+
+export function useHubspotPrograms(businessLine: BusinessLine, season: number | undefined) {
+  const qs = retailQs({ businessLine, season: season ? String(season) : undefined });
+  return useApi<HubspotProgramsResponse>(["hubspot-programs", qs], `/api/hubspot/programs?${qs}`, { refetchInterval: 10 * 60_000 });
+}
+
+export function useHubspotProperties() {
+  return useApi<{ properties: HubspotProperty[] }>(["hubspot-properties"], "/api/hubspot/properties");
 }
 
 export function useHubspotDeals(businessLine: BusinessLine) {

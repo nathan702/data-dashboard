@@ -39,10 +39,13 @@ import {
   type BusinessLine,
   type FareharborDayRow,
   type HubspotDealsResponse,
+  type HubspotLineItemRow,
+  type HubspotProgramRow,
+  type HubspotProperty,
   type LeadBucket,
 } from "@dash/shared";
 import { fareharborDaysSql, fareharborExtentSql } from "./fareharborSql.js";
-import { hubspotOpenSql, hubspotWonSql } from "./hubspotSql.js";
+import { hubspotExtentSql, hubspotLineItemsSql, hubspotOpenSql, hubspotProgramsSql, hubspotPropertiesSql, hubspotWonSql } from "./hubspotSql.js";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import {
   breakdownSql as enrollmentBreakdownSql,
@@ -61,7 +64,7 @@ import { toReportResult } from "./reportResult.js";
 import { toKpis } from "./retail.js";
 import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, filteredKpiSql, inventorySql, kpiSql, retailDrillParams, saveAssignmentsSql } from "./retailSql.js";
 import { groupKeys } from "./summarize.js";
-import type { FareharborDaysScope, Warehouse } from "./types.js";
+import type { FareharborDaysScope, HubspotProgramsScope, Warehouse } from "./types.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
 // comes from the request is passed as a query parameter.
@@ -420,6 +423,70 @@ export class BigQueryWarehouse implements Warehouse {
       revenueAtSamePoint: round2(Number(r.revenue_sp ?? 0)),
       guestsAtSamePoint: Number(r.guests_sp ?? 0),
     }));
+  }
+
+  async hubspotProperties(): Promise<HubspotProperty[]> {
+    const [rows] = await this.bq.query({ query: hubspotPropertiesSql(this.martsDataset), location: this.location });
+    return (rows as Array<{ name: string; label: string | null; type: string; options: Array<{ value: string; label: string | null }> | null }>).map((r) => ({
+      name: r.name,
+      label: r.label ?? r.name,
+      type: r.type,
+      options: (r.options ?? []).map((o) => ({ value: o.value, label: o.label ?? o.value })),
+    }));
+  }
+
+  async hubspotExtent(businessLine: BusinessLine) {
+    const [rows] = await this.bq.query({ query: hubspotExtentSql(this.martsDataset), params: { business_line: businessLine }, types: { business_line: "STRING" }, location: this.location });
+    const r = (rows as Array<{ first_day: string | null; last_day: string | null }>)[0];
+    return r?.first_day && r.last_day ? { firstDay: r.first_day, lastDay: r.last_day } : null;
+  }
+
+  async hubspotPrograms(q: HubspotProgramsScope) {
+    const base = { business_line: q.businessLine, from: q.from, to: q.to, cur_start: q.currentStart, cutoff: q.cutoff };
+    const params = {
+      ...base,
+      // A role without a property matches nothing.
+      p_participants: q.roles.participants ?? "",
+      p_chaperones: q.roles.chaperones ?? "",
+      p_type: q.roles.programType ?? "",
+      p_food: q.roles.food ?? "",
+      p_transport: q.roles.transportation ?? "",
+    };
+    // Every parameter is text (dates are cast in SQL).
+    const run = async (query: string, p: Record<string, string>) => {
+      const [rows] = await this.bq.query({ query, params: p, types: Object.fromEntries(Object.keys(p).map((k) => [k, "STRING"])), location: this.location });
+      return rows as Array<Record<string, unknown>>;
+    };
+    const [programs, lineItems] = await Promise.all([run(hubspotProgramsSql(this.martsDataset), params), run(hubspotLineItemsSql(this.martsDataset), base)]);
+    const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
+    return {
+      programs: programs.map(
+        (r): HubspotProgramRow => ({
+          period: r.period as HubspotProgramRow["period"],
+          atSamePoint: r.at_same_point === true,
+          month: String(r.month),
+          programType: s(r.program_type),
+          food: s(r.food),
+          transportation: s(r.transportation),
+          deals: Number(r.deals ?? 0),
+          revenue: round2(Number(r.revenue ?? 0)),
+          participants: Number(r.participants ?? 0),
+          dealsWithParticipants: Number(r.deals_with_participants ?? 0),
+          chaperones: Number(r.chaperones ?? 0),
+          dealsWithChaperones: Number(r.deals_with_chaperones ?? 0),
+        }),
+      ),
+      lineItems: lineItems.map(
+        (r): HubspotLineItemRow => ({
+          period: r.period as HubspotLineItemRow["period"],
+          atSamePoint: r.at_same_point === true,
+          item: String(r.item),
+          quantity: Number(r.quantity ?? 0),
+          amount: round2(Number(r.amount ?? 0)),
+          deals: Number(r.deals ?? 0),
+        }),
+      ),
+    };
   }
 
   async hubspotDeals(businessLine: BusinessLine): Promise<HubspotDealsResponse> {
