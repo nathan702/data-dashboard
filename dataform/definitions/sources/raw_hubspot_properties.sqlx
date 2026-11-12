@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_hubspot",
+  name: "properties",
+  description: "HubSpot deal properties whose values are kept (dates, numbers, dropdowns, yes/no): name, label, type and choices."
+}

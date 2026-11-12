@@ -1,7 +1,7 @@
 config {
   type: "table",
   schema: "marts",
-  description: "One row per HubSpot deal with its business line (by pipeline, Settings → Business lines). No deal names, contacts or companies.",
+  description: "One row per HubSpot deal with its business line (by pipeline, Settings → Business lines). No deal names, contacts or companies. props: the kept property values (dates, numbers, dropdowns, yes/no) as name/value pairs.",
   assertions: { uniqueKey: ["deal_id"], nonNull: ["business_line"] }
 }
 
@@ -17,7 +17,8 @@ SELECT
   d.is_won,
   d.created_date,
   d.close_date,
-  d.service_date
+  d.service_date,
+  d.props
 FROM ${ref("stg_hubspot_deals")} AS d
 LEFT JOIN ${ref("business_line_assignments")} AS a
   ON a.source = 'hubspot' AND a.kind = 'pipeline' AND a.assign_key = d.pipeline_id

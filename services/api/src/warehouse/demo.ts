@@ -29,7 +29,8 @@ import type { SchoolMap } from "./reportSql.js";
 import { DEMO_SESSION_GROUPS, demoCampminderFinance, demoRegistrationPace, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
-import type { DailyRevenueRow, FareharborDaysScope, FreshnessSource, Warehouse } from "./types.js";
+import type { DailyRevenueRow, FareharborDaysScope, FreshnessSource, HubspotProgramsScope, Warehouse } from "./types.js";
+import { DEMO_HUBSPOT_PROPERTIES, demoHubspotPrograms } from "./demoHubspot.js";
 
 /**
  * Deterministic made-up numbers so the dashboard can be developed and
@@ -193,6 +194,18 @@ export class DemoWarehouse implements Warehouse {
 
   async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap) {
     return demoRunReport(spec, families, schools);
+  }
+
+  async hubspotProperties() {
+    return DEMO_HUBSPOT_PROPERTIES;
+  }
+
+  async hubspotExtent(businessLine: Parameters<typeof demoFareharborExtent>[0]) {
+    return businessLine === "education" || businessLine === "chaps" ? { firstDay: "2024-09-01", lastDay: "2027-06-30" } : null;
+  }
+
+  async hubspotPrograms(q: HubspotProgramsScope) {
+    return demoHubspotPrograms(q);
   }
 
   async hubspotDeals(businessLine: Parameters<typeof demoFareharborExtent>[0]) {

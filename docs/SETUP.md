@@ -351,19 +351,20 @@ private app token. It never reads contacts, companies, emails or notes.
 
 1. HubSpot → **Settings** (gear) → **Integrations → Private Apps** →
    **Create a private app** (needs a Super Admin). Name it `Business dashboard`.
-2. **Scopes** tab → tick only `crm.objects.deals.read` and
-   `crm.schemas.deals.read` (both read-only) → **Create app** → copy the
-   **access token**.
+2. **Scopes** tab → tick only `crm.objects.deals.read`,
+   `crm.schemas.deals.read` and `crm.objects.line_items.read` (all read-only)
+   → **Create app** → copy the **access token**. (Adding a scope to an
+   existing private app keeps the same token. Without the line-items scope,
+   everything else still syncs.)
 3. Store it in Cloud Shell (paste, Enter, Ctrl+D):
 
    ```bash
    gcloud secrets versions add hubspot-private-app-token --data-file=-
    ```
-4. Optional: if deals have a custom property with the program or event date,
-   put its **internal name** (Settings → Properties → the property → the
-   "Internal name" under its label, e.g. `program_date`) in
-   `HUBSPOT_SERVICE_DATE_PROPERTY` in `infra/config.sh` and push. Revenue by
-   service date then uses it; without it, the close date.
+4. The program date is the deal property named in
+   `HUBSPOT_SERVICE_DATE_PROPERTY` in `infra/config.sh` (now `start_datetime`).
+   Revenue by service date and the programs section use it; a deal without it
+   falls back to its close date.
 5. **Settings → Business lines → HubSpot pipelines**: choose a business line
    for each pipeline (names containing "CHAP" go to CHAPs, and "education",
    "field trip" or "school" to Education Programs, until set).
@@ -373,8 +374,13 @@ changed since; deals deleted in HubSpot are removed once a day. Won deals are
 revenue on their close date (booked, and collected, since HubSpot doesn't hold
 payments) and on the program date (service).
 
+6. **Settings → Seasons → HubSpot properties**: which deal property is
+   Participants, Chaperones, Program type, Uses our food and Uses our
+   transportation ("Automatic" picks the first property whose label fits).
+
 What's stored: deal id, pipeline, stage, amount, currency, created and close
-dates, won/closed, and the values of the account's own **date and number**
-properties (e.g. a program date or student count). **Never** deal names (they
-often name a school or a person), contacts, companies, owners, notes or any
-text property.
+dates, won/closed, the values of the account's own **date, number, dropdown
+and yes/no** properties (fixed choices, e.g. program type), and each deal's
+line items (product name, SKU, quantity, price, amount, discount). **Never**
+deal names (they often name a school or a person), contacts, companies,
+owners, notes or any free-text property.

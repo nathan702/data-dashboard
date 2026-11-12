@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "raw_hubspot",
+  name: "line_items",
+  description: "HubSpot line items (products on deals): product name, SKU, quantity, price, amount, discount, and the deal they belong to."
+}

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { BUSINESS_LINES, type BusinessLine } from "./businessLines.js";
 import { addDays, isIsoDate, type IsoDate } from "./dates.js";
 import { DEFAULT_FAREHARBOR_SETTINGS, fareharborSettingsSchema, type FareharborSettings } from "./fareharbor.js";
+import { DEFAULT_HUBSPOT_SETTINGS, hubspotSettingsSchema, type HubspotSettings } from "./hubspot.js";
 
 /**
  * Seasons. Each business line groups its numbers into seasons by program or
@@ -70,6 +71,8 @@ export interface SeasonSettings {
   registration: RegistrationSettings;
   /** FareHarbor closed days and ticket types. */
   fareharbor: FareharborSettings;
+  /** Which HubSpot deal property is participants, chaperones, program type, food, transportation. */
+  hubspot: HubspotSettings;
 }
 
 export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
@@ -88,6 +91,7 @@ export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
   campminderStarts: {},
   registration: DEFAULT_REGISTRATION,
   fareharbor: DEFAULT_FAREHARBOR_SETTINGS,
+  hubspot: DEFAULT_HUBSPOT_SETTINGS,
 };
 
 const yearKey = z.string().regex(/^\d{4}$/);
@@ -102,6 +106,7 @@ export const seasonSettingsSchema = z.object({
     locations: z.record(z.string().min(1).max(200), z.enum(["va", "md"])),
   }),
   fareharbor: fareharborSettingsSchema,
+  hubspot: hubspotSettingsSchema,
 });
 
 /** Fill anything missing (e.g. a new business line) from the defaults. */
@@ -113,6 +118,7 @@ export function cleanSeasonSettings(raw: unknown): SeasonSettings {
     campminderStarts: r.campminderStarts ?? {},
     registration: r.registration ?? DEFAULT_REGISTRATION,
     fareharbor: r.fareharbor ?? DEFAULT_FAREHARBOR_SETTINGS,
+    hubspot: { ...DEFAULT_HUBSPOT_SETTINGS, ...(r.hubspot ?? {}) },
   };
   const parsed = seasonSettingsSchema.safeParse(merged);
   return parsed.success ? (parsed.data as SeasonSettings) : DEFAULT_SEASON_SETTINGS;

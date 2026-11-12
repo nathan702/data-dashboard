@@ -1,0 +1,18 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Latest version of each HubSpot line item (a product on a deal).",
+  assertions: { uniqueKey: ["line_item_id"] }
+}
+js { const { latestRaw } = require("includes/sql"); }
+
+SELECT
+  record_id AS line_item_id,
+  JSON_VALUE(payload, '$.dealId') AS deal_id,
+  COALESCE(JSON_VALUE(payload, '$.name'), '(no name)') AS item,
+  JSON_VALUE(payload, '$.sku') AS sku,
+  SAFE_CAST(JSON_VALUE(payload, '$.quantity') AS NUMERIC) AS quantity,
+  SAFE_CAST(JSON_VALUE(payload, '$.price') AS NUMERIC) AS price,
+  COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.amount') AS NUMERIC), 0) AS amount,
+  COALESCE(SAFE_CAST(JSON_VALUE(payload, '$.discount') AS NUMERIC), 0) AS discount
+FROM (${latestRaw(ref("raw_hubspot", "line_items"))})

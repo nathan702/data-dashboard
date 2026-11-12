@@ -10,6 +10,10 @@ import type {
   BusinessLineOrUnassigned,
   FareharborDayRow,
   HubspotDealsResponse,
+  HubspotLineItemRow,
+  HubspotProgramRow,
+  HubspotProperty,
+  HubspotRole,
   EnrollmentBreakdownQuery,
   EnrollmentMapQuery,
   EnrollmentMapResponse,
@@ -66,6 +70,12 @@ export interface Warehouse {
   fareharborDays(q: FareharborDaysScope): Promise<FareharborDayRow[]>;
   /** First and last activity day with FareHarbor bookings for a line (null when none). */
   fareharborExtent(businessLine: BusinessLine): Promise<{ firstDay: IsoDate; lastDay: IsoDate } | null>;
+  /** HubSpot deal properties that can be reported on (Settings → HubSpot). */
+  hubspotProperties(): Promise<HubspotProperty[]>;
+  /** First and last program date of a line's won HubSpot deals (null when none). */
+  hubspotExtent(businessLine: BusinessLine): Promise<{ firstDay: string; lastDay: string } | null>;
+  /** Won deals and their line items for a line, grouped for the programs section. */
+  hubspotPrograms(q: HubspotProgramsScope): Promise<{ programs: HubspotProgramRow[]; lineItems: HubspotLineItemRow[] }>;
   /** HubSpot deals for a line: open pipeline by stage, won by month. */
   hubspotDeals(businessLine: BusinessLine): Promise<HubspotDealsResponse>;
   /** Plain totals straight from the tables, for the deploy self-check. */
@@ -80,6 +90,19 @@ export interface FareharborDaysScope {
   cutoff: IsoDate;
   /** One row per night, else per week (Mondays). */
   nightly: boolean;
+}
+
+export interface HubspotProgramsScope {
+  businessLine: BusinessLine;
+  /** Program dates from last season's start to this season's end. */
+  from: string;
+  to: string;
+  /** This season's first day: programs on or after it are "current". */
+  currentStart: string;
+  /** Last season's deals won on or before this day count "at the same point". */
+  cutoff: string;
+  /** The deal property for each role (null = none). */
+  roles: Record<HubspotRole, string | null>;
 }
 
 export interface FreshnessSource {

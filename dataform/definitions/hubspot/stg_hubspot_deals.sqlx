@@ -35,7 +35,11 @@ SELECT
     SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(d.payload, '$.serviceDate')),
     SAFE.PARSE_DATE('%Y-%m-%d', JSON_VALUE(d.payload, '$.closeDate'))
   ) AS service_date,
-  JSON_QUERY(d.payload, '$.custom') AS custom
+  -- Kept property values (dates, numbers, dropdowns, yes/no) as name/value pairs.
+  ARRAY(
+    SELECT AS STRUCT JSON_VALUE(x, '$.name') AS name, JSON_VALUE(x, '$.value') AS value
+    FROM UNNEST(JSON_QUERY_ARRAY(d.payload, '$.props')) AS x
+  ) AS props
 FROM d
 LEFT JOIN p ON p.pipeline_id = JSON_VALUE(d.payload, '$.pipeline')
 LEFT JOIN stages AS s ON s.pipeline_id = JSON_VALUE(d.payload, '$.pipeline') AND s.stage_id = JSON_VALUE(d.payload, '$.stage')

@@ -1,0 +1,17 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "HubSpot deal properties that can be reported on (dates, numbers, dropdowns, yes/no), with their labels and choices, for the Settings page.",
+  assertions: { uniqueKey: ["name"] }
+}
+js { const { latestRaw } = require("includes/sql"); }
+
+SELECT
+  record_id AS name,
+  JSON_VALUE(payload, '$.label') AS label,
+  JSON_VALUE(payload, '$.type') AS type,
+  ARRAY(
+    SELECT AS STRUCT JSON_VALUE(o, '$.value') AS value, JSON_VALUE(o, '$.label') AS label
+    FROM UNNEST(JSON_QUERY_ARRAY(payload, '$.options')) AS o
+  ) AS options
+FROM (${latestRaw(ref("raw_hubspot", "properties"))})

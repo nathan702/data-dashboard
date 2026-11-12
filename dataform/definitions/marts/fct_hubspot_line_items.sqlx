@@ -1,0 +1,23 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "HubSpot line items with their deal's business line, stage and dates (program date = service_date).",
+  assertions: { uniqueKey: ["line_item_id"] }
+}
+
+SELECT
+  l.line_item_id,
+  l.deal_id,
+  d.business_line,
+  d.is_won,
+  d.is_closed,
+  d.close_date,
+  d.service_date,
+  l.item,
+  l.sku,
+  l.quantity,
+  l.price,
+  l.amount,
+  l.discount
+FROM ${ref("stg_hubspot_line_items")} AS l
+JOIN ${ref("fct_hubspot_deals")} AS d USING (deal_id)
