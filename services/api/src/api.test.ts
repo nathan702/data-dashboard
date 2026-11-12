@@ -990,11 +990,13 @@ describe("hubspot programs", () => {
   it("returns this and last season's programs with roles guessed from property labels", async () => {
     const res = await request(api()).get("/api/hubspot/programs?businessLine=education&season=2026").expect(200);
     expect(res.body.season).toBe(2026);
-    expect(res.body.roles.participants.name).toBe("number_of_participants");
-    expect(res.body.roles.chaperones.name).toBe("chaperone_count");
-    expect(res.body.roles.programType.name).toBe("program_type");
-    expect(res.body.roles.food.name).toBe("food_service");
-    expect(res.body.roles.transportation.name).toBe("transportation");
+    const names = (r: string) => res.body.roles[r].map((p: { name: string }) => p.name);
+    expect(names("participants")).toEqual(["number_of_participants"]);
+    // Free + paid chaperones are both used (added up).
+    expect(names("chaperones")).toEqual(["free_chaperone_count", "paid_chaperone_count"]);
+    expect(names("programType")).toEqual(["program_type"]);
+    expect(names("food")).toEqual(["food_service"]);
+    expect(names("transportation")).toEqual(["transportation"]);
     expect(res.body.programs.some((r: { period: string }) => r.period === "previous")).toBe(true);
     expect(res.body.lineItems.length).toBeGreaterThan(0);
     const props = await request(api()).get("/api/hubspot/properties").expect(200);

@@ -488,7 +488,7 @@ export function createApi(opts: ApiOptions) {
           roles: names,
         });
         const byName = new Map(properties.map((p) => [p.name, p]));
-        const roles = Object.fromEntries(HUBSPOT_ROLES.map((r) => [r, names[r] ? byName.get(names[r]!) ?? null : null])) as HubspotProgramsResponse["roles"];
+        const roles = Object.fromEntries(HUBSPOT_ROLES.map((r) => [r, names[r].flatMap((n) => (byName.has(n) ? [byName.get(n)!] : []))])) as HubspotProgramsResponse["roles"];
         return { businessLine, season, seasons, current, previous, samePointCutoff, roles, programs, lineItems };
       }),
     );

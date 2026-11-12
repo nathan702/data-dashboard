@@ -4,7 +4,8 @@ import type { HubspotProgramsScope } from "./types.js";
 /** Made-up HubSpot programs for local development (no warehouse). */
 export const DEMO_HUBSPOT_PROPERTIES: HubspotProperty[] = [
   { name: "number_of_participants", label: "Number of participants", type: "number", options: [] },
-  { name: "chaperone_count", label: "Chaperones", type: "number", options: [] },
+  { name: "free_chaperone_count", label: "Free chaperone count", type: "number", options: [] },
+  { name: "paid_chaperone_count", label: "Paid chaperone count", type: "number", options: [] },
   {
     name: "program_type",
     label: "Program Type",

@@ -91,3 +91,29 @@ describe("summarizeFareharbor", () => {
     expect(s.lead.byWeekend.current[0]).toMatchObject({ label: "1st Wknd", guests: 10 });
   });
 });
+
+import { hubspotSettingsSchema, resolveHubspotRoles } from "./hubspot.js";
+
+describe("hubspot roles", () => {
+  const props = [
+    { name: "free_chaperones", label: "Free chaperone count", type: "number", options: [] },
+    { name: "paid_chaperones", label: "Paid chaperone count", type: "number", options: [] },
+    { name: "students", label: "Number of students", type: "number", options: [] },
+    { name: "students_est", label: "Estimated students", type: "number", options: [] },
+    { name: "program_type", label: "Program Type", type: "enumeration", options: [] },
+  ];
+  it("adds up every chaperone count automatically, but guesses one participant count", () => {
+    const r = resolveHubspotRoles({ participants: [], chaperones: [], programType: [], food: [], transportation: [] }, props);
+    expect(r.chaperones).toEqual(["free_chaperones", "paid_chaperones"]);
+    expect(r.participants).toEqual(["students"]);
+    expect(r.programType).toEqual(["program_type"]);
+    expect(r.food).toEqual([]);
+  });
+  it("uses the properties set on Settings, and reads older single-name settings", () => {
+    const settings = hubspotSettingsSchema.parse({ participants: "students_est", chaperones: ["paid_chaperones"], programType: null, food: null, transportation: null });
+    expect(settings.participants).toEqual(["students_est"]);
+    const r = resolveHubspotRoles(settings, props);
+    expect(r.participants).toEqual(["students_est"]);
+    expect(r.chaperones).toEqual(["paid_chaperones"]);
+  });
+});

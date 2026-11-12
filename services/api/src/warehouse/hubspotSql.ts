@@ -18,8 +18,10 @@ export function hubspotWonSql(dataset: string) {
     ORDER BY 1`;
 }
 
-/** Value of a kept property on a deal (name is a parameter). */
-const prop = (param: string) => `(SELECT value FROM UNNEST(props) WHERE name = @${param} LIMIT 1)`;
+/** Value of a kept property on a deal (the first of the names in an array parameter). */
+const prop = (param: string) => `(SELECT value FROM UNNEST(props) WHERE name IN UNNEST(@${param}) ORDER BY name LIMIT 1)`;
+/** Sum of the number properties named in an array parameter (null when none is filled in). */
+const total = (param: string) => `(SELECT SUM(SAFE_CAST(value AS NUMERIC)) FROM UNNEST(props) WHERE name IN UNNEST(@${param}))`;
 
 /**
  * Won deals with a program date in [from, to], grouped for the programs page.
@@ -37,8 +39,8 @@ export function hubspotProgramsSql(dataset: string) {
         ${prop("p_food")} AS food,
         ${prop("p_transport")} AS transportation,
         amount,
-        SAFE_CAST(${prop("p_participants")} AS NUMERIC) AS participants,
-        SAFE_CAST(${prop("p_chaperones")} AS NUMERIC) AS chaperones
+        ${total("p_participants")} AS participants,
+        ${total("p_chaperones")} AS chaperones
       FROM \`${dataset}.fct_hubspot_deals\`
       WHERE business_line = @business_line AND is_won
         AND service_date BETWEEN CAST(@from AS DATE) AND CAST(@to AS DATE)

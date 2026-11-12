@@ -363,44 +363,72 @@ function ClosuresSection({ value, canEdit, onChange }: { value: FareharborSettin
   );
 }
 
-/** Which HubSpot deal property is participants, chaperones, program type, food and transportation. */
+/** Which HubSpot deal properties are participants, chaperones, program type, food and transportation. */
 function HubspotRolesSection({ value, canEdit, onChange }: { value: HubspotSettings; canEdit: boolean; onChange(v: HubspotSettings): void }) {
   const properties = useHubspotProperties().data?.properties ?? [];
-  const guessed = resolveHubspotRoles({ participants: null, chaperones: null, programType: null, food: null, transportation: null }, properties);
+  const guessed = resolveHubspotRoles({ participants: [], chaperones: [], programType: [], food: [], transportation: [] }, properties);
+  const label = (names: string[]) => names.map((n) => properties.find((p) => p.name === n)?.label ?? n).join(" + ");
   return (
     <div className="season-campminder">
       <h3 className="card-title">HubSpot properties</h3>
       <p className="card-subtitle">
-        Which deal property the Education Programs and CHAPs pages use for each of these. Left on “Automatic”, the first property whose label fits is
-        used. The program date is the <code>start_datetime</code> property.
+        Which deal properties the Education Programs and CHAPs pages use. Counts can add up several properties (e.g. free + paid chaperones): tick each
+        one. Left on “Automatic”, properties whose label fits are used (for chaperones, all of them added up). The program date is the{" "}
+        <code>start_datetime</code> property.
       </p>
       {properties.length === 0 ? (
         <div className="muted">No HubSpot properties yet (they appear after the first HubSpot sync).</div>
       ) : (
-        <div className="year-dates">
-          {HUBSPOT_ROLES.map((role) => {
-            const kind = HUBSPOT_ROLE_KIND[role];
-            const choices = properties.filter((p) => (kind === "number" ? p.type === "number" : p.type === "enumeration" || p.type === "bool"));
-            const auto = properties.find((p) => p.name === guessed[role]);
-            return (
-              <label key={role} className="year-date">
-                <span className="chip-label">{HUBSPOT_ROLE_LABEL[role]}</span>
-                <select
-                  value={value[role] ?? ""}
-                  disabled={!canEdit}
-                  onChange={(e) => onChange({ ...value, [role]: e.target.value || null })}
-                  aria-label={`${HUBSPOT_ROLE_LABEL[role]} property`}
-                >
-                  <option value="">Automatic{auto ? ` (${auto.label})` : " (none found)"}</option>
-                  {choices.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            );
-          })}
+        <div className="table-scroll">
+          <table>
+            <tbody>
+              {HUBSPOT_ROLES.map((role) => {
+                const kind = HUBSPOT_ROLE_KIND[role];
+                const choices = properties.filter((p) => (kind === "number" ? p.type === "number" : p.type === "enumeration" || p.type === "bool"));
+                const auto = guessed[role].length ? `Automatic (${label(guessed[role])})` : "Automatic (none found)";
+                const set = value[role] ?? [];
+                return (
+                  <tr key={role}>
+                    <td style={{ verticalAlign: "top", fontWeight: 500 }}>{HUBSPOT_ROLE_LABEL[role]}</td>
+                    <td style={{ whiteSpace: "normal" }}>
+                      {kind === "choice" ? (
+                        <select
+                          value={set[0] ?? ""}
+                          disabled={!canEdit}
+                          onChange={(e) => onChange({ ...value, [role]: e.target.value ? [e.target.value] : [] })}
+                          aria-label={`${HUBSPOT_ROLE_LABEL[role]} property`}
+                        >
+                          <option value="">{auto}</option>
+                          {choices.map((p) => (
+                            <option key={p.name} value={p.name}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
+                          <span className="muted">{set.length ? `Adding up: ${label(set)}` : auto}</span>
+                          {choices.map((p) => (
+                            <label key={p.name} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <input
+                                type="checkbox"
+                                checked={set.includes(p.name)}
+                                disabled={!canEdit}
+                                onChange={(e) =>
+                                  onChange({ ...value, [role]: e.target.checked ? [...set, p.name] : set.filter((n) => n !== p.name) })
+                                }
+                              />
+                              {p.label}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
