@@ -556,11 +556,11 @@ describe("campminder endpoints", () => {
     const x = (await request(app).get("/api/campminder/extras?season=2026&businessLine=camp").expect(200)).body as CampminderExtras;
     const names = x.items.map((i) => i.item);
     // Lunches and gear are filed under Summer Camp (like tuition), fees under Miscellaneous: both count.
-    expect(names).toEqual(expect.arrayContaining(["Week N Lunch", "Gear Bag", "Cancellation Fee"]));
+    expect(names).toEqual(expect.arrayContaining(["Lunch", "Gear Bag", "Cancellation Fee"]));
     // Tuition lines (their own session's category) aren't extras.
     expect(names.some((n) => /Farm/.test(n))).toBe(false);
-    const lunch = x.items.find((i) => i.item === "Week N Lunch")!;
-    const lunchRows = x.bySession.filter((r) => r.item === "Week N Lunch");
+    const lunch = x.items.find((i) => i.item === "Lunch")!;
+    const lunchRows = x.bySession.filter((r) => r.item === "Lunch");
     expect(lunchRows.every((r) => r.week !== null && r.sessionGroup)).toBe(true);
     expect(lunchRows.reduce((t, r) => t + r.count, 0)).toBe(lunch.count);
     expect(lunch.revenue).toBeCloseTo(lunch.count * 45, 2);
@@ -569,7 +569,7 @@ describe("campminder endpoints", () => {
     // Extras show in the financial report too, by item.
     const byItem = (await request(app).post("/api/reports/run").send({ spec: { dataset: "campminder_finance", rows: ["item_group"], measure: "items_sold", filters: { season: ["2026"], business_line: ["camp"] } } }).expect(200))
       .body;
-    expect(byItem.cells.find((c: { rows: string[] }) => c.rows[0] === "Week N Lunch").value).toBe(lunch.count);
+    expect(byItem.cells.find((c: { rows: string[] }) => c.rows[0] === "Lunch").value).toBe(lunch.count);
     await request(app).get("/api/campminder/extras?season=x").expect(400);
 
     const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");

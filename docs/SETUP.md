@@ -213,7 +213,7 @@ with the same transaction id; each is kept as its own line.
 financial category (or none) are extras (fees, staff discounts…), and so is
 any line named like a lunch, gear bag or backpack whatever its category
 (Campminder files those under Summer Camp, next to tuition). A
-"Week N Lunch" belongs to the session on its own line; an item with no session
+lunch ("Week 3 Lunch", counted as Lunch) belongs to the session on its own line; an item with no session
 (Gear Bag, Backpack) goes with the camper's first enrolled session that season,
 and so does its business line. The Camp page's Camp extras card shows each
 item against last season at the same point, lunches by week and session group,

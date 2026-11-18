@@ -56,7 +56,7 @@ export function isCampExtra(category: string | null, item: string | null): boole
 }
 
 /**
- * Camp extras: line items that aren't tuition (Week N Lunch, Gear Bag,
+ * Camp extras: line items that aren't tuition (Lunches, Gear Bag,
  * Backpack, cancellation fees…): charges and credits in the Miscellaneous or
  * System financial category (or none), plus lunches, gear bags and backpacks
  * in any category. A lunch's session is on its own line; an item without
@@ -68,10 +68,10 @@ export const campminderExtrasQuerySchema = z.object({
 });
 export type CampminderExtrasQuery = z.infer<typeof campminderExtrasQuerySchema>;
 
-/** One group of extras lines from the warehouse: a season, an item (weeks folded into "Week N"), a week and a session group. */
+/** One group of extras lines from the warehouse: a season, an item (the week dropped), a week and a session group. */
 export interface CampminderExtrasRow {
   season: number;
-  /** Line item name with any week folded in: "Week N Lunch", "Gear Bag". */
+  /** Line item name with any week folded in: "Lunch", "Gear Bag". */
   item: string;
   week: number | null;
   /** The line's own session group, else the camper's first enrolled session's. */
