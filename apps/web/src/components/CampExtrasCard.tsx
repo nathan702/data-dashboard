@@ -6,7 +6,7 @@ const th = { padding: "8px 16px" };
 
 /**
  * Camp extras from Campminder's Financial report: line items that aren't
- * tuition (Week N Lunch, Gear Bag, Backpack…), against last season at the
+ * tuition (Lunches, Gear Bag, Backpack…), against last season at the
  * same point; lunches by week and session group, and summer-long items by
  * each camper's first session.
  */

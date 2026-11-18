@@ -33,7 +33,8 @@ WITH base AS (
     -- Line item name on charges and credits ("Week 3 Lunch", "Gear Bag"), and the week in it.
     JSON_VALUE(payload, '$.item') AS item,
     SAFE_CAST(JSON_VALUE(payload, '$.itemWeek') AS INT64) AS item_week,
-    REGEXP_REPLACE(JSON_VALUE(payload, '$.item'), r'(?i)\bweek\s*\d{1,2}\b', 'Week N') AS item_group
+    -- The week dropped: "Week 3 Lunch" → "Lunch".
+    TRIM(REGEXP_REPLACE(REGEXP_REPLACE(JSON_VALUE(payload, '$.item'), r'(?i)\bweek\s*\d{1,2}\b', ''), r'\s+', ' ')) AS item_group
   FROM (${latestRaw(ref("raw_campminder", "transactions"))})
 ),
 -- Each camper's first enrolled session that season: where a charge with no session

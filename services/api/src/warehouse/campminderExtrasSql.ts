@@ -1,9 +1,9 @@
 /**
- * Camp extras (Week N Lunch, Gear Bag, Backpack…): charge and credit lines in
+ * Camp extras (Lunches, Gear Bag, Backpack…): charge and credit lines in
  * the Miscellaneous or System financial category (or none) that name an item,
  * plus items named like @extra_pattern in any category (lunches and gear are
  * filed under Summer Camp).
- * One row per season, item (weeks folded to "Week N"), week and session group;
+ * One row per season, item (the week dropped), week and session group;
  * this season in full and last season up to @cutoff (a year before today).
  * Each line is one item: a reversal takes one back.
  */

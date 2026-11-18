@@ -369,7 +369,7 @@ export interface DemoTransaction {
   method: string | null;
   /** Line item name on charges and credits ("Farm Week 3", "Week 3 Lunch", "Gear Bag"). */
   item: string | null;
-  /** Item with the week folded in ("Week N Lunch"), and the week. */
+  /** Item with the week folded in ("Week 3 Lunch" → "Lunch"), and the week. */
   itemGroup: string | null;
   itemWeek: number | null;
 }
@@ -408,7 +408,7 @@ export function demoTransactions(): DemoTransaction[] {
     if (r.businessLine === "camp" && r.statusCode === "EN") {
       const extra = (suffix: string, item: string, amount: number, week: number | null) => {
         extras += amount;
-        const itemGroup = week === null ? item : item.replace(/Week \d+/, "Week N");
+        const itemGroup = week === null ? item : item.replace(/\bweek\s*\d{1,2}\b/i, "").replace(/\s+/g, " ").trim();
         // Like Campminder: lunches and gear are filed under Summer Camp, fees under Miscellaneous.
         const category = /fee/i.test(item) ? "Miscellaneous" : base.category;
         out.push({ ...base, transactionId: `${id}${suffix}`, type: "debit", amount, method: null, category, item, itemGroup, itemWeek: week });

@@ -244,7 +244,7 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
       f("service_month", "Service month", "Month the service starts (YYYY-MM); charges for sessions.", "numeric"),
       f("household", "Household", "One household (scrambled ID, the same as in the enrollment data sets)."),
       f("item", "Line item", "The charge or credit's line item name (“Farm Week 3”, “Week 3 Lunch”, “Gear Bag”); payments and refunds have none."),
-      f("item_group", "Line item (weeks combined)", "Line item with the week folded in: every “Week 3 Lunch”, “Week 4 Lunch”… is “Week N Lunch”."),
+      f("item_group", "Line item (weeks combined)", "Line item with the week dropped: every “Week 3 Lunch”, “Week 4 Lunch”… is “Lunch”."),
       f("item_week", "Line item week", "The week named in the line item (“Week 3 Lunch” → 3).", "numeric"),
       f("extra_session_group", "Session group (extras)", "For a line item without a session of its own (Gear Bag, Backpack), the camper's first enrolled session group that season; else the line's own session group."),
       f("assigned_by", "Business line from", "Whether the business line came from the session, the camper's first session (items without one), the financial category, or the household's main line."),
