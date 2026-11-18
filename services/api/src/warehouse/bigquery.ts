@@ -4,7 +4,8 @@ import {
   type RegistrationPaceResponse,
   type RegistrationPaceRow,
   type RegistrationSettings,
-  CAMP_EXTRA_ITEM_PATTERN,
+  CAMP_EXTRAS_CATEGORY,
+  type CampLineItem,
   type CampminderExtrasQuery,
   type CampminderExtrasRow,
   type CampminderFinanceQuery,
@@ -47,7 +48,7 @@ import {
   type HubspotProperty,
   type LeadBucket,
 } from "@dash/shared";
-import { campminderExtrasSql } from "./campminderExtrasSql.js";
+import { campLineItemsSql, campminderExtrasSql } from "./campminderExtrasSql.js";
 import { fareharborDaysSql, fareharborExtentSql } from "./fareharborSql.js";
 import { hubspotExtentSql, hubspotLineItemsSql, hubspotOpenSql, hubspotProgramsSql, hubspotPropertiesSql, hubspotWonSql } from "./hubspotSql.js";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
@@ -410,11 +411,21 @@ export class BigQueryWarehouse implements Warehouse {
     };
   }
 
-  async campminderExtras(q: CampminderExtrasQuery, cutoff: string): Promise<CampminderExtrasRow[]> {
+  async campLineItems(): Promise<CampLineItem[]> {
+    const [rows] = await this.bq.query({
+      query: campLineItemsSql(this.martsDataset),
+      params: { category: CAMP_EXTRAS_CATEGORY },
+      types: { category: "STRING" },
+      location: this.location,
+    });
+    return (rows as Array<Record<string, unknown>>).map((r) => ({ item: String(r.item), lines: Number(r.lines ?? 0), amount: round2(Number(r.amount ?? 0)) }));
+  }
+
+  async campminderExtras(q: CampminderExtrasQuery, cutoff: string, items: string[]): Promise<CampminderExtrasRow[]> {
     const [rows] = await this.bq.query({
       query: campminderExtrasSql(this.martsDataset),
-      params: { season: q.season, business_line: q.businessLine ?? null, cutoff, extra_pattern: CAMP_EXTRA_ITEM_PATTERN },
-      types: { season: "INT64", business_line: "STRING", cutoff: "STRING", extra_pattern: "STRING" },
+      params: { season: q.season, business_line: q.businessLine ?? null, cutoff, category: CAMP_EXTRAS_CATEGORY, items },
+      types: { season: "INT64", business_line: "STRING", cutoff: "STRING", category: "STRING", items: ["STRING"] },
       location: this.location,
     });
     return (rows as Array<Record<string, unknown>>).map((r) => ({

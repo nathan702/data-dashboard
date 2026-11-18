@@ -247,7 +247,8 @@ export async function runSelfCheck(
       await warehouse.campminderFinance({ season: e.season, filters: {} });
       // With a drill-down filter, lines are matched to enrollments.
       await warehouse.campminderFinance({ season: e.season, filters: { week: ["1"], school: ["(self-check)"] } }, new Map());
-      await warehouse.campminderExtras({ season: e.season, businessLine: "camp" }, `${e.season - 1}-12-31`);
+      const items = (await warehouse.campLineItems()).map((i) => i.item);
+      await warehouse.campminderExtras({ season: e.season, businessLine: "camp" }, `${e.season - 1}-12-31`, items.slice(0, 5));
     }
     await warehouse.runReport(
       reportSpecSchema.parse({ dataset: "campminder_finance", rows: ["item_group", "extra_session_group"], column: "item_week", measure: "items_sold" }),

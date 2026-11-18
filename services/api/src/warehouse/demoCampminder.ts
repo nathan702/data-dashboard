@@ -14,7 +14,8 @@ import {
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
   type EnrollmentSummaryResponse,
-  isCampExtra,
+  CAMP_EXTRAS_CATEGORY,
+  type CampLineItem,
   type CampminderExtrasQuery,
   type CampminderExtrasRow,
   type CampminderFinanceQuery,
@@ -406,18 +407,17 @@ export function demoTransactions(): DemoTransaction[] {
     // Camp extras: lunch for some weeks (on the session's own line), a gear bag or backpack now and then.
     let extras = 0;
     if (r.businessLine === "camp" && r.statusCode === "EN") {
-      const extra = (suffix: string, item: string, amount: number, week: number | null) => {
+      const extra = (suffix: string, item: string, amount: number, week: number | null, category = base.category) => {
         extras += amount;
         const itemGroup = week === null ? item : item.replace(/\bweek\s*\d{1,2}\b/i, "").replace(/\s+/g, " ").trim();
-        // Like Campminder: lunches and gear are filed under Summer Camp, fees under Miscellaneous.
-        const category = /fee/i.test(item) ? "Miscellaneous" : base.category;
         out.push({ ...base, transactionId: `${id}${suffix}`, type: "debit", amount, method: null, category, item, itemGroup, itemWeek: week });
       };
       if (r.weekStart !== null && noise(`${id}lunch`) < 0.35) extra("L", `Week ${r.weekStart} Lunch`, 45, r.weekStart);
       const g = noise(`${id}gear`);
       if (g < 0.06) extra("G", "Gear Bag", 35, null);
       else if (g < 0.1) extra("B", "Backpack", 28, null);
-      if (noise(`${id}fee`) < 0.02) extra("F", "Cancellation Fee", 50, null);
+      if (noise(`${id}fee`) < 0.02) extra("F", "Summer Camp Cancellation Fee", 50, null);
+      if (noise(`${id}misc`) < 0.02) extra("M", "Airline Charge", 120, null, "Miscellaneous"); // like Campminder: not a Summer Camp item
     }
     // Most pay in full; some still owe part; cancellations are refunded.
     const due = price - discount + extras;
@@ -461,11 +461,11 @@ export function demoCampminderFinance(q: CampminderFinanceQuery, schools: School
   };
 }
 
-/** Same rule as campminderExtrasSql: Miscellaneous charges and credits naming an item, last season up to `cutoff`. */
-export function demoCampminderExtras(q: CampminderExtrasQuery, cutoff: string): CampminderExtrasRow[] {
+/** Same rule as campminderExtrasSql: Summer Camp charges and credits for the chosen items, last season up to `cutoff`. */
+export function demoCampminderExtras(q: CampminderExtrasQuery, cutoff: string, items: string[]): CampminderExtrasRow[] {
   const groups = new Map<string, CampminderExtrasRow>();
   for (const t of demoTransactions()) {
-    if ((t.type !== "debit" && t.type !== "credit") || !t.itemGroup || !isCampExtra(t.category, t.item)) continue;
+    if ((t.type !== "debit" && t.type !== "credit") || !t.itemGroup || t.category !== CAMP_EXTRAS_CATEGORY || !items.includes(t.itemGroup)) continue;
     if (q.businessLine && t.businessLine !== q.businessLine) continue;
     if (!(t.season === q.season || (t.season === q.season - 1 && t.postDate <= cutoff))) continue;
     const k = JSON.stringify([t.season, t.itemGroup, t.itemWeek, t.sessionGroup]);
@@ -475,6 +475,19 @@ export function demoCampminderExtras(q: CampminderExtrasQuery, cutoff: string): 
     groups.set(k, g);
   }
   return [...groups.values()];
+}
+
+/** Same as campLineItemsSql: every Summer Camp line item with its lines and net amount. */
+export function demoCampLineItems(): CampLineItem[] {
+  const items = new Map<string, CampLineItem>();
+  for (const t of demoTransactions()) {
+    if ((t.type !== "debit" && t.type !== "credit") || !t.itemGroup || t.category !== CAMP_EXTRAS_CATEGORY) continue;
+    const i = items.get(t.itemGroup) ?? { item: t.itemGroup, lines: 0, amount: 0 };
+    i.lines++;
+    i.amount = Math.round((i.amount + t.amount) * 100) / 100;
+    items.set(t.itemGroup, i);
+  }
+  return [...items.values()].sort((a, b) => b.lines - a.lines);
 }
 
 /** Same rule as registrationPaceSql: each family's wave from last season's camp locations, then days since it opened. */

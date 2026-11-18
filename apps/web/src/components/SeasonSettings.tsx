@@ -20,11 +20,12 @@ import {
   HUBSPOT_ROLES,
   HUBSPOT_ROLE_KIND,
   HUBSPOT_ROLE_LABEL,
+  resolveCampExtras,
   resolveHubspotRoles,
   type HubspotSettings,
 } from "@dash/shared";
-import { useAssignments, useHubspotProperties, useSaveSeasonSettings, useSeasonSettings } from "../lib/api";
-import { formatDate } from "../lib/format";
+import { useAssignments, useCampItems, useHubspotProperties, useSaveSeasonSettings, useSeasonSettings } from "../lib/api";
+import { formatDate, formatInt, formatUsd } from "../lib/format";
 
 const thisYear = () => Number(easternDate().slice(0, 4));
 
@@ -213,6 +214,7 @@ export function SeasonSettingsCard({ canEdit }: { canEdit: boolean }) {
       <RegistrationSection value={s.registration} canEdit={canEdit} onChange={(registration) => update({ ...s, registration })} />
       <ClosuresSection value={s.fareharbor} canEdit={canEdit} onChange={(fareharbor) => update({ ...s, fareharbor })} />
       <HubspotRolesSection value={s.hubspot} canEdit={canEdit} onChange={(hubspot) => update({ ...s, hubspot })} />
+      <CampExtrasSection value={s.campExtras} canEdit={canEdit} onChange={(campExtras) => update({ ...s, campExtras })} />
     </section>
   );
 }
@@ -430,6 +432,66 @@ function HubspotRolesSection({ value, canEdit, onChange }: { value: HubspotSetti
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Which Summer Camp line items count as camp extras (lunches, gear…) rather than tuition. */
+function CampExtrasSection({ value, canEdit, onChange }: { value: string[] | null; canEdit: boolean; onChange(v: string[] | null): void }) {
+  const q = useCampItems();
+  const items = q.data?.items ?? [];
+  // Until something is chosen, the automatic set (lunches, gear, cancellation fees) is what's ticked.
+  const chosen = value ?? resolveCampExtras(null, items.map((i) => i.item));
+  return (
+    <div className="season-campminder">
+      <h3 className="card-title">Camp extras</h3>
+      <p className="card-subtitle">
+        Which Summer Camp line items the Camp page's Camp extras card lists (the rest are tuition). Only the Summer Camp financial category counts;
+        Miscellaneous lines are their own “Financial category: Miscellaneous” entry on the Campminder tab, counted wherever it's assigned. Weeks are dropped from names, so every “Week 3 Lunch” is Lunch.
+        {value === null && " Automatic for now: lunches, gear bags, backpacks and cancellation fees."}
+      </p>
+      {q.error && <div className="error-banner">Couldn't load line items: {q.error.message}</div>}
+      {items.length === 0 ? (
+        <div className="muted">No Summer Camp line items yet (they appear after the Campminder Financial tab is imported).</div>
+      ) : (
+        <>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Extra</th>
+                  <th>Line item</th>
+                  <th className="num">Lines</th>
+                  <th className="num">Net amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((i) => (
+                  <tr key={i.item}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`${i.item} is a camp extra`}
+                        checked={chosen.includes(i.item)}
+                        disabled={!canEdit}
+                        onChange={(e) => onChange(e.target.checked ? [...chosen, i.item] : chosen.filter((x) => x !== i.item))}
+                      />
+                    </td>
+                    <td>{i.item}</td>
+                    <td className="num">{formatInt(i.lines)}</td>
+                    <td className="num">{formatUsd(i.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {canEdit && value !== null && (
+            <button type="button" className="button" style={{ marginTop: 8 }} onClick={() => onChange(null)}>
+              Back to automatic
+            </button>
+          )}
+        </>
       )}
     </div>
   );
