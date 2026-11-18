@@ -210,7 +210,9 @@ the report splits across what it paid for (camp and CHAPs) is several rows
 with the same transaction id; each is kept as its own line.
 
 **Camp extras.** Charges and credits in the Miscellaneous or System
-financial category (or none) are extras: lunches, gear bags, backpacks. A
+financial category (or none) are extras (fees, staff discounts…), and so is
+any line named like a lunch, gear bag or backpack whatever its category
+(Campminder files those under Summer Camp, next to tuition). A
 "Week N Lunch" belongs to the session on its own line; an item with no session
 (Gear Bag, Backpack) goes with the camper's first enrolled session that season,
 and so does its business line. The Camp page's Camp extras card shows each

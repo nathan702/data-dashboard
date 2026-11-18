@@ -4,6 +4,7 @@ import {
   type RegistrationPaceResponse,
   type RegistrationPaceRow,
   type RegistrationSettings,
+  CAMP_EXTRA_ITEM_PATTERN,
   type CampminderExtrasQuery,
   type CampminderExtrasRow,
   type CampminderFinanceQuery,
@@ -412,8 +413,8 @@ export class BigQueryWarehouse implements Warehouse {
   async campminderExtras(q: CampminderExtrasQuery, cutoff: string): Promise<CampminderExtrasRow[]> {
     const [rows] = await this.bq.query({
       query: campminderExtrasSql(this.martsDataset),
-      params: { season: q.season, business_line: q.businessLine ?? null, cutoff },
-      types: { season: "INT64", business_line: "STRING", cutoff: "STRING" },
+      params: { season: q.season, business_line: q.businessLine ?? null, cutoff, extra_pattern: CAMP_EXTRA_ITEM_PATTERN },
+      types: { season: "INT64", business_line: "STRING", cutoff: "STRING", extra_pattern: "STRING" },
       location: this.location,
     });
     return (rows as Array<Record<string, unknown>>).map((r) => ({

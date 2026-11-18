@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeCampminderExtras, yearBefore } from "./campminderFinance.js";
+import { isCampExtra, summarizeCampminderExtras, yearBefore } from "./campminderFinance.js";
 
 describe("camp extras", () => {
   it("adds up items this season and last, keeping this season's weeks and sessions", () => {
@@ -22,6 +22,16 @@ describe("camp extras", () => {
     ]);
     expect(x.bySession.map((r) => [r.item, r.week])).toEqual([["Gear Bag", null], ["Week N Lunch", 3], ["Week N Lunch", 4]]);
     expect(x.lastSeasonCutoff).toBe("2025-11-18");
+  });
+
+  it("counts lunches and gear in any category, and anything Miscellaneous, but not tuition", () => {
+    expect(isCampExtra("Summer Camp", "Week 3 Lunch")).toBe(true);
+    expect(isCampExtra("Summer Camp", "Gear Bag")).toBe(true);
+    expect(isCampExtra("Summer Camp", "Explorer Backpack (with Shipping)")).toBe(true);
+    expect(isCampExtra("Miscellaneous", "Cancellation Fee")).toBe(true);
+    expect(isCampExtra("Summer Camp", "Farm Week 3")).toBe(false);
+    expect(isCampExtra("Summer Camp", "Lunchbox Explorers Week 2")).toBe(false);
+    expect(isCampExtra("Miscellaneous", null)).toBe(false);
   });
 
   it("finds the same date a year back", () => {

@@ -555,7 +555,8 @@ describe("campminder endpoints", () => {
     const app = api();
     const x = (await request(app).get("/api/campminder/extras?season=2026&businessLine=camp").expect(200)).body as CampminderExtras;
     const names = x.items.map((i) => i.item);
-    expect(names).toEqual(expect.arrayContaining(["Week N Lunch", "Gear Bag"]));
+    // Lunches and gear are filed under Summer Camp (like tuition), fees under Miscellaneous: both count.
+    expect(names).toEqual(expect.arrayContaining(["Week N Lunch", "Gear Bag", "Cancellation Fee"]));
     // Tuition lines (their own session's category) aren't extras.
     expect(names.some((n) => /Farm/.test(n))).toBe(false);
     const lunch = x.items.find((i) => i.item === "Week N Lunch")!;
@@ -577,6 +578,7 @@ describe("campminder endpoints", () => {
     await new BigQueryWarehouse(fake as never, "marts").campminderExtras({ season: 2026 }, "2025-11-18");
     expect(calls[0]!.query).toContain("category IN ('Miscellaneous', 'System')");
     expect(calls[0]!.query).toContain("CAST(@cutoff AS DATE)");
+    expect(calls[0]!.query).toContain("REGEXP_CONTAINS(item, CONCAT('(?i)', @extra_pattern))");
     expect(calls[0]!.types.cutoff).toBe("STRING");
   });
 
