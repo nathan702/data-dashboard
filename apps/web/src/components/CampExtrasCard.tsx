@@ -5,8 +5,8 @@ import { formatDate, formatInt, formatPercent, formatUsd, percentChange } from "
 const th = { padding: "8px 16px" };
 
 /**
- * Camp extras from Campminder's Financial report: line items that aren't
- * tuition (Lunches, Gear Bag, Backpack…), against last season at the
+ * Camp extras from Campminder's Financial report: the Summer Camp line
+ * items chosen on Settings (Lunch, Gear Bag, Backpack…), against last season at the
  * same point; lunches by week and session group, and summer-long items by
  * each camper's first session.
  */
@@ -20,8 +20,8 @@ export function CampExtrasCard({ season, businessLine }: { season: number | unde
     <div className="card">
       <h3 className="card-title">Camp extras</h3>
       <p className="card-subtitle">
-        Line items that aren't tuition: lunches, gear bags and backpacks, plus anything in the Miscellaneous category (fees, staff discounts…), season {data.season}, net of credits and
-        reversals. Last season counts what was posted by {formatDate(data.lastSeasonCutoff)}. The page's filters don't apply here.
+        Summer Camp line items that aren't tuition (lunches, gear and the others chosen on Settings → Seasons → Camp extras), season {data.season}, net
+        of credits and reversals. Last season counts what was posted by {formatDate(data.lastSeasonCutoff)}. The page's filters don't apply here.
       </p>
       <div className="table-scroll">
         <table>

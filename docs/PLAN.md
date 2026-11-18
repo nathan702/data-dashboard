@@ -136,8 +136,9 @@ unmatched is "Unassigned" and flagged.
    booked and paid dates); a Campminder financials report data set (charges,
    discounts and credits, net tuition, payments, refunds, balances owed,
    households owing); a tuition and balances card on the Camp, CHAPs and
-   School Year pages. Camp extras ✅ (Lunches, Gear Bag, Backpack…): a
-   Camp page card with items vs last season at the same point, lunches by week
+   School Year pages. Camp extras ✅ (Summer Camp line items chosen on
+   Settings: Lunch, Gear Bag, Backpack…; Miscellaneous is its own assignable
+   entry, out of Camp): a Camp page card with items vs last season at the same point, lunches by week
    × session group, and summer-long items by the camper's first session; line
    item fields and Items sold in the report builder.
 6. **Family and sibling reporting** ✅ Siblings = two or more enrolled campers

@@ -51,6 +51,7 @@ import {
   type MeResponse,
   addDays,
   easternDate,
+  resolveCampExtras,
   summarizeCampminderExtras,
   yearBefore,
   fareharborDaysQuerySchema,
@@ -288,11 +289,18 @@ export function createApi(opts: ApiOptions) {
       return;
     }
     const cutoff = yearBefore(easternDate());
+    const items = resolveCampExtras((await opts.seasons.get()).campExtras, (await campLineItems()).map((i) => i.item));
     res.json(
-      await cached(`/campminder/extras:${JSON.stringify(parsed.data)}:${cutoff}`, async () =>
-        summarizeCampminderExtras(await opts.warehouse.campminderExtras(parsed.data, cutoff), parsed.data, cutoff),
+      await cached(`/campminder/extras:${JSON.stringify(parsed.data)}:${cutoff}:${JSON.stringify(items)}`, async () =>
+        summarizeCampminderExtras(await opts.warehouse.campminderExtras(parsed.data, cutoff, items), parsed.data, cutoff),
       ),
     );
+  });
+  // Every Summer Camp line item, and which count as extras (Settings → Seasons → Camp extras).
+  const campLineItems = () => cached("camp-line-items", async () => ({ list: await opts.warehouse.campLineItems() })).then((x) => x.list);
+  api.get("/campminder/camp-items", async (_req, res) => {
+    const [items, s] = await Promise.all([campLineItems(), opts.seasons.get()]);
+    res.json({ items, extras: resolveCampExtras(s.campExtras, items.map((i) => i.item)), automatic: s.campExtras === null });
   });
   enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), async (d: EnrollmentBreakdownQuery) =>
     opts.warehouse.enrollmentBreakdown(d, (await schoolMap()).map),

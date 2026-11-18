@@ -227,7 +227,7 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
     id: "campminder_finance",
     label: "Campminder financials",
     description:
-      "One row per line of Campminder's Financial report: charges, discounts and credits, payments, refunds and transfers. A payment split across what it paid for is one line per part. Business line: the line's session group; else, for a line item without a session (Gear Bag, Backpack), the camper's first enrolled session; else its financial category; else the household's main line that season.",
+      "One row per line of Campminder's Financial report: charges, discounts and credits, payments, refunds and transfers. A payment split across what it paid for is one line per part. Business line: Miscellaneous lines by their category alone; else the line's session group; else, for a line item without a session (Gear Bag, Fuel Charge), the camper's first enrolled session; else its financial category; else the household's main line that season.",
     dated: false,
     defaultMeasure: "net_tuition",
     fields: [

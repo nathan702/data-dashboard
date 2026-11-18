@@ -7,6 +7,7 @@ import type {
   HubspotProgramsResponse,
   HubspotProperty,
   AssignmentsResponse,
+  CampLineItem,
   CampminderExtras,
   CampminderFinanceSummary,
   RegistrationPaceResponse,
@@ -169,6 +170,10 @@ function retailQs(q: Record<string, string | undefined>) {
 export function useHubspotPrograms(businessLine: BusinessLine, season: number | undefined) {
   const qs = retailQs({ businessLine, season: season ? String(season) : undefined });
   return useApi<HubspotProgramsResponse>(["hubspot-programs", qs], `/api/hubspot/programs?${qs}`, { refetchInterval: 10 * 60_000 });
+}
+
+export function useCampItems() {
+  return useApi<{ items: CampLineItem[]; extras: string[]; automatic: boolean }>(["camp-items"], "/api/campminder/camp-items");
 }
 
 export function useHubspotProperties() {

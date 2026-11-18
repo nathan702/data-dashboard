@@ -555,10 +555,10 @@ describe("campminder endpoints", () => {
     const app = api();
     const x = (await request(app).get("/api/campminder/extras?season=2026&businessLine=camp").expect(200)).body as CampminderExtras;
     const names = x.items.map((i) => i.item);
-    // Lunches and gear are filed under Summer Camp (like tuition), fees under Miscellaneous: both count.
-    expect(names).toEqual(expect.arrayContaining(["Lunch", "Gear Bag", "Cancellation Fee"]));
-    // Tuition lines (their own session's category) aren't extras.
-    expect(names.some((n) => /Farm/.test(n))).toBe(false);
+    // Automatic until chosen: lunches, gear and camp cancellation fees, all Summer Camp items.
+    expect(names.sort()).toEqual(["Backpack", "Gear Bag", "Lunch", "Summer Camp Cancellation Fee"]);
+    // Tuition isn't an extra, and nothing Miscellaneous is.
+    expect(names.some((n) => /Farm|Airline/.test(n))).toBe(false);
     const lunch = x.items.find((i) => i.item === "Lunch")!;
     const lunchRows = x.bySession.filter((r) => r.item === "Lunch");
     expect(lunchRows.every((r) => r.week !== null && r.sessionGroup)).toBe(true);
@@ -572,14 +572,25 @@ describe("campminder endpoints", () => {
     expect(byItem.cells.find((c: { rows: string[] }) => c.rows[0] === "Lunch").value).toBe(lunch.count);
     await request(app).get("/api/campminder/extras?season=x").expect(400);
 
+    // Settings lists every Summer Camp line item (tuition too) to choose from; choosing replaces the automatic set.
+    const choices = (await request(app).get("/api/campminder/camp-items").expect(200)).body;
+    expect(choices.automatic).toBe(true);
+    expect(choices.items.map((i: { item: string }) => i.item)).toEqual(expect.arrayContaining(["Lunch", "Gear Bag"]));
+    expect(choices.items.some((i: { item: string }) => i.item === "Airline Charge")).toBe(false);
+    const settings = (await request(app).get("/api/settings/seasons")).body;
+    await request(app).put("/api/settings/seasons").send({ ...settings, campExtras: ["Lunch"] }).expect(200);
+    const chosen = (await request(app).get("/api/campminder/extras?season=2026&businessLine=camp").expect(200)).body as CampminderExtras;
+    expect(chosen.items.map((i) => i.item)).toEqual(["Lunch"]);
+    expect((await request(app).get("/api/campminder/camp-items")).body).toMatchObject({ automatic: false, extras: ["Lunch"] });
+
     const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
     const calls: Array<{ query: string; types: Record<string, unknown> }> = [];
     const fake = { query: async (o: { query: string; types: Record<string, unknown> }) => (calls.push(o), [[]]) };
-    await new BigQueryWarehouse(fake as never, "marts").campminderExtras({ season: 2026 }, "2025-11-18");
-    expect(calls[0]!.query).toContain("category IN ('Miscellaneous', 'System')");
+    await new BigQueryWarehouse(fake as never, "marts").campminderExtras({ season: 2026 }, "2025-11-18", ["Lunch"]);
+    expect(calls[0]!.query).toContain("category = @category");
+    expect(calls[0]!.query).toContain("item_group IN UNNEST(@items)");
     expect(calls[0]!.query).toContain("CAST(@cutoff AS DATE)");
-    expect(calls[0]!.query).toContain("REGEXP_CONTAINS(item, CONCAT('(?i)', @extra_pattern))");
-    expect(calls[0]!.types.cutoff).toBe("STRING");
+    expect(calls[0]!.types).toMatchObject({ cutoff: "STRING", items: ["STRING"] });
   });
 
   it("narrows tuition to the camper-sessions the Camp page filters match", async () => {

@@ -73,6 +73,8 @@ export interface SeasonSettings {
   fareharbor: FareharborSettings;
   /** Which HubSpot deal property is participants, chaperones, program type, food, transportation. */
   hubspot: HubspotSettings;
+  /** Summer Camp line items (weeks dropped, e.g. "Lunch") counted as camp extras; null = automatic. */
+  campExtras: string[] | null;
 }
 
 export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
@@ -92,6 +94,7 @@ export const DEFAULT_SEASON_SETTINGS: SeasonSettings = {
   registration: DEFAULT_REGISTRATION,
   fareharbor: DEFAULT_FAREHARBOR_SETTINGS,
   hubspot: DEFAULT_HUBSPOT_SETTINGS,
+  campExtras: null,
 };
 
 const yearKey = z.string().regex(/^\d{4}$/);
@@ -107,6 +110,7 @@ export const seasonSettingsSchema = z.object({
   }),
   fareharbor: fareharborSettingsSchema,
   hubspot: hubspotSettingsSchema,
+  campExtras: z.array(z.string().min(1).max(200)).max(500).nullable(),
 });
 
 /** Fill anything missing (e.g. a new business line) from the defaults. */
@@ -119,6 +123,7 @@ export function cleanSeasonSettings(raw: unknown): SeasonSettings {
     registration: r.registration ?? DEFAULT_REGISTRATION,
     fareharbor: r.fareharbor ?? DEFAULT_FAREHARBOR_SETTINGS,
     hubspot: { ...DEFAULT_HUBSPOT_SETTINGS, ...(r.hubspot ?? {}) },
+    campExtras: r.campExtras ?? null,
   };
   const parsed = seasonSettingsSchema.safeParse(merged);
   return parsed.success ? (parsed.data as SeasonSettings) : DEFAULT_SEASON_SETTINGS;

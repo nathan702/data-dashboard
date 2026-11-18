@@ -1,7 +1,7 @@
 config {
   type: "table",
   schema: "staging",
-  description: "Latest state of every line of Campminder's Financial report, with the value its business line is assigned by: its session group; else, for a line item with no session (Gear Bag, Backpack) that's Miscellaneous, System, Summer Camp or uncategorized, the camper's first enrolled session that season; else its financial category; else the household's main line. Amounts keep Campminder's signs: debits and refunds positive, credits and payments negative, so a household's balance is the sum. A reversal is its own line with the opposite sign, so sums net it out.",
+  description: "Latest state of every line of Campminder's Financial report, with the value its business line is assigned by: Miscellaneous lines by their category alone (Settings decides where Miscellaneous counts); else its session group; else, for a line item with no session (Gear Bag, Fuel Charge) that's Summer Camp, System or uncategorized, the camper's first enrolled session that season; else its financial category; else the household's main line. Amounts keep Campminder's signs: debits and refunds positive, credits and payments negative, so a household's balance is the sum. A reversal is its own line with the opposite sign, so sums net it out.",
   assertions: { uniqueKey: ["line_id"], nonNull: ["season", "type", "line_id"] }
 }
 js { const { latestRaw } = require("includes/sql"); }
@@ -48,11 +48,13 @@ first_session AS (
 keyed AS (
   SELECT
     *,
-    -- What the line itself says it's for: its session group, else its financial category
-    -- (Miscellaneous and System say nothing about the business line).
+    -- What the line itself says it's for: Miscellaneous is its own line (whatever session it
+    -- names; Settings decides where it counts); else its session group, else its financial
+    -- category (System says nothing about the business line).
     CASE
+      WHEN category = 'Miscellaneous' THEN 'category:Miscellaneous'
       WHEN session_group IS NOT NULL THEN session_group
-      WHEN category IS NOT NULL AND category NOT IN ('Miscellaneous', 'System') THEN CONCAT('category:', category)
+      WHEN category IS NOT NULL AND category <> 'System' THEN CONCAT('category:', category)
     END AS own_key
   FROM base
 ),
@@ -60,15 +62,16 @@ keyed AS (
 household AS (
   SELECT family_hash, season, own_key AS household_key
   FROM keyed
-  WHERE own_key IS NOT NULL AND family_hash IS NOT NULL
+  WHERE own_key IS NOT NULL AND own_key <> 'category:Miscellaneous' AND family_hash IS NOT NULL
   GROUP BY family_hash, season, own_key
   QUALIFY ROW_NUMBER() OVER (PARTITION BY family_hash, season ORDER BY SUM(IF(type = 'debit', amount, 0)) DESC, own_key) = 1
 )
 SELECT
   k.* EXCEPT (own_key),
   first_key AS item_session_group,
-  COALESCE(k.session_group, first_key, k.own_key, h.household_key) AS assign_key,
+  IF(k.category = 'Miscellaneous', k.own_key, COALESCE(k.session_group, first_key, k.own_key, h.household_key)) AS assign_key,
   CASE
+    WHEN k.category = 'Miscellaneous' THEN 'category'
     WHEN k.session_group IS NOT NULL THEN 'session'
     WHEN first_key IS NOT NULL THEN 'first_session'
     WHEN k.own_key IS NOT NULL THEN 'category'
@@ -78,9 +81,9 @@ SELECT
 FROM keyed AS k
 LEFT JOIN household AS h USING (family_hash, season)
 LEFT JOIN first_session AS f USING (person_hash, season),
--- A line item with no session of its own (Gear Bag, Backpack) goes with the camper's first
--- enrolled session, unless its category names another line (River School, CHAPS, LIT...).
+-- A line item with no session of its own (Gear Bag, Fuel Charge) goes with the camper's first
+-- enrolled session, unless its category names another line (River School, CHAPS, Miscellaneous...).
 UNNEST([IF(
   k.item IS NOT NULL AND k.session_group IS NULL
-    AND (k.category IS NULL OR k.category IN ('Miscellaneous', 'System', 'Summer Camp')),
+    AND (k.category IS NULL OR k.category IN ('System', 'Summer Camp')),
   f.first_session_group, NULL)]) AS first_key

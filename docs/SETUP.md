@@ -209,17 +209,22 @@ descriptions. A different tab name can be set with
 the report splits across what it paid for (camp and CHAPs) is several rows
 with the same transaction id; each is kept as its own line.
 
-**Camp extras.** Charges and credits in the Miscellaneous or System
-financial category (or none) are extras (fees, staff discounts…), and so is
-any line named like a lunch, gear bag or backpack whatever its category
-(Campminder files those under Summer Camp, next to tuition). A
-lunch ("Week 3 Lunch", counted as Lunch) belongs to the session on its own line; an item with no session
-(Gear Bag, Backpack) goes with the camper's first enrolled session that season,
-and so does its business line. The Camp page's Camp extras card shows each
-item against last season at the same point, lunches by week and session group,
-and summer-long items by first session; the Campminder financials report data
-set has Line item, Line item (weeks combined), Line item week, Session group
-(extras) and Items sold.
+**Camp extras.** Only the Summer Camp financial category counts. Settings →
+Seasons → Camp extras lists every Summer Camp line item (weeks dropped, so
+every "Week 3 Lunch" is Lunch) to tick the ones that are extras rather than
+tuition; until some are ticked, lunches, gear bags, backpacks and
+cancellation fees are. A lunch belongs to the session on its own line; an
+item with no session (Gear Bag, Fuel Charge) goes with the camper's first
+enrolled session that season, and so does its business line. The Camp
+page's Camp extras card shows each item against last season at the same
+point, lunches by week and session group, and summer-long items by first
+session; the Campminder financials report data set has Line item, Line item
+(weeks combined), Line item week, Session group (extras) and Items sold.
+
+**Miscellaneous.** Lines in the Miscellaneous financial category never count
+toward a session's business line: they are their own "Financial category:
+Miscellaneous" entry on Settings → Campminder, unassigned until a business
+line is chosen for them.
 
 **Past seasons' financials.** In the same history sheet as the past camper
 reports, add a tab per season named `Financial 2022`, `Financial 2023`, … with

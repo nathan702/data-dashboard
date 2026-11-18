@@ -1,11 +1,10 @@
 /**
- * Camp extras (Lunches, Gear Bag, Backpack…): charge and credit lines in
- * the Miscellaneous or System financial category (or none) that name an item,
- * plus items named like @extra_pattern in any category (lunches and gear are
- * filed under Summer Camp).
- * One row per season, item (the week dropped), week and session group;
- * this season in full and last season up to @cutoff (a year before today).
- * Each line is one item: a reversal takes one back.
+ * Camp extras: Summer Camp charge and credit lines whose item (the week dropped)
+ * is one of @items, the line items chosen on Settings. Only the Summer Camp
+ * financial category counts.
+ * One row per season, item, week and session group; this season in full and
+ * last season up to @cutoff (a year before today). Each line is one item: a
+ * reversal takes one back.
  */
 export function campminderExtrasSql(marts: string): string {
   return `
@@ -18,9 +17,20 @@ export function campminderExtrasSql(marts: string): string {
       SUM(amount) AS revenue
     FROM \`${marts}.fct_campminder_transactions\`
     WHERE type IN ('debit', 'credit')
-      AND item IS NOT NULL
-      AND (category IS NULL OR category IN ('Miscellaneous', 'System') OR REGEXP_CONTAINS(item, CONCAT('(?i)', @extra_pattern)))
+      AND category = @category
+      AND item_group IN UNNEST(@items)
       AND (@business_line IS NULL OR business_line = @business_line)
       AND (season = @season OR (season = @season - 1 AND post_date <= CAST(@cutoff AS DATE)))
     GROUP BY 1, 2, 3, 4`;
+}
+
+/** Every Summer Camp line item (the week dropped), with its lines and net amount, for choosing extras on Settings. */
+export function campLineItemsSql(marts: string): string {
+  return `
+    SELECT item_group AS item, COUNT(*) AS lines, SUM(amount) AS amount
+    FROM \`${marts}.fct_campminder_transactions\`
+    WHERE type IN ('debit', 'credit') AND category = @category AND item_group IS NOT NULL
+    GROUP BY 1
+    ORDER BY lines DESC
+    LIMIT 500`;
 }
