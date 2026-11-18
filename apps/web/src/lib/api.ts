@@ -7,6 +7,7 @@ import type {
   HubspotProgramsResponse,
   HubspotProperty,
   AssignmentsResponse,
+  CampminderExtras,
   CampminderFinanceSummary,
   RegistrationPaceResponse,
   AssignmentUpdate,
@@ -238,6 +239,11 @@ export function useRegistrationPace(q: Omit<EnrollmentScope, "season">) {
 export function useCampminderFinance(q: EnrollmentScope) {
   const qs = enrollmentQs(q);
   return useApiWhen<CampminderFinanceSummary>(!!q.season, ["campminder-finance", qs], `/api/campminder/finance?${qs}`);
+}
+
+export function useCampminderExtras(q: { season: number | undefined; businessLine?: EnrollmentScope["businessLine"] }) {
+  const qs = retailQs({ season: q.season ? String(q.season) : undefined, businessLine: q.businessLine });
+  return useApiWhen<CampminderExtras>(!!q.season, ["campminder-extras", qs], `/api/campminder/extras?${qs}`);
 }
 
 export function useEnrollmentBreakdown(q: EnrollmentScope & { dimension: EnrollmentDimension }) {

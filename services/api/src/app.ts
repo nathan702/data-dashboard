@@ -23,6 +23,7 @@ import {
   type SavedReport,
   CALENDAR_YEAR,
   campminderCalendar,
+  campminderExtrasQuerySchema,
   campminderFinanceQuerySchema,
   registrationPaceQuerySchema,
   type RegistrationPaceQuery,
@@ -50,6 +51,8 @@ import {
   type MeResponse,
   addDays,
   easternDate,
+  summarizeCampminderExtras,
+  yearBefore,
   fareharborDaysQuerySchema,
   hubspotDealsQuerySchema,
   hubspotProgramsQuerySchema,
@@ -277,6 +280,20 @@ export function createApi(opts: ApiOptions) {
   enrollmentRoute("/campminder/finance", (q) => campminderFinanceQuerySchema.safeParse(q), async (d: CampminderFinanceQuery) =>
     opts.warehouse.campminderFinance(d, (await schoolMap()).map),
   );
+  // Camp extras compare with last season as of the same date a year ago (the date is in the cache key).
+  api.get("/campminder/extras", async (req, res) => {
+    const parsed = campminderExtrasQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    const cutoff = yearBefore(easternDate());
+    res.json(
+      await cached(`/campminder/extras:${JSON.stringify(parsed.data)}:${cutoff}`, async () =>
+        summarizeCampminderExtras(await opts.warehouse.campminderExtras(parsed.data, cutoff), parsed.data, cutoff),
+      ),
+    );
+  });
   enrollmentRoute("/campminder/breakdown", (q) => enrollmentBreakdownQuerySchema.safeParse(q), async (d: EnrollmentBreakdownQuery) =>
     opts.warehouse.enrollmentBreakdown(d, (await schoolMap()).map),
   );

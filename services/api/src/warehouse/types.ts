@@ -1,5 +1,7 @@
 import type {
   AssignmentRow,
+  CampminderExtrasQuery,
+  CampminderExtrasRow,
   CampminderFinanceQuery,
   CampminderFinanceSummary,
   RegistrationPaceQuery,
@@ -60,6 +62,8 @@ export interface Warehouse {
   runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap): Promise<ReportResult>;
   /** A season's Campminder tuition, payments and balances (marts.fct_campminder_transactions). */
   campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap): Promise<CampminderFinanceSummary>;
+  /** Camp extras (lunches, gear) by item, week and session group: this season, and last season posted by `cutoff`. */
+  campminderExtras(q: CampminderExtrasQuery, cutoff: string): Promise<CampminderExtrasRow[]>;
   /** Sign-ups by days since each family's registration wave opened (Settings → Seasons → Registration). */
   registrationPace(q: RegistrationPaceQuery, registration: RegistrationSettings, schools?: SchoolMap): Promise<RegistrationPaceResponse>;
   /** Every Campminder program with its enrolled sessions, for Settings → Program families. */

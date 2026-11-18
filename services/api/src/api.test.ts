@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reportSpecSchema } from "@dash/shared";
+import { reportSpecSchema, type CampminderExtras } from "@dash/shared";
 import request from "supertest";
 import { createApi } from "./app.js";
 import { decideAccess, type AuthDeps } from "./auth.js";
@@ -549,6 +549,35 @@ describe("campminder endpoints", () => {
     expect(camp.householdsOwing).toBeLessThan(camp.households);
     await request(app).get("/api/campminder/finance?season=abc").expect(400);
     expect(camp.filtered).toBe(false);
+  });
+
+  it("reports camp extras by item, week and session, against last season at the same point", async () => {
+    const app = api();
+    const x = (await request(app).get("/api/campminder/extras?season=2026&businessLine=camp").expect(200)).body as CampminderExtras;
+    const names = x.items.map((i) => i.item);
+    expect(names).toEqual(expect.arrayContaining(["Week N Lunch", "Gear Bag"]));
+    // Tuition lines (their own session's category) aren't extras.
+    expect(names.some((n) => /Farm/.test(n))).toBe(false);
+    const lunch = x.items.find((i) => i.item === "Week N Lunch")!;
+    const lunchRows = x.bySession.filter((r) => r.item === "Week N Lunch");
+    expect(lunchRows.every((r) => r.week !== null && r.sessionGroup)).toBe(true);
+    expect(lunchRows.reduce((t, r) => t + r.count, 0)).toBe(lunch.count);
+    expect(lunch.revenue).toBeCloseTo(lunch.count * 45, 2);
+    expect(lunch.lastCount).toBeGreaterThan(0);
+    expect(x.lastSeasonCutoff).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Extras show in the financial report too, by item.
+    const byItem = (await request(app).post("/api/reports/run").send({ spec: { dataset: "campminder_finance", rows: ["item_group"], measure: "items_sold", filters: { season: ["2026"], business_line: ["camp"] } } }).expect(200))
+      .body;
+    expect(byItem.cells.find((c: { rows: string[] }) => c.rows[0] === "Week N Lunch").value).toBe(lunch.count);
+    await request(app).get("/api/campminder/extras?season=x").expect(400);
+
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const calls: Array<{ query: string; types: Record<string, unknown> }> = [];
+    const fake = { query: async (o: { query: string; types: Record<string, unknown> }) => (calls.push(o), [[]]) };
+    await new BigQueryWarehouse(fake as never, "marts").campminderExtras({ season: 2026 }, "2025-11-18");
+    expect(calls[0]!.query).toContain("category IN ('Miscellaneous', 'System')");
+    expect(calls[0]!.query).toContain("CAST(@cutoff AS DATE)");
+    expect(calls[0]!.types.cutoff).toBe("STRING");
   });
 
   it("narrows tuition to the camper-sessions the Camp page filters match", async () => {

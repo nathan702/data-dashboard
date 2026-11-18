@@ -5,13 +5,14 @@ import { parseWeek, usDate } from "./campminderParse.js";
 /**
  * Turns Campminder's "Financial" tab (one row per transaction) into stored
  * transactions, keeping only allow-listed fields: never names, card details,
- * check or deposit numbers, or the free-text descriptions (which often name
- * people). Person and household ids are stored as the same keyed hashes as
- * the camper data, so the two can be joined.
+ * or check or deposit numbers. The Description is kept only on charges and
+ * credits, where it's the line item's name ("Week 3 Lunch", "Gear Bag");
+ * payments and refunds keep none. Person and household ids are stored as the
+ * same keyed hashes as the camper data, so the two can be joined.
  */
 
 /** Bump when parsing changes what's stored: the tab is re-read and every row rewritten. */
-export const FINANCE_PARSER_VERSION = "2";
+export const FINANCE_PARSER_VERSION = "3";
 
 export interface CampminderTransaction {
   /**
@@ -52,6 +53,10 @@ export interface CampminderTransaction {
   familyHash: string | null;
   /** Amount of the transaction this one applies to (a payment's charge, a refund's payment). */
   affectedAmount: number | null;
+  /** Line item name (the Description) on charges and credits, e.g. "Week 3 Lunch"; null on payments and refunds. */
+  item: string | null;
+  /** The week in an item's name ("Week 3 Lunch" → 3). */
+  itemWeek: number | null;
   rowHash: string;
 }
 
@@ -99,6 +104,9 @@ export function toTransactions(rows: Array<Record<string, string>>, key: string)
     const type = clean(r["Transaction Type"])?.toLowerCase() ?? null;
     if (!id || !type || !Number.isInteger(season) || season < 2000) continue;
     const sessionName = clean(r["Session Name"]);
+    // Only charges and credits name a line item; payment and refund descriptions aren't kept.
+    const item = type === "debit" || type === "credit" ? (clean(r["Description"])?.replace(/\s+/g, " ").slice(0, 120) ?? null) : null;
+    const week = item ? /\bweek\s*(\d{1,2})\b/i.exec(item) : null;
     const row = {
       transactionId: id,
       season,
@@ -122,6 +130,8 @@ export function toTransactions(rows: Array<Record<string, string>>, key: string)
       personHash: pseudonymize(clean(r["Person ID"]), key),
       familyHash: pseudonymize(clean(r["Household ID"]), key),
       affectedAmount: money(r["Affected On Transaction Amount"]),
+      item,
+      itemWeek: week ? Number(week[1]) : null,
     };
     // Parts of a split payment differ by what they paid for; identical parts are numbered.
     const part = createHash("sha256")

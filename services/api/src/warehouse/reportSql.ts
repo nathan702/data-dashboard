@@ -391,8 +391,12 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           post_month: "FORMAT_DATE('%Y-%m', post_date)",
           service_month: "FORMAT_DATE('%Y-%m', service_start)",
           household: "SUBSTR(family_hash, 1, 10)",
+          item: "item",
+          item_group: "item_group",
+          item_week: "CAST(item_week AS STRING)",
+          extra_session_group: "COALESCE(session_group, item_session_group)",
           assigned_by:
-            "CASE assigned_by WHEN 'session' THEN 'Session group' WHEN 'category' THEN 'Financial category' WHEN 'household' THEN 'Household''s main line' ELSE 'Not assigned' END",
+            "CASE assigned_by WHEN 'session' THEN 'Session group' WHEN 'first_session' THEN 'Camper''s first session' WHEN 'category' THEN 'Financial category' WHEN 'household' THEN 'Household''s main line' ELSE 'Not assigned' END",
         },
         measures: {
           net_tuition: "SUM(IF(type IN ('debit', 'credit'), amount, 0))",
@@ -406,6 +410,7 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           households_owing: "COUNT(DISTINCT IF(household_balance > 0.005, family_hash, NULL))",
           households: "COUNT(DISTINCT family_hash)",
           transactions: "COUNT(DISTINCT transaction_id)",
+          items_sold: "SUM(IF(type = 'debit', IF(is_reversal, -1, 1), 0))",
         },
       };
     case "revenue":

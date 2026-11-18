@@ -4,6 +4,8 @@ import {
   type RegistrationPaceResponse,
   type RegistrationPaceRow,
   type RegistrationSettings,
+  type CampminderExtrasQuery,
+  type CampminderExtrasRow,
   type CampminderFinanceQuery,
   type CampminderFinanceSummary,
   comparisonRange,
@@ -44,6 +46,7 @@ import {
   type HubspotProperty,
   type LeadBucket,
 } from "@dash/shared";
+import { campminderExtrasSql } from "./campminderExtrasSql.js";
 import { fareharborDaysSql, fareharborExtentSql } from "./fareharborSql.js";
 import { hubspotExtentSql, hubspotLineItemsSql, hubspotOpenSql, hubspotProgramsSql, hubspotPropertiesSql, hubspotWonSql } from "./hubspotSql.js";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
@@ -404,6 +407,23 @@ export class BigQueryWarehouse implements Warehouse {
       households: Number(r.households ?? 0),
       filtered,
     };
+  }
+
+  async campminderExtras(q: CampminderExtrasQuery, cutoff: string): Promise<CampminderExtrasRow[]> {
+    const [rows] = await this.bq.query({
+      query: campminderExtrasSql(this.martsDataset),
+      params: { season: q.season, business_line: q.businessLine ?? null, cutoff },
+      types: { season: "INT64", business_line: "STRING", cutoff: "STRING" },
+      location: this.location,
+    });
+    return (rows as Array<Record<string, unknown>>).map((r) => ({
+      season: Number(r.season),
+      item: String(r.item),
+      week: r.week === null || r.week === undefined ? null : Number(r.week),
+      sessionGroup: (r.session_group as string | null) ?? null,
+      count: Number(r.count ?? 0),
+      revenue: round2(Number(r.revenue ?? 0)),
+    }));
   }
 
   async fareharborDays(q: FareharborDaysScope): Promise<FareharborDayRow[]> {

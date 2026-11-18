@@ -227,7 +227,7 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
     id: "campminder_finance",
     label: "Campminder financials",
     description:
-      "One row per line of Campminder's Financial report: charges, discounts and credits, payments, refunds and transfers. A payment split across what it paid for is one line per part. Business line: the line's session group, else its financial category, else the household's main line that season.",
+      "One row per line of Campminder's Financial report: charges, discounts and credits, payments, refunds and transfers. A payment split across what it paid for is one line per part. Business line: the line's session group; else, for a line item without a session (Gear Bag, Backpack), the camper's first enrolled session; else its financial category; else the household's main line that season.",
     dated: false,
     defaultMeasure: "net_tuition",
     fields: [
@@ -243,7 +243,11 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
       f("post_month", "Month posted", "Month the transaction was posted (YYYY-MM).", "numeric"),
       f("service_month", "Service month", "Month the service starts (YYYY-MM); charges for sessions.", "numeric"),
       f("household", "Household", "One household (scrambled ID, the same as in the enrollment data sets)."),
-      f("assigned_by", "Business line from", "Whether the business line came from the session, the financial category, or the household's main line."),
+      f("item", "Line item", "The charge or credit's line item name (“Farm Week 3”, “Week 3 Lunch”, “Gear Bag”); payments and refunds have none."),
+      f("item_group", "Line item (weeks combined)", "Line item with the week folded in: every “Week 3 Lunch”, “Week 4 Lunch”… is “Week N Lunch”."),
+      f("item_week", "Line item week", "The week named in the line item (“Week 3 Lunch” → 3).", "numeric"),
+      f("extra_session_group", "Session group (extras)", "For a line item without a session of its own (Gear Bag, Backpack), the camper's first enrolled session group that season; else the line's own session group."),
+      f("assigned_by", "Business line from", "Whether the business line came from the session, the camper's first session (items without one), the financial category, or the household's main line."),
     ],
     measures: [
       m("net_tuition", "Net tuition", "Charges minus discounts and credits.", "money", true),
@@ -263,6 +267,7 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
       m("households_owing", "Households owing", "Households with a balance above zero in that business line and season.", "count", true),
       m("households", "Households", "Distinct households.", "count", true),
       m("transactions", "Transactions", "Distinct Campminder transactions (a split payment counts once).", "count", true),
+      m("items_sold", "Items sold", "Charge lines, less reversed ones: each line is one item (a lunch, a gear bag).", "count", true),
     ],
   },
   revenue: {

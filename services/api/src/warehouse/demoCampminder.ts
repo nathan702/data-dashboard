@@ -14,6 +14,8 @@ import {
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
   type EnrollmentSummaryResponse,
+  type CampminderExtrasQuery,
+  type CampminderExtrasRow,
   type CampminderFinanceQuery,
   type CampminderFinanceSummary,
   type OccupationCategory,
@@ -364,6 +366,11 @@ export interface DemoTransaction {
   postDate: string;
   serviceStart: string | null;
   method: string | null;
+  /** Line item name on charges and credits ("Farm Week 3", "Week 3 Lunch", "Gear Bag"). */
+  item: string | null;
+  /** Item with the week folded in ("Week N Lunch"), and the week. */
+  itemGroup: string | null;
+  itemWeek: number | null;
 }
 
 let txCache: DemoTransaction[] | null = null;
@@ -390,15 +397,30 @@ export function demoTransactions(): DemoTransaction[] {
       postDate: r.applicationDate,
       serviceStart,
     };
-    out.push({ ...base, transactionId: id, type: "debit", amount: price, method: null });
+    const noItem = { item: null, itemGroup: null, itemWeek: null };
+    out.push({ ...base, ...noItem, transactionId: id, type: "debit", amount: price, method: null, item: r.sessionName, itemGroup: r.sessionName });
     const n = noise(`${id}fin`);
     const discount = n < 0.12 ? Math.round(price * 0.15) : 0;
-    if (discount) out.push({ ...base, transactionId: `${id}c`, type: "credit", amount: -discount, method: null });
+    if (discount) out.push({ ...base, ...noItem, transactionId: `${id}c`, type: "credit", amount: -discount, method: null, item: "Sibling discount", itemGroup: "Sibling discount" });
+    // Camp extras: lunch for some weeks (on the session's own line), a gear bag or backpack now and then.
+    let extras = 0;
+    if (r.businessLine === "camp" && r.statusCode === "EN") {
+      const extra = (suffix: string, item: string, amount: number, week: number | null) => {
+        extras += amount;
+        const itemGroup = week === null ? item : item.replace(/Week \d+/, "Week N");
+        out.push({ ...base, transactionId: `${id}${suffix}`, type: "debit", amount, method: null, category: "Miscellaneous", item, itemGroup, itemWeek: week });
+      };
+      if (r.weekStart !== null && noise(`${id}lunch`) < 0.35) extra("L", `Week ${r.weekStart} Lunch`, 45, r.weekStart);
+      const g = noise(`${id}gear`);
+      if (g < 0.06) extra("G", "Gear Bag", 35, null);
+      else if (g < 0.1) extra("B", "Backpack", 28, null);
+    }
     // Most pay in full; some still owe part; cancellations are refunded.
-    const paid = n > 0.93 && r.statusCode === "EN" ? Math.round((price - discount) / 2) : price - discount;
+    const due = price - discount + extras;
+    const paid = n > 0.93 && r.statusCode === "EN" ? Math.round(due / 2) : due;
     const method = n < 0.6 ? "Credit Card" : n < 0.85 ? "ACH" : "Check";
-    out.push({ ...base, transactionId: `${id}p`, type: "payment", amount: -paid, postDate: addDays(r.applicationDate, 3), method });
-    if (r.statusCode === "CN") out.push({ ...base, transactionId: `${id}r`, type: "refund", amount: paid, postDate: addDays(r.applicationDate, 30), method });
+    out.push({ ...base, ...noItem, transactionId: `${id}p`, type: "payment", amount: -paid, postDate: addDays(r.applicationDate, 3), method });
+    if (r.statusCode === "CN") out.push({ ...base, ...noItem, transactionId: `${id}r`, type: "refund", amount: paid, postDate: addDays(r.applicationDate, 30), method });
   });
   txCache = out;
   return out;
@@ -433,6 +455,22 @@ export function demoCampminderFinance(q: CampminderFinanceQuery, schools: School
     households: balances.size,
     filtered,
   };
+}
+
+/** Same rule as campminderExtrasSql: Miscellaneous charges and credits naming an item, last season up to `cutoff`. */
+export function demoCampminderExtras(q: CampminderExtrasQuery, cutoff: string): CampminderExtrasRow[] {
+  const groups = new Map<string, CampminderExtrasRow>();
+  for (const t of demoTransactions()) {
+    if ((t.type !== "debit" && t.type !== "credit") || !t.itemGroup || t.category !== "Miscellaneous") continue;
+    if (q.businessLine && t.businessLine !== q.businessLine) continue;
+    if (!(t.season === q.season || (t.season === q.season - 1 && t.postDate <= cutoff))) continue;
+    const k = JSON.stringify([t.season, t.itemGroup, t.itemWeek, t.sessionGroup]);
+    const g = groups.get(k) ?? { season: t.season, item: t.itemGroup, week: t.itemWeek, sessionGroup: t.sessionGroup, count: 0, revenue: 0 };
+    g.count += t.type === "debit" ? 1 : 0;
+    g.revenue += t.amount;
+    groups.set(k, g);
+  }
+  return [...groups.values()];
 }
 
 /** Same rule as registrationPaceSql: each family's wave from last season's camp locations, then days since it opened. */
