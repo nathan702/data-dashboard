@@ -14,6 +14,7 @@ import {
   type EnrollmentSeason,
   type EnrollmentSummaryQuery,
   type EnrollmentSummaryResponse,
+  isCampExtra,
   type CampminderExtrasQuery,
   type CampminderExtrasRow,
   type CampminderFinanceQuery,
@@ -408,12 +409,15 @@ export function demoTransactions(): DemoTransaction[] {
       const extra = (suffix: string, item: string, amount: number, week: number | null) => {
         extras += amount;
         const itemGroup = week === null ? item : item.replace(/Week \d+/, "Week N");
-        out.push({ ...base, transactionId: `${id}${suffix}`, type: "debit", amount, method: null, category: "Miscellaneous", item, itemGroup, itemWeek: week });
+        // Like Campminder: lunches and gear are filed under Summer Camp, fees under Miscellaneous.
+        const category = /fee/i.test(item) ? "Miscellaneous" : base.category;
+        out.push({ ...base, transactionId: `${id}${suffix}`, type: "debit", amount, method: null, category, item, itemGroup, itemWeek: week });
       };
       if (r.weekStart !== null && noise(`${id}lunch`) < 0.35) extra("L", `Week ${r.weekStart} Lunch`, 45, r.weekStart);
       const g = noise(`${id}gear`);
       if (g < 0.06) extra("G", "Gear Bag", 35, null);
       else if (g < 0.1) extra("B", "Backpack", 28, null);
+      if (noise(`${id}fee`) < 0.02) extra("F", "Cancellation Fee", 50, null);
     }
     // Most pay in full; some still owe part; cancellations are refunded.
     const due = price - discount + extras;
@@ -461,7 +465,7 @@ export function demoCampminderFinance(q: CampminderFinanceQuery, schools: School
 export function demoCampminderExtras(q: CampminderExtrasQuery, cutoff: string): CampminderExtrasRow[] {
   const groups = new Map<string, CampminderExtrasRow>();
   for (const t of demoTransactions()) {
-    if ((t.type !== "debit" && t.type !== "credit") || !t.itemGroup || t.category !== "Miscellaneous") continue;
+    if ((t.type !== "debit" && t.type !== "credit") || !t.itemGroup || !isCampExtra(t.category, t.item)) continue;
     if (q.businessLine && t.businessLine !== q.businessLine) continue;
     if (!(t.season === q.season || (t.season === q.season - 1 && t.postDate <= cutoff))) continue;
     const k = JSON.stringify([t.season, t.itemGroup, t.itemWeek, t.sessionGroup]);

@@ -20,7 +20,7 @@ export function CampExtrasCard({ season, businessLine }: { season: number | unde
     <div className="card">
       <h3 className="card-title">Camp extras</h3>
       <p className="card-subtitle">
-        Line items that aren't tuition (Miscellaneous charges such as lunches, gear bags and backpacks), season {data.season}, net of credits and
+        Line items that aren't tuition: lunches, gear bags and backpacks, plus anything in the Miscellaneous category (fees, staff discounts…), season {data.season}, net of credits and
         reversals. Last season counts what was posted by {formatDate(data.lastSeasonCutoff)}. The page's filters don't apply here.
       </p>
       <div className="table-scroll">

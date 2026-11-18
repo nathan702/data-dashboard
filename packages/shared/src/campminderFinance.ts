@@ -43,9 +43,23 @@ export interface CampminderFinanceSummary {
 }
 
 /**
+ * Line items that are extras wherever they're filed: Campminder puts lunches,
+ * gear bags and backpacks under Summer Camp, next to tuition. Case-insensitive;
+ * the same pattern runs in BigQuery (RE2) and in JavaScript.
+ */
+export const CAMP_EXTRA_ITEM_PATTERN = String.raw`\blunch\b|gear\s*bag|backpack`;
+
+/** Whether a charge or credit is an extra: in the Miscellaneous or System category (or none), or named like one. */
+export function isCampExtra(category: string | null, item: string | null): boolean {
+  if (!item) return false;
+  return category === null || category === "Miscellaneous" || category === "System" || new RegExp(CAMP_EXTRA_ITEM_PATTERN, "i").test(item);
+}
+
+/**
  * Camp extras: line items that aren't tuition (Week N Lunch, Gear Bag,
- * Backpack…): charges and credits in the Miscellaneous or System financial
- * category, or none. A lunch's session is on its own line; an item without
+ * Backpack, cancellation fees…): charges and credits in the Miscellaneous or
+ * System financial category (or none), plus lunches, gear bags and backpacks
+ * in any category. A lunch's session is on its own line; an item without
  * one goes with the camper's first enrolled session that season.
  */
 export const campminderExtrasQuerySchema = z.object({
