@@ -8,6 +8,7 @@ import {
   type EnrollmentBreakdownQuery,
   type EnrollmentMapQuery,
   type EnrollmentSummaryQuery,
+  type CampminderExtrasQuery,
   type CampminderFinanceQuery,
   type RegistrationPaceQuery,
   type RegistrationSettings,
@@ -26,7 +27,7 @@ import {
 import { demoRunReport } from "./demoReports.js";
 import { demoFareharborDays, demoFareharborExtent } from "./demoFareharbor.js";
 import type { SchoolMap } from "./reportSql.js";
-import { DEMO_SESSION_GROUPS, demoCampminderFinance, demoRegistrationPace, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
+import { DEMO_SESSION_GROUPS, demoCampminderExtras, demoCampminderFinance, demoRegistrationPace, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
 import type { DailyRevenueRow, FareharborDaysScope, FreshnessSource, HubspotProgramsScope, Warehouse } from "./types.js";
@@ -239,6 +240,10 @@ export class DemoWarehouse implements Warehouse {
 
   async campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap) {
     return demoCampminderFinance(q, schools);
+  }
+
+  async campminderExtras(q: CampminderExtrasQuery, cutoff: string) {
+    return demoCampminderExtras(q, cutoff);
   }
 
   async schoolList() {

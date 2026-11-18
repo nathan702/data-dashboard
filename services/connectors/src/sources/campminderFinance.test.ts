@@ -13,7 +13,7 @@ const tx = (over: Record<string, string> = {}): Record<string, string> => ({
   "Is Reversed": "False",
   "Transaction Type": "Debit",
   "Financial Category": "Summer Camp",
-  Description: "Tuition for Alex Testperson",
+  Description: "Farm Week 3",
   Quantity: "1",
   "Unit Amount": "$650.00",
   Amount: "$650.00",
@@ -63,12 +63,30 @@ describe("campminder financial tab", () => {
     expect(t!.familyHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("never stores names, card or check details, descriptions or raw ids", () => {
-    const text = JSON.stringify(toTransactions([tx(), tx({ ID: "56341660", "Transaction Type": "Payment", "Payment/Refund Method": "Credit Card" })], KEY));
-    for (const secret of ["Testperson", "Alex", "Pat", "4242", "12/29", "Visa", "4417", "D-99", "T-1001", "Tuition for", "90000001", "5550001"]) {
+  it("never stores names, card or check details, payment descriptions or raw ids", () => {
+    const text = JSON.stringify(
+      toTransactions([tx(), tx({ ID: "56341660", "Transaction Type": "Payment", "Payment/Refund Method": "Credit Card", Description: "Payment from Pat Testperson" })], KEY),
+    );
+    for (const secret of ["Testperson", "Alex", "Pat", "4242", "12/29", "Visa", "4417", "D-99", "T-1001", "Payment from", "90000001", "5550001"]) {
       expect([secret, text.includes(secret)]).toEqual([secret, false]);
     }
     expect(text).toContain("Credit Card");
+  });
+
+  it("keeps the line item name on charges and credits, with its week", () => {
+    const [lunch, bag, credit, payment] = toTransactions(
+      [
+        tx({ ID: "1", Description: "Week 3 Lunch", "Financial Category": "Miscellaneous", Amount: "$45.00" }),
+        tx({ ID: "2", Description: "Gear  Bag", "Session Name": "", "Session Group Name": "", "Program Name": "", "Financial Category": "Miscellaneous" }),
+        tx({ ID: "3", Description: "Sibling discount", "Transaction Type": "Credit", Amount: "-$50.00" }),
+        tx({ ID: "4", Description: "Online payment", "Transaction Type": "Payment", Amount: "-$45.00" }),
+      ],
+      KEY,
+    );
+    expect(lunch).toMatchObject({ item: "Week 3 Lunch", itemWeek: 3, sessionName: "Farm Week 3" });
+    expect(bag).toMatchObject({ item: "Gear Bag", itemWeek: null, sessionName: null });
+    expect(credit).toMatchObject({ item: "Sibling discount", itemWeek: null });
+    expect(payment).toMatchObject({ item: null, itemWeek: null });
   });
 
   it("reads reversals, money and dates as Campminder writes them", () => {

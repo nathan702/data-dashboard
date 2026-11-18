@@ -24,6 +24,7 @@ import { useDrill } from "../lib/drill";
 import { DataTable, type Column } from "./DataTable";
 import { FilterChips } from "./FilterChips";
 import { RegistrationPaceCard } from "./RegistrationPace";
+import { CampExtrasCard } from "./CampExtrasCard";
 import { TuitionCard } from "./TuitionCard";
 import { TopBarChart } from "./TopBarChart";
 
@@ -217,6 +218,7 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
           </div>
 
           <TuitionCard season={season} businessLine={businessLine} filters={filters} />
+          <CampExtrasCard season={season} businessLine={businessLine} />
 
           {s.byWeek.length > 0 && (
             <div className="card">

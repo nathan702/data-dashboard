@@ -200,12 +200,24 @@ is imported on the same hourly sync into `raw_campminder.transactions`, and
 again only when it changes. Kept: transaction id, season, type, financial
 category, dates (post, effective, reversal, service), quantity and amounts,
 payment method, session, session group and program, and the person and
-household ids as the same keyed hashes as enrollments. Never stored: names,
-household names, card details, check and deposit numbers, and the
-descriptions (they often name people). A different tab name can be set with
+household ids as the same keyed hashes as enrollments, and on charges and
+credits only, the Description, which there is the line item's name ("Farm
+Week 3", "Week 3 Lunch", "Gear Bag"). Never stored: names, household names,
+card details, check and deposit numbers, and payment and refund
+descriptions. A different tab name can be set with
 `CAMPMINDER_FINANCIAL_TAB`; a sheet without the tab is skipped. A payment
 the report splits across what it paid for (camp and CHAPs) is several rows
 with the same transaction id; each is kept as its own line.
+
+**Camp extras.** Charges and credits in the Miscellaneous or System
+financial category (or none) are extras: lunches, gear bags, backpacks. A
+"Week N Lunch" belongs to the session on its own line; an item with no session
+(Gear Bag, Backpack) goes with the camper's first enrolled session that season,
+and so does its business line. The Camp page's Camp extras card shows each
+item against last season at the same point, lunches by week and session group,
+and summer-long items by first session; the Campminder financials report data
+set has Line item, Line item (weeks combined), Line item week, Session group
+(extras) and Items sold.
 
 **Past seasons' financials.** In the same history sheet as the past camper
 reports, add a tab per season named `Financial 2022`, `Financial 2023`, … with

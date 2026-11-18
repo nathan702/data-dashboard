@@ -364,6 +364,10 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
           post_month: t.postDate.slice(0, 7),
           service_month: t.serviceStart?.slice(0, 7) ?? null,
           household: t.family,
+          item: t.item,
+          item_group: t.itemGroup,
+          item_week: t.itemWeek === null ? null : String(t.itemWeek),
+          extra_session_group: t.sessionGroup,
           assigned_by: "Session group",
           amount: t.amount,
           transaction_id: t.transactionId,
@@ -381,6 +385,7 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
           households_owing: (rs) => distinct(rs, "household", (r) => Number(r.household_balance) > 0.005),
           households: (rs) => distinct(rs, "household"),
           transactions: (rs) => distinct(rs, "transaction_id"),
+          items_sold: (rs) => rs.filter((r) => r.type_code === "debit").length,
         },
       };
     }

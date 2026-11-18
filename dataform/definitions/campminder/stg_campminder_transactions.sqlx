@@ -1,7 +1,7 @@
 config {
   type: "table",
   schema: "staging",
-  description: "Latest state of every line of Campminder's Financial report, with the value its business line is assigned by. Amounts keep Campminder's signs: debits and refunds positive, credits and payments negative, so a household's balance is the sum. A reversal is its own line with the opposite sign, so sums net it out.",
+  description: "Latest state of every line of Campminder's Financial report, with the value its business line is assigned by: its session group; else, for a line item with no session (Gear Bag, Backpack) that's Miscellaneous, System, Summer Camp or uncategorized, the camper's first enrolled session that season; else its financial category; else the household's main line. Amounts keep Campminder's signs: debits and refunds positive, credits and payments negative, so a household's balance is the sum. A reversal is its own line with the opposite sign, so sums net it out.",
   assertions: { uniqueKey: ["line_id"], nonNull: ["season", "type", "line_id"] }
 }
 js { const { latestRaw } = require("includes/sql"); }
@@ -29,8 +29,20 @@ WITH base AS (
     JSON_VALUE(payload, '$.campminderSessionGroup') AS campminder_session_group,
     JSON_VALUE(payload, '$.program') AS program,
     JSON_VALUE(payload, '$.personHash') AS person_hash,
-    JSON_VALUE(payload, '$.familyHash') AS family_hash
+    JSON_VALUE(payload, '$.familyHash') AS family_hash,
+    -- Line item name on charges and credits ("Week 3 Lunch", "Gear Bag"), and the week in it.
+    JSON_VALUE(payload, '$.item') AS item,
+    SAFE_CAST(JSON_VALUE(payload, '$.itemWeek') AS INT64) AS item_week,
+    REGEXP_REPLACE(JSON_VALUE(payload, '$.item'), r'(?i)\bweek\s*\d{1,2}\b', 'Week N') AS item_group
   FROM (${latestRaw(ref("raw_campminder", "transactions"))})
+),
+-- Each camper's first enrolled session that season: where a charge with no session
+-- of its own (a Gear Bag, a Backpack) belongs.
+first_session AS (
+  SELECT camper_hash AS person_hash, season, session_group AS first_session_group
+  FROM ${ref("stg_campminder_sessions")}
+  WHERE status_code = 'EN' AND session_group IS NOT NULL AND camper_hash IS NOT NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY camper_hash, season ORDER BY session_start, week_start, session_group) = 1
 ),
 keyed AS (
   SELECT
@@ -53,12 +65,21 @@ household AS (
 )
 SELECT
   k.* EXCEPT (own_key),
-  COALESCE(k.own_key, h.household_key) AS assign_key,
+  first_key AS item_session_group,
+  COALESCE(k.session_group, first_key, k.own_key, h.household_key) AS assign_key,
   CASE
     WHEN k.session_group IS NOT NULL THEN 'session'
+    WHEN first_key IS NOT NULL THEN 'first_session'
     WHEN k.own_key IS NOT NULL THEN 'category'
     WHEN h.household_key IS NOT NULL THEN 'household'
     ELSE 'none'
   END AS assigned_by
 FROM keyed AS k
 LEFT JOIN household AS h USING (family_hash, season)
+LEFT JOIN first_session AS f USING (person_hash, season),
+-- A line item with no session of its own (Gear Bag, Backpack) goes with the camper's first
+-- enrolled session, unless its category names another line (River School, CHAPS, LIT...).
+UNNEST([IF(
+  k.item IS NOT NULL AND k.session_group IS NULL
+    AND (k.category IS NULL OR k.category IN ('Miscellaneous', 'System', 'Summer Camp')),
+  f.first_session_group, NULL)]) AS first_key
