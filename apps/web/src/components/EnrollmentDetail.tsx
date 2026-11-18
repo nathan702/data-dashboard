@@ -218,7 +218,6 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
           </div>
 
           <TuitionCard season={season} businessLine={businessLine} filters={filters} />
-          <CampExtrasCard season={season} businessLine={businessLine} />
 
           {s.byWeek.length > 0 && (
             <div className="card">
@@ -307,6 +306,9 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
           rowTitle="Filter to this and drill in"
         />
       )}
+
+      {/* Extras (lunches, gear) sit at the very bottom, after everything about enrollments. */}
+      <CampExtrasCard season={season} businessLine={businessLine} />
     </section>
   );
 }
