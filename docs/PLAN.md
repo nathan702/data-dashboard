@@ -86,7 +86,7 @@ unmatched is "Unassigned" and flagged.
 
 - **Foundation**: Google sign-in, business-line tabs (customizable per person),
   Settings, Data status, automatic deploys with self-check.
-- **Square** (live) and **Shopify** (built; paused waiting on credentials):
+- **Square** and **Shopify** (live):
   revenue, order KPIs, breakdowns, inventory, with click-to-filter drill-down
   (category → item → variant, location → channel → category).
 - **Campminder** (live): daily sheet + 2022–2025 history; enrollments, campers
@@ -170,10 +170,19 @@ unmatched is "Unassigned" and flagged.
    weekday for Events and Haunted Forest; Camp by days since registration
    opened). Within ±5% is on track. Settings, the line-page card, the Overview
    table, the Targets report data set and a deploy self-check.
-9. **Digests and alerts** ← *next*: email and Slack, including behind-pace alerts from
-   the targets. *Needs:* a Slack incoming webhook (stored as a secret) and a
-   sending address.
-10. **FareHarbor** (River School, Events, Haunted Forest): one FareHarbor
+9. **Shopify** (River Store) ✅ connected (Dev Dashboard app, client
+   credentials). Full order history needs Shopify's `read_all_orders`
+   approval; without it, 60 days.
+10. **HubSpot** (Education Programs, CHAPs group bookings): deals and pipelines
+    every 15 minutes, revenue by pipeline → business line, open pipeline,
+    won-by-month and programs on each line's page. Upgraded to a HubSpot
+    **service key** (HubSpot stopped new legacy private apps on Oct 26, 2026
+    and retires them by September 2027) and the date-versioned `2026-09` APIs
+    (supported until about March 2028). No CLI-built app is needed: the
+    dashboard only reads, with no webhooks. *Needs:* the service key stored
+    as a secret, pipeline assignments, and (optional) the program-date
+    property.
+11. **FareHarbor** ← *next* (River School, Events, Haunted Forest): one FareHarbor
     company per line, read through FareHarbor's Public API (one key per
     company). Built: bookings since 2019 (new ones hourly; recent and upcoming
     re-read every 6 hours, all weekly), time-slot capacity, revenue by
@@ -181,16 +190,27 @@ unmatched is "Unassigned" and flagged.
     season, night by night, ticket types, when tickets are bought. *Needs:*
     each company's Client ID and Secret stored as secrets. Next: sell-through
     per time slot (Haunted Forest nights).
-11. **HubSpot** (Education Programs, CHAPs group bookings): deals and pipelines
-    every 15 minutes, revenue by pipeline → business line, open pipeline,
-    won-by-month and programs on each line's page. Next: move from a legacy
-    private app to a HubSpot developer-platform app built with the HubSpot CLI
-    (HubSpot stopped new legacy private apps on Oct 26, 2026 and retires them
-    by September 2027), and off the CRM v3/v4 APIs HubSpot is retiring.
-    *Needs:* the new app's key, pipeline assignments, and (optional) the
-    program-date property.
-12. **Shopify** (River Store): built; needs the app credentials (Shopify Dev
-    Dashboard access).
+12. **Digests and alerts** (planned; Slack and email, totals only):
+    - *Daily* (weekdays ~7:30am Eastern): yesterday's net revenue per line vs
+      the same day last year, the targets in short (% of target, ahead / on
+      track / behind), yesterday's Camp and School Year sign-ups, data
+      freshness, a link. *Weekly* (Mondays): last week vs the same week last
+      year, plus season to date.
+    - *Alerts* (hourly, only on a change): a target turns behind (and
+      recovers); a platform hasn't synced for longer than usual; unassigned
+      revenue appears.
+    - Slack through an incoming webhook (secret `slack-digest-webhook`).
+      Email to one Google Group address (membership managed in Workspace; no
+      addresses stored), sent through the Gmail API as an address of ours
+      with a one-time Workspace admin approval (no stored keys, no new vendor).
+    - A Cloud Run job `dashboard-digest` running the API's own code (numbers
+      match the dashboard), started by Cloud Scheduler; last alert states in
+      Firestore so an alert fires once; Settings → Notifications to switch
+      channels and alerts on or off and send a test; the deploy self-check
+      builds a digest without sending it.
+    - Two PRs: Slack and digests first, then email and alerts. *Needs:* the
+      Slack webhook, the Google Group and sending addresses, the Workspace
+      admin's approval.
 
 Then, last in this group: **Camp page speed**, keeping one API server always
 running (about $5–10 a month; waiting on approval).
@@ -234,9 +254,10 @@ running (about $5–10 a month; waiting on approval).
   line up by days since registration opened; until then they use the same
   date last year.
 - Enter targets (Settings → Targets).
+- Create the HubSpot service key and store it (SETUP.md → HubSpot).
 - Add admins to Firestore `config/access` (until then everyone is an admin).
 - Item 3: add a School column to the Campminder report (and the history tabs).
-- Item 10: FareHarbor documentation and samples (see above).
+- Item 11: FareHarbor documentation and samples (see above).
 
 ## Notes
 

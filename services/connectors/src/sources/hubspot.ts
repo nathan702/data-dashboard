@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { HttpError, requestJson } from "../core/http.js";
-import { requireSecret, type SecretStore } from "../core/secrets.js";
+import { NotConfiguredError, type SecretStore } from "../core/secrets.js";
 import type { Connector, RawRecord, SyncContext } from "../core/types.js";
 
 /**
  * HubSpot deals (Education Programs, CHAPs group bookings), read with a
- * private app token: the deal pipelines and their stages, every deal's
+ * service key (or, until it's replaced, a legacy private app token) through
+ * HubSpot's date-versioned REST APIs: the deal pipelines and their stages, every deal's
  * allow-listed fields, the deal properties that can be reported on, and the
  * line items (products) on each deal. Each pipeline is assigned to a business
  * line on the Settings page.
@@ -21,7 +22,14 @@ import type { Connector, RawRecord, SyncContext } from "../core/types.js";
  * dropdown and yes/no properties (fixed choices, e.g. program type).
  */
 
+/** A HubSpot service key (Development → Keys → Service keys): the credential to use. */
+export const HUBSPOT_SERVICE_KEY_SECRET = "hubspot-service-key";
+/** A legacy private app token: still read when there's no service key. HubSpot retires these by September 2027. */
 export const HUBSPOT_TOKEN_SECRET = "hubspot-private-app-token";
+/** HubSpot's date-versioned REST APIs (supported 18 months after release; 2026-09 until about March 2028). */
+export const HUBSPOT_API_VERSION = "2026-09";
+/** Object type in the versioned object paths, as HubSpot's API reference writes them. */
+const OBJECT_TYPE = { deals: "0-3", line_items: "line_items" } as const;
 
 /** Bump when sanitizing changes what's stored: every deal is rewritten on its next read. */
 export const HUBSPOT_PARSER_VERSION = "2";
@@ -62,6 +70,8 @@ export interface HubspotConfig {
    * Revenue by service date uses it, else the close date.
    */
   serviceDateProperty?: string;
+  /** Date version of HubSpot's REST APIs, e.g. "2026-09". */
+  apiVersion?: string;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   now?: () => Date;
@@ -72,6 +82,7 @@ export function hubspotConfigFromEnv(env: NodeJS.ProcessEnv, secrets: SecretStor
     secrets,
     baseUrl: env.HUBSPOT_BASE_URL ?? "https://api.hubapi.com",
     serviceDateProperty: env.HUBSPOT_SERVICE_DATE_PROPERTY?.trim() || undefined,
+    apiVersion: env.HUBSPOT_API_VERSION?.trim() || undefined,
   };
 }
 
@@ -209,8 +220,21 @@ export class HubspotConnector implements Connector {
     return this.cfg.now?.() ?? new Date();
   }
 
+  private get v() {
+    return this.cfg.apiVersion ?? HUBSPOT_API_VERSION;
+  }
+
+  /** The service key, else a legacy private app token. */
+  private async credential(): Promise<{ token: string; kind: "service key" | "private app token" }> {
+    const key = await this.cfg.secrets.get(HUBSPOT_SERVICE_KEY_SECRET);
+    if (key) return { token: key, kind: "service key" };
+    const legacy = await this.cfg.secrets.get(HUBSPOT_TOKEN_SECRET);
+    if (legacy) return { token: legacy, kind: "private app token" };
+    throw new NotConfiguredError(`HubSpot isn't connected yet: add the "${HUBSPOT_SERVICE_KEY_SECRET}" secret (a HubSpot service key)`);
+  }
+
   private async api<T>(path: string, body?: unknown): Promise<T> {
-    const token = await requireSecret(this.cfg.secrets, HUBSPOT_TOKEN_SECRET, "HubSpot");
+    const { token } = await this.credential();
     const wait = this.lastRequest + MIN_REQUEST_GAP_MS - Date.now();
     if (wait > 0) await this.sleep(wait);
     this.lastRequest = Date.now();
@@ -218,7 +242,8 @@ export class HubspotConnector implements Connector {
   }
 
   async sync(ctx: SyncContext) {
-    await requireSecret(this.cfg.secrets, HUBSPOT_TOKEN_SECRET, "HubSpot");
+    const { kind } = await this.credential();
+    ctx.log("hubspot credential", { kind, apiVersion: this.v });
     await this.syncPipelines(ctx);
     const kept = await this.keptProperties(ctx);
     const configHash = createHash("sha256").update(JSON.stringify([HUBSPOT_PARSER_VERSION, kept.map((k) => k.name), this.cfg.serviceDateProperty ?? ""])).digest("hex").slice(0, 12);
@@ -253,7 +278,7 @@ export class HubspotConnector implements Connector {
 
   /** Pipelines and their stages (labels and whether a stage is closed). */
   private async syncPipelines(ctx: SyncContext) {
-    const res = await this.api<{ results?: Json[] }>("/crm/v3/pipelines/deals");
+    const res = await this.api<{ results?: Json[] }>(`/crm/pipelines/${this.v}/deals`);
     const records: RawRecord[] = (res.results ?? []).flatMap((p) => {
       const id = str(p.id);
       if (!id) return [];
@@ -274,7 +299,7 @@ export class HubspotConnector implements Connector {
    * choices are stored too, for the Settings page.
    */
   private async keptProperties(ctx: SyncContext): Promise<KeptProperty[]> {
-    const res = await this.api<{ results?: Json[] }>("/crm/v3/properties/deals");
+    const res = await this.api<{ results?: Json[] }>(`/crm/properties/${this.v}/deals`);
     const out: KeptProperty[] = [];
     let serviceFound = !this.cfg.serviceDateProperty;
     for (const p of res.results ?? []) {
@@ -304,7 +329,7 @@ export class HubspotConnector implements Connector {
    * Objects modified since the cursor, oldest first; past HubSpot's 10,000-result
    * limit, search again from the last one seen. `toRecords` turns each page into rows.
    */
-  private async walkModified(ctx: SyncContext, object: string, cursorKey: string, properties: string[], toRecords: (rows: Json[]) => Promise<RawRecord[]>) {
+  private async walkModified(ctx: SyncContext, object: keyof typeof OBJECT_TYPE, cursorKey: string, properties: string[], toRecords: (rows: Json[]) => Promise<RawRecord[]>) {
     let since = ctx.state.cursors[cursorKey] || EPOCH;
     let written = 0;
     let read = 0;
@@ -313,7 +338,7 @@ export class HubspotConnector implements Connector {
       let newest = since;
       let reached = 0;
       do {
-        const res = await this.api<SearchPage>(`/crm/v3/objects/${object}/search`, {
+        const res = await this.api<SearchPage>(`/crm/objects/${this.v}/${OBJECT_TYPE[object]}/search`, {
           filterGroups: [{ filters: [{ propertyName: "hs_lastmodifieddate", operator: "GTE", value: String(Date.parse(since) - OVERLAP_MS) }] }],
           sorts: [{ propertyName: "hs_lastmodifieddate", direction: "ASCENDING" }],
           properties,
@@ -353,7 +378,7 @@ export class HubspotConnector implements Connector {
       ctx.log("hubspot line items", res);
     } catch (err) {
       if (err instanceof HttpError && err.status === 403) {
-        ctx.log("hubspot line items skipped: the token needs the crm.objects.line_items.read scope");
+        ctx.log("hubspot line items skipped: the service key needs the crm.objects.line_items.read scope");
         return;
       }
       throw err;
@@ -364,7 +389,7 @@ export class HubspotConnector implements Connector {
   private async lineItemDeals(ids: string[]): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     if (!ids.length) return out;
-    const res = await this.api<{ results?: Json[] }>("/crm/v4/associations/line_items/deals/batch/read", { inputs: ids.map((id) => ({ id })) });
+    const res = await this.api<{ results?: Json[] }>(`/crm/associations/${this.v}/line_items/deals/batch/read`, { inputs: ids.map((id) => ({ id })) });
     for (const r of res.results ?? []) {
       const from = str(obj(r.from).id);
       const to = (Array.isArray(r.to) ? r.to : []).map((t) => obj(t).toObjectId).find((v) => v !== undefined && v !== null);
@@ -381,7 +406,7 @@ export class HubspotConnector implements Connector {
       const qs = new URLSearchParams({ archived: "true", limit: String(PAGE), ...(after ? { after } : {}) });
       let res: SearchPage;
       try {
-        res = await this.api(`/crm/v3/objects/${object}?${qs}`);
+        res = await this.api(`/crm/objects/${this.v}/${OBJECT_TYPE[object]}?${qs}`);
       } catch (err) {
         // Not worth failing the sync over; tomorrow's run tries again.
         if (err instanceof HttpError) {

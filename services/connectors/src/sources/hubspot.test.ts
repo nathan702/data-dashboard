@@ -39,36 +39,39 @@ const PROPS = [
   { name: "days_to_close", type: "number", hubspotDefined: true },
 ];
 
-function setup(opts: { deals?: Array<ReturnType<typeof deal>>; serviceDateProperty?: string; token?: string; lineItemsForbidden?: boolean } = {}) {
+function setup(opts: { deals?: Array<ReturnType<typeof deal>>; serviceDateProperty?: string; token?: string; serviceKey?: string; lineItemsForbidden?: boolean } = {}) {
   const calls: Array<{ path: string; body?: Record<string, unknown> }> = [];
   const deals = opts.deals ?? [deal("1", "2026-03-02T00:00:00Z"), deal("2", "2026-03-03T00:00:00Z", { hs_is_closed_won: "false", hs_is_closed: "false", dealstage: "open" })];
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ path: url.pathname + url.search, body });
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+    expect((init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${opts.serviceKey ?? "tok"}`);
     const json = (v: unknown) => new Response(JSON.stringify(v));
-    if (url.pathname === "/crm/v3/pipelines/deals")
+    if (url.pathname === "/crm/pipelines/2026-09/deals")
       return json({ results: [{ id: "p1", label: "Field trips", stages: [{ id: "won", label: "Closed won", displayOrder: 3, metadata: { isClosed: "true", probability: "1.0" } }] }] });
-    if (url.pathname === "/crm/v3/properties/deals") return json({ results: PROPS });
-    if (url.pathname === "/crm/v3/objects/deals/search") {
+    if (url.pathname === "/crm/properties/2026-09/deals") return json({ results: PROPS });
+    if (url.pathname === "/crm/objects/2026-09/0-3/search") {
       const since = Number(body.filterGroups[0].filters[0].value);
       const rows = deals.filter((d) => Date.parse(d.properties.hs_lastmodifieddate) >= since);
       const start = Number(body.after ?? 0);
       const page = rows.slice(start, start + body.limit);
       return json({ results: page, ...(start + body.limit < rows.length ? { paging: { next: { after: String(start + body.limit) } } } : {}) });
     }
-    if (url.pathname === "/crm/v3/objects/line_items/search") {
+    if (url.pathname === "/crm/objects/2026-09/line_items/search") {
       if (opts.lineItemsForbidden) return new Response('{"message":"missing scope"}', { status: 403 });
       return json({ results: [{ id: "L1", properties: { name: "Lunch package", quantity: "48", price: "12", amount: "576", hs_lastmodifieddate: "2026-03-02T00:00:00Z" } }] });
     }
-    if (url.pathname === "/crm/v4/associations/line_items/deals/batch/read") return json({ results: [{ from: { id: "L1" }, to: [{ toObjectId: 1 }] }] });
-    if (url.pathname === "/crm/v3/objects/deals" && url.searchParams.get("archived") === "true") return json({ results: [{ id: "9" }] });
-    if (url.pathname === "/crm/v3/objects/line_items" && url.searchParams.get("archived") === "true") return json({ results: [] });
+    if (url.pathname === "/crm/associations/2026-09/line_items/deals/batch/read") return json({ results: [{ from: { id: "L1" }, to: [{ toObjectId: "1" }] }] });
+    if (url.pathname === "/crm/objects/2026-09/0-3" && url.searchParams.get("archived") === "true") return json({ results: [{ id: "9" }] });
+    if (url.pathname === "/crm/objects/2026-09/line_items" && url.searchParams.get("archived") === "true") return json({ results: [] });
     return new Response("nope", { status: 404 });
   }) as typeof fetch;
   const c = new HubspotConnector({
-    secrets: new EnvSecretStore(opts.token === "" ? {} : { HUBSPOT_PRIVATE_APP_TOKEN: opts.token ?? "tok" }),
+    secrets: new EnvSecretStore({
+      ...(opts.serviceKey ? { HUBSPOT_SERVICE_KEY: opts.serviceKey } : {}),
+      ...(opts.token === "" ? {} : { HUBSPOT_PRIVATE_APP_TOKEN: opts.token ?? "tok" }),
+    }),
     baseUrl: "https://hs.test",
     serviceDateProperty: opts.serviceDateProperty,
     fetchImpl,
@@ -128,7 +131,7 @@ describe("hubspot sync", () => {
     expect(d1.serviceDate).toBe("2026-05-14");
     expect(deps.writer.rows.filter((x) => x.record.isDeleted).map((x) => x.record.recordId)).toEqual(["9"]);
     // Only dates and numbers among custom properties are asked for; never text or names.
-    const search = calls.find((x) => x.path.startsWith("/crm/v3/objects/deals/search"))!;
+    const search = calls.find((x) => x.path.startsWith("/crm/objects/2026-09/0-3/search"))!;
     expect(search.body!.properties).toEqual(expect.arrayContaining(["program_date", "student_count", "program_type", "uses_food", "start_datetime", "amount"]));
     expect(search.body!.properties).not.toEqual(expect.arrayContaining(["dealname"]));
     expect(search.body!.properties).not.toContain("teacher_email");
@@ -139,7 +142,7 @@ describe("hubspot sync", () => {
     // Next run: only deals modified since (with a little overlap); deleted deals aren't re-checked the same day.
     calls.length = 0;
     await runSync(c, deps, "incremental");
-    const again = calls.find((x) => x.path.startsWith("/crm/v3/objects/deals/search"))!;
+    const again = calls.find((x) => x.path.startsWith("/crm/objects/2026-09/0-3/search"))!;
     expect(Number((again.body!.filterGroups as Array<{ filters: Array<{ value: string }> }>)[0]!.filters[0]!.value)).toBe(Date.parse("2026-03-03T00:00:00Z") - 5 * 60_000);
     expect(calls.some((x) => x.path.includes("archived=true"))).toBe(false);
   });
@@ -163,5 +166,15 @@ describe("hubspot sync", () => {
     expect((await runSync(bad.c, bad.deps, "incremental")).error).toContain('no deal property named "nope"');
     const none = setup({ token: "" });
     expect(await runSync(none.c, none.deps, "incremental")).toMatchObject({ status: "ok", notConfigured: true });
+  });
+
+  it("uses the service key when there is one, on HubSpot's 2026-09 APIs", async () => {
+    // The fake checks every request carries the service key, not the old token.
+    const { c, calls, deps } = setup({ serviceKey: "svc", token: "old" });
+    expect((await runSync(c, deps, "incremental")).status).toBe("ok");
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((x) => x.path.includes("/2026-09/"))).toBe(true);
+    const keyOnly = setup({ serviceKey: "svc", token: "" });
+    expect((await runSync(keyOnly.c, keyOnly.deps, "incremental")).status).toBe("ok");
   });
 });

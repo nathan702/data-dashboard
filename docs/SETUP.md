@@ -395,20 +395,31 @@ is then re-read from the API, so a forged one can't change any numbers.
 ### HubSpot
 
 The dashboard reads HubSpot **deals** (and the deal pipelines) with a
-private app token. It never reads contacts, companies, emails or notes.
+**service key**, through HubSpot's date-versioned APIs (`2026-09`, supported
+until about March 2028; set `HUBSPOT_API_VERSION` to move on). It never reads
+contacts, companies, emails or notes. (HubSpot stopped new legacy private apps
+on October 26, 2026 and retires existing ones by September 2027. A
+`hubspot-private-app-token` secret is still used if there's no service key.)
 
-1. HubSpot → **Settings** (gear) → **Integrations → Private Apps** →
-   **Create a private app** (needs a Super Admin). Name it `Business dashboard`.
-2. **Scopes** tab → tick only `crm.objects.deals.read`,
+1. HubSpot → **Development** → left menu **Keys → Service keys** → **Create
+   service key** (needs a Super Admin or the Developer tools permission).
+   Name it `Business dashboard`.
+2. **Add new scope** → tick only `crm.objects.deals.read`,
    `crm.schemas.deals.read` and `crm.objects.line_items.read` (all read-only)
-   → **Create app** → copy the **access token**. (Adding a scope to an
-   existing private app keeps the same token. Without the line-items scope,
-   everything else still syncs.)
-3. Store it in Cloud Shell (paste, Enter, Ctrl+D):
+   → **Update** → **Create**. Then click the key's name → **Show** → **Copy**.
+   (Without the line-items scope, everything else still syncs.)
+3. Store it (the command waits for the key; paste it and press Enter; nothing
+   is shown):
 
    ```bash
-   gcloud secrets versions add hubspot-private-app-token --data-file=-
+   read -rs V && printf '%s' "$V" | gcloud secrets create hubspot-service-key --project=calleva-dashboard --replication-policy=automatic --data-file=- && unset V
    ```
+
+   To replace it later (e.g. after rotating the key in HubSpot), use
+   `gcloud secrets versions add hubspot-service-key` the same way. Each sync
+   logs which credential it used (`hubspot credential`). HubSpot can rotate
+   the key automatically every 3, 6 or 12 months (key page → **Automatic
+   rotation**); store the new one when HubSpot emails about it.
 4. The program date is the deal property named in
    `HUBSPOT_SERVICE_DATE_PROPERTY` in `infra/config.sh` (now `start_datetime`).
    Revenue by service date and the programs section use it; a deal without it
