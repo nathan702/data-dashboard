@@ -43,6 +43,7 @@ import type {
   SourceFreshness,
   TargetProgressResponse,
   TargetSettings,
+  TargetsOverviewResponse,
 } from "@dash/shared";
 import { useAuth } from "./auth";
 
@@ -136,6 +137,10 @@ export function useSaveTargetSettings() {
 export function useTargetProgress(businessLine: BusinessLine, season: number | undefined) {
   const qs = retailQs({ businessLine, season: season ? String(season) : undefined });
   return useApi<TargetProgressResponse>(["target-progress", qs], `/api/targets/progress?${qs}`, { refetchInterval: 10 * 60_000 });
+}
+
+export function useTargetsOverview() {
+  return useApi<TargetsOverviewResponse>(["target-progress", "overview"], "/api/targets/overview", { refetchInterval: 10 * 60_000 });
 }
 
 export function useMe() {

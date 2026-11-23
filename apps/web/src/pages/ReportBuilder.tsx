@@ -286,7 +286,7 @@ export function ReportBuilder() {
         <div className={run.isPlaceholderData ? "refetching" : undefined}>
           {run.data.truncated && <p className="notice">Showing the first 5,000 cells. Add a filter to narrow it down.</p>}
           <ReportView
-            pivot={buildPivot(run.data, info)}
+            pivot={buildPivot(run.data, REPORT_DATASET_INFO[run.data.spec.dataset])}
             chart={spec.chart}
             onDrill={drill}
             exportName={(saved.data?.name ?? "report").replace(/[^\w-]+/g, "_").toLowerCase()}

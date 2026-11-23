@@ -224,3 +224,8 @@ export type TargetProgressQuery = z.infer<typeof targetProgressQuerySchema>;
 export const EMPTY_TARGET_ACTUAL: TargetActual = { current: 0, previousAtSamePoint: 0, previousFinal: 0 };
 export const emptyTargetActuals = (): TargetActuals =>
   Object.fromEntries(TARGET_MEASURES.map((m) => [m, { ...EMPTY_TARGET_ACTUAL }])) as TargetActuals;
+
+/** The Overview's targets table: each line with targets, on the season its page opens on. */
+export interface TargetsOverviewResponse {
+  lines: TargetProgressResponse[];
+}

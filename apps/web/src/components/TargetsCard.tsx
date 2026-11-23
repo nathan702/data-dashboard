@@ -11,7 +11,7 @@ import {
 import { useTargetProgress } from "../lib/api";
 import { formatDate, formatInt, formatUsd } from "../lib/format";
 
-const STATUS_CLASS: Record<TargetStatus, string> = {
+export const STATUS_CLASS: Record<TargetStatus, string> = {
   ahead: "delta-up",
   reached: "delta-up",
   on_track: "delta-flat",
@@ -20,11 +20,11 @@ const STATUS_CLASS: Record<TargetStatus, string> = {
   missed: "delta-down",
 };
 
-const fmt = (row: TargetProgressRow, n: number) => (TARGET_MEASURE_INFO[row.measure].money ? formatUsd(n) : formatInt(Math.round(n)));
-const pct = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "–");
+export const fmt = (row: TargetProgressRow, n: number) => (TARGET_MEASURE_INFO[row.measure].money ? formatUsd(n) : formatInt(Math.round(n)));
+export const pct = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "–");
 
 /** Bar: where the line is now (fill) against the target (full width), with a tick where it should be by now. */
-function TargetBar({ row, ended }: { row: TargetProgressRow; ended: boolean }) {
+export function TargetBar({ row, ended }: { row: TargetProgressRow; ended: boolean }) {
   const now = row.target > 0 ? Math.min(1, row.actual / row.target) : 0;
   const expected = !ended && row.expected !== null && row.target > 0 ? Math.min(1, row.expected / row.target) : null;
   const label = `${pct(row.actual, row.target)} of target${row.expected !== null ? `; ${pct(row.expected, row.target)} expected by now` : ""}`;

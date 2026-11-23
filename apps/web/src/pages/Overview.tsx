@@ -1,6 +1,7 @@
 import { useLocation } from "react-router-dom";
 import { BUSINESS_LINE_INFO, SOURCES, UNASSIGNED, UNASSIGNED_LABEL } from "@dash/shared";
 import { RevenueView, type GroupDef } from "../components/RevenueView";
+import { TargetsOverview } from "../components/TargetsOverview";
 import { useTabs } from "../lib/tabs";
 
 /** Every business line (in this person's tab order), plus anything not yet assigned. */
@@ -21,6 +22,7 @@ export function Overview() {
       rankGroups
       showTable
       hideEmptyGroups={[UNASSIGNED]}
+      intro={<TargetsOverview order={tabs} />}
     />
   );
 }

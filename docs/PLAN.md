@@ -72,7 +72,8 @@ unmatched is "Unassigned" and flagged.
   and booking date, for targets).
 - **Report builder data sets** (enrollments, campers by season, campers by
   program family, revenue, store sales) are computed at query time from the
-  marts, so they need no extra tables.
+  marts, so they need no extra tables. The Targets data set is pivoted by the
+  API from the targets (Firestore) and their progress.
 - **Firestore**: sync state and cursors, `config/access`, `config/seasons`, `config/targets`,
   `config/programFamilies`, `config/schools`, saved `reports`, per-person tab order, and the
   geocode cache (`campminder_geocodes`, not readable from the app).
@@ -114,10 +115,11 @@ unmatched is "Unassigned" and flagged.
   pages.
 - **Settings tabs**: one tab per platform's assignments, Seasons, Targets,
   Program families, Schools.
-- **Targets** (first part): goals per business line, season and measure on
-  Settings → Targets; a Season targets card on each line's page with where
-  it is now, where it should be by now at last season's pace, and ahead / on
-  track / behind.
+- **Targets**: goals per business line, season and measure on Settings →
+  Targets; a Season targets card on each line's page and a Targets table on
+  the Overview with where each line is now, where it should be by now at last
+  season's pace, and ahead / on track / behind; a Targets data set in the
+  report builder.
 
 ## Roadmap (in order)
 
@@ -160,16 +162,15 @@ unmatched is "Unassigned" and flagged.
    each family's wave opened (all waves or one; enrollments or campers).
 ### Next (in order)
 
-8. **Targets** ← *in progress*. Goals per business line, season and measure
+8. **Targets** ✅ Goals per business line, season and measure
    (net revenue; campers and enrollments; FareHarbor guests; HubSpot
    participants) on Settings → Targets. "Now" counts the season's programs
    as soon as they're booked; "expected by now" is the target times the share
    of last season's total in by the same point (same date last year; same
    weekday for Events and Haunted Forest; Camp by days since registration
-   opened). Within ±5% is on track. Built: settings, the line-page card, the
-   deploy self-check. Next: a targets table on the Overview and a Targets data
-   set in the report builder.
-9. **Digests and alerts**: email and Slack, including behind-pace alerts from
+   opened). Within ±5% is on track. Settings, the line-page card, the Overview
+   table, the Targets report data set and a deploy self-check.
+9. **Digests and alerts** ← *next*: email and Slack, including behind-pace alerts from
    the targets. *Needs:* a Slack incoming webhook (stored as a secret) and a
    sending address.
 10. **FareHarbor** (River School, Events, Haunted Forest): one FareHarbor
