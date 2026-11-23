@@ -4,6 +4,8 @@ import {
   type RegistrationPaceResponse,
   type RegistrationPaceRow,
   type RegistrationSettings,
+  type ReturningFamilyFacts,
+  type CampLocation,
   CAMP_EXTRAS_CATEGORY,
   type CampLineItem,
   type CampminderExtrasQuery,
@@ -75,6 +77,7 @@ import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, filteredKpiSql, in
 import { groupKeys } from "./summarize.js";
 import type { FareharborDaysScope, HubspotProgramsScope, TargetActualsScope, Warehouse } from "./types.js";
 import { targetActualsSql } from "./targetsSql.js";
+import { returningFamiliesCountSql, returningFamiliesSql } from "./returningSql.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
 // comes from the request is passed as a query parameter.
@@ -579,6 +582,41 @@ export class BigQueryWarehouse implements Warehouse {
         campers: Number(r.campers),
       })),
     };
+  }
+
+  async returningFamilies(locations: RegistrationSettings["locations"], seasons: number[]): Promise<ReturningFamilyFacts[]> {
+    const [rows] = await this.bq.query({
+      query: returningFamiliesSql(this.enrollments),
+      params: { locations: Object.entries(locations).map(([session_group, location]) => ({ session_group, location })), seasons },
+      types: { locations: [{ session_group: "STRING", location: "STRING" }], seasons: ["INT64"] },
+      location: this.location,
+    });
+    const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+    return (rows as Array<Record<string, unknown>>).map((r) => ({
+      season: Number(r.season),
+      household: String(r.household),
+      locations: (r.locations as CampLocation[] | null) ?? [],
+      sessionGroup: String(r.session_group ?? ""),
+      weeks: Number(r.weeks ?? 0),
+      summers: num(r.summers),
+      state: (r.state as string | null) ?? null,
+      zip: (r.zip as string | null) ?? null,
+      campers: ((r.campers as Array<{ age: unknown; enrolled: unknown }> | null) ?? []).map((c) => ({ age: num(c.age), enrolled: c.enrolled === true })),
+      enrolled: r.enrolled === true,
+      waitlisted: r.waitlisted === true,
+      cancelled: r.cancelled === true,
+      enrolledOn: (r.enrolled_on as string | null) ?? null,
+    }));
+  }
+
+  async returningFamilyCounts(groups: string[]) {
+    const [rows] = await this.bq.query({
+      query: returningFamiliesCountSql(this.enrollments),
+      params: { groups },
+      types: { groups: ["STRING"] },
+      location: this.location,
+    });
+    return (rows as Array<{ season: unknown; families: unknown }>).map((r) => ({ season: Number(r.season), families: Number(r.families) }));
   }
 
   async enrollmentSeasons(businessLine: BusinessLineOrUnassigned | undefined): Promise<EnrollmentSeason[]> {

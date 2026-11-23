@@ -295,7 +295,45 @@ function RegistrationSection({ value, canEdit, onChange }: { value: Registration
           </label>
         ))}
       </div>
+      <h3 className="card-title">Returning families</h3>
+      <p className="card-subtitle">
+        The oldest a camper can be on June 1 and still come back to Camp. Last season's campers older than this next summer have aged out:
+        the Camp page's Returning families card doesn't count them as still to come back. Leave blank for automatic (the oldest age at least
+        1% of last season's campers were).
+      </p>
+      <AgeOutField value={value.ageOutAfter} canEdit={canEdit} onChange={(ageOutAfter) => onChange({ ...value, ageOutAfter })} />
     </div>
+  );
+}
+
+/** The age-out age: typed freely, saved once it's a whole number from 3 to 25 (or blank: automatic). */
+function AgeOutField({ value, canEdit, onChange }: { value: number | null; canEdit: boolean; onChange(v: number | null): void }) {
+  const [draft, setDraft] = useState(value === null ? "" : String(value));
+  const n = Number(draft);
+  const valid = draft.trim() === "" || (Number.isInteger(n) && n >= 3 && n <= 25);
+  return (
+    <label className="field field-inline">
+      <span className="field-label">Oldest camper age</span>
+      <input
+        type="number"
+        min={3}
+        max={25}
+        step={1}
+        placeholder="Automatic"
+        value={draft}
+        disabled={!canEdit}
+        aria-label="Oldest camper age on June 1"
+        aria-invalid={!valid}
+        onChange={(e) => {
+          const next = e.target.value;
+          setDraft(next);
+          const v = Number(next);
+          if (next.trim() === "") onChange(null);
+          else if (Number.isInteger(v) && v >= 3 && v <= 25) onChange(v);
+        }}
+      />
+      {!valid && <span className="hint">A whole number from 3 to 25</span>}
+    </label>
   );
 }
 

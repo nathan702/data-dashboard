@@ -24,6 +24,7 @@ import { useDrill } from "../lib/drill";
 import { DataTable, type Column } from "./DataTable";
 import { FilterChips } from "./FilterChips";
 import { RegistrationPaceCard } from "./RegistrationPace";
+import { ReturningFamiliesCard } from "./ReturningFamiliesCard";
 import { CampExtrasCard } from "./CampExtrasCard";
 import { TuitionCard } from "./TuitionCard";
 import { TopBarChart } from "./TopBarChart";
@@ -263,6 +264,7 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
 
           {/* Registration waves are camp's; other lines register on their own schedules. */}
           {businessLine === "camp" && <RegistrationPaceCard businessLine={businessLine} filters={filters} />}
+          {businessLine === "camp" && <ReturningFamiliesCard />}
         </>
       )}
 

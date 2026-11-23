@@ -8,6 +8,7 @@ import type {
   RegistrationPaceQuery,
   RegistrationPaceResponse,
   RegistrationSettings,
+  ReturningFamilyFacts,
   AssignmentUpdate,
   BusinessLine,
   BusinessLineOrUnassigned,
@@ -70,6 +71,13 @@ export interface Warehouse {
   campLineItems(): Promise<CampLineItem[]>;
   /** Sign-ups by days since each family's registration wave opened (Settings → Seasons → Registration). */
   registrationPace(q: RegistrationPaceQuery, registration: RegistrationSettings, schools?: SchoolMap): Promise<RegistrationPaceResponse>;
+  /**
+   * Returning families: one row per household per season S that had a camper enrolled at a camp location
+   * (`locations`: session group → va/md) in S − 1, with what it did in Camp in S. `seasons` limits S (empty: all).
+   */
+  returningFamilies(locations: RegistrationSettings["locations"], seasons: number[]): Promise<ReturningFamilyFacts[]>;
+  /** Plain count of each season's returning families (households enrolled in these session groups the season before), for the self-check. */
+  returningFamilyCounts(groups: string[]): Promise<Array<{ season: number; families: number }>>;
   /** Every Campminder program with its enrolled sessions, for Settings → Program families. */
   programList(): Promise<Array<{ program: string; enrollments: number }>>;
   /** Every school spelling with its enrolled campers (all seasons), for Settings → Schools and report grouping. */

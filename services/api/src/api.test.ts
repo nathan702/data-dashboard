@@ -1311,3 +1311,104 @@ describe("hourly notifications", () => {
     expect(messenger.sent[0]!.text).toMatch(/Farm Store \d{4} net revenue is (behind|back (ahead of|on) pace)/);
   });
 });
+
+describe("returning families", () => {
+  type Fam = { season: number; status: string; day: number | null; wave: string; eligibleCampers: number; reenrolledCampers: number; enrolledOn: string | null };
+
+  it("lists last season's camp-location families with whether they're back", async () => {
+    const app = api();
+    const { demoReturningFamilyCounts } = await import("./warehouse/demoCampminder.js");
+    const r = (await request(app).get("/api/campminder/returning?season=2026").expect(200)).body;
+    expect(r.season).toBe(2026);
+    expect(r.seasons).toEqual([2027, 2026]);
+    const fams = r.families as Fam[];
+    const count = demoReturningFamilyCounts(Object.keys(DEFAULT_SEASON_SETTINGS.registration.locations)).find((c) => c.season === 2026)!.families;
+    expect(fams.filter((f) => f.season === 2026)).toHaveLength(count);
+    expect(r.asOf.over).toBe(new Date().toISOString().slice(0, 10) >= "2026-09-07");
+    expect(r.opens["2026"]).toEqual({ va: "2026-01-06", md: "2026-01-08", new: "2026-01-12" });
+    // Re-enrolled families have a day since their wave opened; the others don't.
+    const back = fams.filter((f) => f.status === "enrolled");
+    expect(back.length).toBeGreaterThan(0);
+    expect(back.every((f) => f.day !== null && f.enrolledOn !== null)).toBe(true);
+    expect(fams.filter((f) => f.status !== "enrolled").every((f) => f.day === null)).toBe(true);
+    // Automatic age-out: some families aged out, none of them with a camper young enough.
+    expect(typeof r.ageOutAfter["2026"]).toBe("number");
+    expect(fams.filter((f) => f.status === "aged_out").every((f) => f.eligibleCampers === 0)).toBe(true);
+    // 2027 hasn't any sign-ups yet: everyone's "not yet" (or aged out).
+    const next = (await request(app).get("/api/campminder/returning?season=2027").expect(200)).body.families as Fam[];
+    expect(next.filter((f) => f.season === 2027).every((f) => f.status === "not_yet" || f.status === "aged_out")).toBe(true);
+    await request(app).get("/api/campminder/returning?season=abc").expect(400);
+  });
+
+  it("ages campers out by the setting", async () => {
+    const app = api();
+    const settings = (await request(app).get("/api/settings/seasons").expect(200)).body;
+    expect(settings.registration.ageOutAfter).toBeNull();
+    await request(app).put("/api/settings/seasons").send({ ...settings, registration: { ...settings.registration, ageOutAfter: 25 } }).expect(200);
+    const r = (await request(app).get("/api/campminder/returning?season=2026").expect(200)).body;
+    expect(r.ageOutSet).toBe(true);
+    expect((r.families as Fam[]).some((f) => f.status === "aged_out")).toBe(false);
+    await request(app).put("/api/settings/seasons").send({ ...settings, registration: { ...settings.registration, ageOutAfter: 2 } }).expect(400);
+  });
+
+  it("is a report data set with the same numbers", async () => {
+    const app = api();
+    const card = (await request(app).get("/api/campminder/returning?season=2026").expect(200)).body.families as Fam[];
+    const cur = card.filter((f) => f.season === 2026);
+    const run = async (spec: object) => (await request(app).post("/api/reports/run").send({ spec }).expect(200)).body;
+    const byStatus = await run({ dataset: "returning_families", rows: ["status"], measure: "families", filters: { season: ["2026"] } });
+    expect(byStatus.cells.find((c: { kind: string }) => c.kind === "total").value).toBe(cur.length);
+    const pct = await run({ dataset: "returning_families", rows: ["season"], measure: "pct_reenrolled" });
+    const kept = cur.filter((f) => f.status !== "aged_out");
+    const row = pct.cells.find((c: { rows: string[] }) => c.rows[0] === "2026");
+    expect(row.value).toBeCloseTo(kept.filter((f) => f.status === "enrolled").length / kept.length, 3);
+    const campers = await run({ dataset: "returning_families", rows: [], measure: "reenrolled_campers", filters: { season: ["2026"] } });
+    expect(campers.cells[0].value).toBe(kept.reduce((t, f) => t + f.reenrolledCampers, 0));
+    const weeks = await run({ dataset: "returning_families", rows: ["weeks_after_opening"], measure: "reenrolled", filters: { season: ["2026"] } });
+    expect(weeks.cells.some((c: { rows: string[] }) => c.rows[0] === "-1")).toBe(true);
+    const values = (await request(app).post("/api/reports/values").send({ spec: { dataset: "returning_families", measure: "families" }, field: "wave" }).expect(200)).body;
+    expect(values.values.map((v: { value: string }) => v.value).sort()).toEqual(["Returning MD", "Returning VA"]);
+  });
+
+  it("queries last season's camp-location households with typed parameters", async () => {
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
+    const row = {
+      season: 2027, household: "abc", locations: ["md"], session_group: "Farm", weeks: 4, summers: 2, state: "MD", zip: "20814",
+      campers: [{ age: 9, enrolled: true }, { age: null, enrolled: false }], enrolled: true, waitlisted: false, cancelled: true, enrolled_on: "2027-01-09",
+    };
+    const fake = { query: async (o: (typeof calls)[number]) => (calls.push(o), [[row]]) };
+    const out = await new BigQueryWarehouse(fake as never, "marts").returningFamilies({ Farm: "md" }, [2027]);
+    expect(calls[0]!.params).toEqual({ locations: [{ session_group: "Farm", location: "md" }], seasons: [2027] });
+    expect(calls[0]!.types).toEqual({ locations: [{ session_group: "STRING", location: "STRING" }], seasons: ["INT64"] });
+    expect(calls[0]!.query).toContain("e.season + 1 AS season");
+    expect(calls[0]!.query).toContain("WHERE business_line = 'camp'");
+    expect(out).toEqual([
+      {
+        season: 2027, household: "abc", locations: ["md"], sessionGroup: "Farm", weeks: 4, summers: 2, state: "MD", zip: "20814",
+        campers: [{ age: 9, enrolled: true }, { age: null, enrolled: false }], enrolled: true, waitlisted: false, cancelled: true, enrolledOn: "2027-01-09",
+      },
+    ]);
+  });
+
+  it("fails the self-check when a family goes missing", async () => {
+    const { runSelfCheck } = await import("./selfCheck.js");
+    const demo = new DemoWarehouse();
+    const broken = Object.create(demo) as DemoWarehouse;
+    broken.returningFamilies = async (l, s) => (await demo.returningFamilies(l, s)).slice(1);
+    const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
+    expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["returning families match tables"]);
+  }, 30_000);
+
+  it("puts re-enrollment in the digest while registration is under way", async () => {
+    const { buildDigest } = await import("./notify.js");
+    const { digestSlackText } = await import("@dash/shared");
+    const deps = { warehouse: new DemoWarehouse(), freshness: new DemoFreshness(), seasons: new MemorySeasonSettings(), targets: new MemoryTargets(), appUrl: "https://x" };
+    const during = await buildDigest(deps, "daily", "2026-02-02");
+    expect(during.returning?.season).toBe(2026);
+    expect(digestSlackText(during, ["camp"])).toMatch(/Camp returning families 2026: [\d,]+ of [\d,]+ re-enrolled \(\d+%\)/);
+    expect(digestSlackText(during, ["farm_store"])).not.toContain("returning families");
+    // Before 2027's opening dates are set and before anyone has re-enrolled: nothing.
+    expect((await buildDigest(deps, "daily", "2026-11-23")).returning).toBeNull();
+  });
+});

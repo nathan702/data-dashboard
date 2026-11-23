@@ -119,6 +119,37 @@ they're set. Stored in Firestore at `config/targets`. Revenue comes from
 `marts.fct_revenue_pace` (revenue by program date and booking date), which
 the deploy self-check compares with the service-date revenue totals.
 
+## Returning families (Camp)
+
+The Camp page's **Returning families** card follows last season's families
+into this one: households with a camper enrolled at a camp location (the
+session groups marked Virginia or Maryland on **Advanced → Settings → Seasons
+→ Camp registration**) last season, and whether they've signed up for Camp
+again.
+
+- **Re-enrolled**: any of the household's campers is enrolled in Camp this
+  season (a new sibling counts). **Waitlisted or applied** and **Signed up,
+  then cancelled** are their own statuses; **Not yet** is everyone else.
+- **Aged out**: every camper the family had last season is now older than
+  the **Oldest camper age** (June 1) on Settings → Seasons → Camp
+  registration. Blank means automatic: the oldest age at least 1% of last
+  season's campers were. Aged-out families aren't in the percentages.
+- **Same point last year**: last season's families re-enrolled by the same
+  number of days since their wave opened (both seasons' opening dates
+  needed), else by the same date a year earlier.
+- The card opens on the season whose registration is next or under way
+  (after Labor Day, next summer's) and has its own season, wave and
+  segment filters; the page's filters don't apply to it.
+
+**Reports → Returning families** has the same rows (one per household and
+season) with status, wave, last season's location, summers at camp, campers
+and weeks last season, weeks after opening, state, ZIP and the scrambled
+household ID. Digests show a Camp line ("returning families: 412 of 980
+re-enrolled, last year 38% at this point") from the day the season's first
+wave opens until its summer ends. Nothing new is stored: everything is worked
+out from the enrollments table when it's viewed, and names are never shown,
+so the families themselves come from Campminder.
+
 ## Notifications (digests and alerts)
 
 Each person chooses their own on **🔔 Notifications** (next to their email

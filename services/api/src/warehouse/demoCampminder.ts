@@ -25,6 +25,8 @@ import {
   type RegistrationPaceResponse,
   type RegistrationPaceRow,
   type RegistrationSettings,
+  type ReturningFamilyFacts,
+  type CampLocation,
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
 import { noise } from "./demo.js";
@@ -519,4 +521,70 @@ export function demoRegistrationPace(q: RegistrationPaceQuery, registration: Reg
     groups.set(k, g);
   }
   return { rows: [...groups.values()].map((g) => ({ ...g.row, campers: g.campers.size })) };
+}
+
+/** Same rule as returningFamiliesSql: households at a camp location last season, and what they did in Camp this season. */
+export function demoReturningFamilies(locations: RegistrationSettings["locations"], seasons: number[]): ReturningFamilyFacts[] {
+  type Last = { locations: Set<CampLocation>; groups: Map<string, number>; weeks: number; summers: number | null; state: string; zip: string; campers: Map<string, number> };
+  const last = new Map<string, Last>();
+  for (const r of rows()) {
+    const loc = locations[r.sessionGroup];
+    const season = r.season + 1;
+    if (r.statusCode !== "EN" || !loc || (seasons.length && !seasons.includes(season))) continue;
+    const k = `${season}|${r.family}`;
+    const f = last.get(k) ?? { locations: new Set(), groups: new Map(), weeks: 0, summers: null, state: r.state, zip: r.zip, campers: new Map() };
+    const weeks = r.weekStart !== null ? r.weekEnd! - r.weekStart + 1 : 1;
+    f.locations.add(loc);
+    f.groups.set(r.sessionGroup, (f.groups.get(r.sessionGroup) ?? 0) + weeks);
+    f.weeks += weeks;
+    f.summers = Math.max(f.summers ?? 0, r.years);
+    f.campers.set(r.camper, Math.max(f.campers.get(r.camper) ?? 0, r.age));
+    last.set(k, f);
+  }
+  type Now = { enrolled: boolean; waitlisted: boolean; cancelled: boolean; enrolledOn: string | null };
+  const now = new Map<string, Now>();
+  const enrolledCampers = new Set<string>();
+  for (const r of rows()) {
+    if (r.businessLine !== "camp") continue;
+    const k = `${r.season}|${r.family}`;
+    const n = now.get(k) ?? { enrolled: false, waitlisted: false, cancelled: false, enrolledOn: null };
+    if (r.statusCode === "EN") {
+      n.enrolled = true;
+      if (!n.enrolledOn || r.applicationDate < n.enrolledOn) n.enrolledOn = r.applicationDate;
+      enrolledCampers.add(`${r.season}|${r.camper}`);
+    }
+    if (r.statusCode === "WL" || r.statusCode === "AP") n.waitlisted = true;
+    if (r.statusCode === "CN" || r.statusCode === "WD") n.cancelled = true;
+    now.set(k, n);
+  }
+  return [...last].map(([k, f]) => {
+    const [season, family] = [Number(k.split("|")[0]), k.slice(k.indexOf("|") + 1)];
+    const n = now.get(k);
+    const groups = [...f.groups].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+    return {
+      season,
+      household: family.slice(0, 10),
+      locations: [...f.locations].sort(),
+      sessionGroup: groups[0]![0],
+      weeks: f.weeks,
+      summers: f.summers,
+      state: f.state,
+      zip: f.zip,
+      campers: [...f.campers].map(([camper, age]) => ({ age, enrolled: enrolledCampers.has(`${season}|${camper}`) })),
+      enrolled: n?.enrolled ?? false,
+      waitlisted: n?.waitlisted ?? false,
+      cancelled: n?.cancelled ?? false,
+      enrolledOn: n?.enrolledOn ?? null,
+    };
+  });
+}
+
+/** Same as returningFamiliesCountSql. */
+export function demoReturningFamilyCounts(groups: string[]): Array<{ season: number; families: number }> {
+  const sets = new Map<number, Set<string>>();
+  for (const r of rows()) {
+    if (r.statusCode !== "EN" || !groups.includes(r.sessionGroup)) continue;
+    sets.set(r.season + 1, (sets.get(r.season + 1) ?? new Set()).add(r.family));
+  }
+  return [...sets].map(([season, s]) => ({ season, families: s.size }));
 }
