@@ -246,8 +246,11 @@ export async function runSelfCheck(
     }
     if (rows.length !== sum(counts.map((c) => c.families))) return "families in seasons the table count doesn't have";
     if (rows.some((r) => r.campers.length === 0)) return "a family without campers";
-    // Dates arrive as text: an empty or odd date would put every family on day 0.
-    if (rows.some((r) => r.enrolled && !(r.enrolledOn && isIsoDate(r.enrolledOn)))) return "a re-enrolled family without its sign-up date";
+    // Dates arrive as text: an odd date, or none reaching us at all, would put every family off the chart. (A few
+    // enrollments have no application date in Campminder; those families count as re-enrolled but aren't on the chart.)
+    if (rows.some((r) => r.enrolledOn !== null && !isIsoDate(r.enrolledOn))) return "a re-enrolled family's sign-up date isn't a date";
+    const back = rows.filter((r) => r.enrolled);
+    if (back.length > 0 && back.every((r) => r.enrolledOn === null)) return "no re-enrolled family has a sign-up date";
     resolveReturning(rows, registration);
     return null;
   });

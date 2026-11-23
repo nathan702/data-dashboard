@@ -95,6 +95,17 @@ describe("returning families", () => {
     expect(returningSummary(fams2, 2027, noDates, { today: "2027-01-09", over: false }).previous!.samePoint).toBe(1);
   });
 
+  it("counts a family enrolled without a sign-up date as re-enrolled, off the chart and at the same point only once over", () => {
+    const fams = resolveReturning(
+      [fam({ enrolled: true, enrolledOn: null, campers: [{ age: 9, enrolled: true }] }), fam({ season: 2026, household: "p", enrolled: true, enrolledOn: null })],
+      reg,
+    );
+    expect(fams[0]).toMatchObject({ status: "enrolled", day: null });
+    expect(returningSummary(fams, 2027, reg, { today: "2027-02-01", over: false }).previous).toEqual({ families: 1, samePoint: 0, final: 1 });
+    expect(returningSummary(fams, 2027, reg, { today: "2027-10-01", over: true }).previous!.samePoint).toBe(1);
+    expect(returningCurve(fams, [2027], reg, { season: 2027, today: "2027-02-01", over: false }).every((r) => r["2027"] === 0)).toBe(true);
+  });
+
   it("draws the share re-enrolled by day, stopping the current season at today", () => {
     const fams = resolveReturning(
       [

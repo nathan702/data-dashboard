@@ -1400,6 +1400,20 @@ describe("returning families", () => {
     expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["returning families match tables"]);
   }, 30_000);
 
+  it("allows re-enrolled families without a sign-up date, but not dates that never arrive", async () => {
+    const { runSelfCheck } = await import("./selfCheck.js");
+    const demo = new DemoWarehouse();
+    const check = async (change: (enrolledOn: string | null, i: number) => string | null) => {
+      const w = Object.create(demo) as DemoWarehouse;
+      w.returningFamilies = async (l, s) => (await demo.returningFamilies(l, s)).map((f, i) => ({ ...f, enrolledOn: change(f.enrolledOn, i) }));
+      return (await runSelfCheck(w, (s, e) => demo.referenceTotals(s, e))).checks.find((c) => c.name === "returning families match tables");
+    };
+    // Campminder has a few enrollments with no application date.
+    expect((await check((d, i) => (i % 50 === 0 ? null : d)))!.ok).toBe(true);
+    expect(await check(() => null)).toMatchObject({ ok: false, detail: "no re-enrolled family has a sign-up date" });
+    expect(await check((d) => (d ? "01/09/2027" : d))).toMatchObject({ ok: false, detail: "a re-enrolled family's sign-up date isn't a date" });
+  }, 60_000);
+
   it("puts re-enrollment in the digest while registration is under way", async () => {
     const { buildDigest } = await import("./notify.js");
     const { digestSlackText } = await import("@dash/shared");
