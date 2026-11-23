@@ -44,6 +44,8 @@ import type {
   TargetProgressResponse,
   TargetSettings,
   TargetsOverviewResponse,
+  MyNotificationsResponse,
+  NotificationSettings,
 } from "@dash/shared";
 import { useAuth } from "./auth";
 
@@ -141,6 +143,26 @@ export function useTargetProgress(businessLine: BusinessLine, season: number | u
 
 export function useTargetsOverview() {
   return useApi<TargetsOverviewResponse>(["target-progress", "overview"], "/api/targets/overview", { refetchInterval: 10 * 60_000 });
+}
+
+export function useMyNotifications() {
+  return useApi<MyNotificationsResponse>(["my-notifications"], "/api/me/notifications");
+}
+
+export function useSaveMyNotifications() {
+  return useApiMutation<NotificationSettings, NotificationSettings>("/api/me/notifications", [["my-notifications"]]);
+}
+
+/** Sends this person a test digest now; the result says whether it was delivered. */
+export function useSendTestNotification() {
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      const res = await fetch("/api/me/notifications/test", { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      return ((await res.json().catch(() => ({}))) as { result?: string }).result ?? `error ${res.status}`;
+    },
+  });
 }
 
 export function useMe() {

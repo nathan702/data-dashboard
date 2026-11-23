@@ -86,6 +86,11 @@ unmatched is "Unassigned" and flagged.
 
 - **Foundation**: Google sign-in, business-line tabs (customizable per person),
   Settings, Data status, automatic deploys with self-check.
+- **FareHarbor** (live; River School, Events, Haunted Forest): bookings since
+  2019, revenue by business line, guests, season to date vs last season,
+  night by night, ticket types, when tickets are bought.
+- **HubSpot** (live; Education Programs, CHAPs group bookings): deals,
+  pipelines, programs and line items.
 - **Square** and **Shopify** (live):
   revenue, order KPIs, breakdowns, inventory, with click-to-filter drill-down
   (category → item → variant, location → channel → category).
@@ -173,47 +178,29 @@ unmatched is "Unassigned" and flagged.
 9. **Shopify** (River Store) ✅ connected (Dev Dashboard app, client
    credentials). Full order history needs Shopify's `read_all_orders`
    approval; without it, 60 days.
-10. **HubSpot** (Education Programs, CHAPs group bookings): deals and pipelines
+10. **HubSpot** ✅ (Education Programs, CHAPs group bookings): deals and pipelines
     every 15 minutes, revenue by pipeline → business line, open pipeline,
     won-by-month and programs on each line's page. Upgraded to a HubSpot
     **service key** (HubSpot stopped new legacy private apps on Oct 26, 2026
     and retires them by September 2027) and the date-versioned `2026-09` APIs
     (supported until about March 2028). No CLI-built app is needed: the
-    dashboard only reads, with no webhooks. *Needs:* the service key stored
-    as a secret, pipeline assignments, and (optional) the program-date
-    property.
-11. **FareHarbor** ← *next* (River School, Events, Haunted Forest): one FareHarbor
-    company per line, read through FareHarbor's Public API (one key per
-    company). Built: bookings since 2019 (new ones hourly; recent and upcoming
-    re-read every 6 hours, all weekly), time-slot capacity, revenue by
-    business line, webhook endpoint, guest counts, season to date vs last
-    season, night by night, ticket types, when tickets are bought. *Needs:*
-    each company's Client ID and Secret stored as secrets. Next: sell-through
-    per time slot (Haunted Forest nights).
-12. **Digests and alerts** (planned; Slack and email, totals only):
-    - *Daily* (weekdays ~7:30am Eastern): yesterday's net revenue per line vs
-      the same day last year, the targets in short (% of target, ahead / on
-      track / behind), yesterday's Camp and School Year sign-ups, data
-      freshness, a link. *Weekly* (Mondays): last week vs the same week last
-      year, plus season to date.
-    - *Alerts* (hourly, only on a change): a target turns behind (and
-      recovers); a platform hasn't synced for longer than usual; unassigned
-      revenue appears.
-    - Slack through an incoming webhook (secret `slack-digest-webhook`).
-      Email to one Google Group address (membership managed in Workspace; no
-      addresses stored), sent through the Gmail API as an address of ours
-      with a one-time Workspace admin approval (no stored keys, no new vendor).
-    - A Cloud Run job `dashboard-digest` running the API's own code (numbers
-      match the dashboard), started by Cloud Scheduler; last alert states in
-      Firestore so an alert fires once; Settings → Notifications to switch
-      channels and alerts on or off and send a test; the deploy self-check
-      builds a digest without sending it.
-    - Two PRs: Slack and digests first, then email and alerts. *Needs:* the
-      Slack webhook, the Google Group and sending addresses, the Workspace
-      admin's approval.
+    dashboard only reads, with no webhooks. Connected with a service key.
+11. **Digests and alerts** ← *in progress*. Each person chooses their own on
+    🔔 Notifications: Slack direct message and/or email, a daily digest
+    (weekdays or every day) and/or a weekly one on Mondays, at an hour they
+    pick (6–10am Eastern), for the lines they pick (default: their tabs); and
+    alerts (a target turns behind and recovers; a big day above their own %
+    threshold; admins: a platform stops syncing, unassigned revenue). Totals
+    only. A Cloud Run job `dashboard-digest` runs hourly with the API's own
+    code; alert states in Firestore so each fires once; each person's choices
+    with their tab order in `users/{sign-in email}` (staff sign-in addresses,
+    agreed). Built: the page, the hourly job, Slack DMs through a Calleva Slack
+    app (`infra/slack-app-manifest.yaml`; token in secret `slack-bot-token`).
+    Next: email, from `noreply@calleva.org` through the Gmail API (one-time
+    Workspace admin approval).
 
-Then, last in this group: **Camp page speed**, keeping one API server always
-running (about $5–10 a month; waiting on approval).
+12. **Camp page speed**: keep one API server always running (about $5–10 a
+    month; waiting on approval).
 
 ### Then
 
@@ -245,6 +232,15 @@ running (about $5–10 a month; waiting on approval).
     to set in the console: a $40/month budget alert, and a 1 TiB "Query usage
     per day" BigQuery quota.
 
+### Last
+
+18. **FareHarbor sell-through** (moved here; not worth it now). FareHarbor
+    capacity is set on *resources* (Trail, Town…), not time slots: a Combo
+    uses one Trail and one Town, so tickets share buckets, and slot capacity
+    is mostly 0. Needs each resource's capacity and which tickets use which
+    resources (from FareHarbor's API if it exposes resources, else Settings),
+    then sell-through per resource by night and time slot.
+
 ## Open items for Calleva
 
 - Assign the remaining Campminder session groups and Square locations (Settings).
@@ -254,10 +250,9 @@ running (about $5–10 a month; waiting on approval).
   line up by days since registration opened; until then they use the same
   date last year.
 - Enter targets (Settings → Targets).
-- Create the HubSpot service key and store it (SETUP.md → HubSpot).
+- Install the Slack app and store its token (SETUP.md → Notifications).
 - Add admins to Firestore `config/access` (until then everyone is an admin).
 - Item 3: add a School column to the Campminder report (and the history tabs).
-- Item 11: FareHarbor documentation and samples (see above).
 
 ## Notes
 

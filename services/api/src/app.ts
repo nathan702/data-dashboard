@@ -73,6 +73,11 @@ import {
   cleanTargetSettings,
   type TargetProgressResponse,
   type TargetsOverviewResponse,
+  cleanNotificationSettings,
+  digestSlackText,
+  notificationSettingsSchema,
+  withoutAdminAlerts,
+  type MyNotificationsResponse,
 } from "@dash/shared";
 import { requireAdmin, requireViewer, type AuthDeps } from "./auth.js";
 import { runSelfCheck } from "./selfCheck.js";
@@ -80,6 +85,10 @@ import type { PreferencesStore } from "./preferences.js";
 import type { SeasonSettingsStore } from "./seasons.js";
 import type { TargetStore } from "./targets.js";
 import { runTargetsReport } from "./targetsReport.js";
+import { createTargetProgress } from "./targetProgress.js";
+import type { NotificationStore } from "./notifications.js";
+import { buildDigest } from "./notify.js";
+import type { Messenger } from "./slack.js";
 import type { ProgramFamilyStore, ReportStore, SchoolStore } from "./reports.js";
 import type { RefreshTrigger } from "./refresh.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
@@ -92,6 +101,12 @@ export interface ApiOptions {
   preferences: PreferencesStore;
   seasons: SeasonSettingsStore;
   targets: TargetStore;
+  /** Each person's notification choices (My notifications). */
+  notifications: NotificationStore;
+  /** Slack direct messages (NoMessenger until the Slack app is set up). */
+  messenger: Messenger;
+  /** The dashboard's address, linked from digests. */
+  appUrl: string;
   reports: ReportStore;
   programFamilies: ProgramFamilyStore;
   schools: SchoolStore;
@@ -144,7 +159,19 @@ export function createApi(opts: ApiOptions) {
   let lastCheck: { at: number; result: Awaited<ReturnType<typeof runSelfCheck>> } | null = null;
   app.get("/healthz/deep", async (_req, res) => {
     if (!lastCheck || Date.now() - lastCheck.at > 60_000) {
-      lastCheck = { at: Date.now(), result: await runSelfCheck(opts.warehouse, (start, end) => opts.warehouse.referenceTotals(start, end)) };
+      const result = await runSelfCheck(opts.warehouse, (start, end) => opts.warehouse.referenceTotals(start, end));
+      // Digests: build both kinds without sending, so a broken query fails the deploy.
+      try {
+        for (const kind of ["daily", "weekly"] as const) {
+          const d = await buildDigest({ ...opts, appUrl: opts.appUrl }, kind, easternDate());
+          digestSlackText(d, [...BUSINESS_LINES]);
+        }
+        result.checks.push({ name: "digests build", ok: true });
+      } catch (err) {
+        result.checks.push({ name: "digests build", ok: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300) });
+        result.ok = false;
+      }
+      lastCheck = { at: Date.now(), result };
     }
     res.status(lastCheck.result.ok ? 200 : 500).json(lastCheck.result);
   });
@@ -175,6 +202,39 @@ export function createApi(opts: ApiOptions) {
     }
     await opts.preferences.set(req.viewer!.email, parsed.data);
     res.json(parsed.data);
+  });
+
+  // ---- My notifications (each person's own digests and alerts) ----
+
+  api.get("/me/notifications", async (req, res) => {
+    const body: MyNotificationsResponse = {
+      settings: await opts.notifications.get(req.viewer!.email),
+      slackConfigured: await opts.messenger.configured(),
+      emailConfigured: false,
+    };
+    res.json(body);
+  });
+
+  api.put("/me/notifications", async (req, res) => {
+    const parsed = notificationSettingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid notification settings", issues: parsed.error.issues });
+      return;
+    }
+    const clean = cleanNotificationSettings(parsed.data);
+    const settings = req.viewer!.isAdmin ? clean : withoutAdminAlerts(clean);
+    await opts.notifications.set(req.viewer!.email, settings);
+    res.json(settings);
+  });
+
+  // Sends this person yesterday's digest now (Slack), to check it arrives and see what it looks like.
+  api.post("/me/notifications/test", async (req, res) => {
+    const viewer = req.viewer!;
+    const [settings, prefs] = await Promise.all([opts.notifications.get(viewer.email), opts.preferences.get(viewer.email)]);
+    const d = await buildDigest(opts, "daily", easternDate());
+    const text = `_Test message from the dashboard: this is what your daily digest looks like._\n\n${digestSlackText(d, settings.lines ?? prefs.tabs)}`;
+    const result = await opts.messenger.slack(viewer.email, text);
+    res.status(result === "sent" ? 200 : 409).json({ result });
   });
 
   api.get("/freshness", async (_req, res) => {
@@ -628,39 +688,7 @@ export function createApi(opts: ApiOptions) {
     res.json(clean);
   });
 
-  /** A line's progress for one season (default: the season under way, or next season once this one's pace is complete). */
-  const lineTargetProgress = async (businessLine: BusinessLine, requested?: number): Promise<TargetProgressResponse> => {
-    const [targets, settings] = await Promise.all([opts.targets.get(), opts.seasons.get()]);
-    const today = easternDate();
-    const cal = lineCalendar(businessLine, settings);
-    const seasons = targetSeasons(targets, businessLine);
-    const progress = (season: number) => {
-      const values = targets.seasons[String(season)]?.[businessLine] ?? {};
-      const current = cal.range(season);
-      const previous = cal.range(season - 1);
-      const ended = today > current.end;
-      // A finished season is compared with last season's full total; otherwise with last season by the same point.
-      const asOf = ended ? current.end : today;
-      const { cutoff, alignedBy } = samePointLastSeason(businessLine, season, asOf, settings.registration);
-      const key = `targets:${businessLine}:${season}:${today}:${JSON.stringify(values)}:${JSON.stringify(current)}:${cutoff}:${JSON.stringify(settings.hubspot)}`;
-      return cached(key, async (): Promise<TargetProgressResponse> => {
-        const participantProps = values.participants === undefined ? [] : resolveHubspotRoles(settings.hubspot, await opts.warehouse.hubspotProperties()).participants;
-        const actuals = await opts.warehouse.targetActuals({ businessLine, season, current, previous, cutoff, participantProps });
-        return { businessLine, season, seasons, range: current, asOf, ended, samePoint: cutoff, alignedBy, rows: targetProgressRows(businessLine, values, actuals, ended) };
-      });
-    };
-    const now = cal.seasonFor(today);
-    const season = requested ?? defaultTargetSeason(seasons, now);
-    if (season === null || !seasons.includes(season)) {
-      return { businessLine, season: null, seasons, range: null, asOf: today, ended: false, samePoint: null, alignedBy: null, rows: [] };
-    }
-    const body = await progress(season);
-    // Once last season had everything in by this point (Camp in the fall), move on to next season's targets.
-    if (requested === undefined && season === now && seasons.includes(now + 1) && body.rows.every((r) => r.expected !== null && r.expected >= r.target)) {
-      return progress(now + 1);
-    }
-    return body;
-  };
+  const lineTargetProgress = createTargetProgress({ warehouse: opts.warehouse, targets: opts.targets, seasons: opts.seasons, cached });
 
   api.get("/targets/progress", async (req, res) => {
     const parsed = targetProgressQuerySchema.safeParse(req.query);

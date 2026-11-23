@@ -81,6 +81,22 @@ gcloud scheduler jobs "$SCHED_CMD" http dashboard-transform --location="$REGION"
 TRANSFORM_OK=1
 gcloud run jobs execute dashboard-transform --region="$REGION" --wait || TRANSFORM_OK=0
 
+echo "==> Notifications (Cloud Run job, hourly): digests and alerts as Slack direct messages"
+# The API's own image and service account, with the job's entry point. The Slack token is read from
+# Secret Manager (slack-bot-token) at run time; until it's stored, nothing is sent.
+gcloud run jobs deploy dashboard-digest --image="$REPO/api:$TAG" --region="$REGION" \
+  --service-account="$API_SA" --task-timeout=900 --max-retries=0 --memory=512Mi \
+  --command=node --args=services/api/dist/notifyJob.js \
+  --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,BQ_MARTS_DATASET=marts,BQ_LOCATION=$BQ_LOCATION,APP_URL=https://data.calleva.org"
+gcloud run jobs add-iam-policy-binding dashboard-digest --region="$REGION" \
+  --member="serviceAccount:$SCHED_SA" --role=roles/run.invoker >/dev/null
+DIGEST_URI="https://run.googleapis.com/v2/projects/$PROJECT_ID/locations/$REGION/jobs/dashboard-digest:run"
+if gcloud scheduler jobs describe dashboard-digest --location="$REGION" >/dev/null 2>&1; then SCHED_CMD=update; else SCHED_CMD=create; fi
+# :05 past each hour, after the :00 table rebuild has had time to finish.
+gcloud scheduler jobs "$SCHED_CMD" http dashboard-digest --location="$REGION" \
+  --schedule="5 * * * *" --time-zone="America/New_York" \
+  --uri="$DIGEST_URI" --http-method=POST --oauth-service-account-email="$SCHED_SA"
+
 echo "==> Web app"
 npm ci
 npm run build -w packages/shared

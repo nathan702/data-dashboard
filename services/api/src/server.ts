@@ -9,6 +9,8 @@ import { FirestoreFreshness } from "./freshness.js";
 import { FirestorePreferences, MemoryPreferences } from "./preferences.js";
 import { FirestoreSeasonSettings, MemorySeasonSettings } from "./seasons.js";
 import { FirestoreTargets, MemoryTargets } from "./targets.js";
+import { FirestoreNotifications, MemoryNotifications } from "./notifications.js";
+import { MemoryMessenger, SlackMessenger, slackTokenFromSecretManager } from "./slack.js";
 import { loadOfficialSchools } from "./officialSchools.js";
 import { DEMO_OFFICIAL_SCHOOLS } from "./warehouse/demoSchools.js";
 import { FirestoreProgramFamilies, FirestoreReports, FirestoreSchools, MemoryProgramFamilies, MemoryReports, MemorySchools } from "./reports.js";
@@ -47,6 +49,9 @@ const app = createApi({
   preferences: config.demoData || !firebase ? new MemoryPreferences() : new FirestorePreferences(getFirestore(firebase)),
   seasons: config.demoData || !firebase ? new MemorySeasonSettings() : new FirestoreSeasonSettings(getFirestore(firebase)),
   targets: config.demoData || !firebase ? new MemoryTargets(config.demoData ? DEMO_TARGETS : undefined) : new FirestoreTargets(getFirestore(firebase)),
+  notifications: config.demoData || !firebase ? new MemoryNotifications() : new FirestoreNotifications(getFirestore(firebase)),
+  messenger: config.demoData ? new MemoryMessenger() : new SlackMessenger(slackTokenFromSecretManager(config.projectId)),
+  appUrl: config.appUrl,
   reports: config.demoData || !firebase ? new MemoryReports() : new FirestoreReports(getFirestore(firebase)),
   programFamilies: config.demoData || !firebase ? new MemoryProgramFamilies() : new FirestoreProgramFamilies(getFirestore(firebase)),
   schools: config.demoData || !firebase ? new MemorySchools() : new FirestoreSchools(getFirestore(firebase)),

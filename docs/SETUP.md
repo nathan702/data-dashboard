@@ -119,6 +119,54 @@ they're set. Stored in Firestore at `config/targets`. Revenue comes from
 `marts.fct_revenue_pace` (revenue by program date and booking date), which
 the deploy self-check compares with the service-date revenue totals.
 
+## Notifications (digests and alerts)
+
+Each person chooses their own on **🔔 Notifications** (next to their email
+at the top): where to send (a Slack direct message; email comes next), a
+daily digest (weekdays or every day) and/or a weekly one on Mondays, the hour
+(6–10am Eastern), which business lines (default: their tabs), and alerts:
+
+- a target falls behind pace, and when it recovers;
+- a big day: yesterday's bookings this far above or below the same day last
+  year (each person sets the %; days under $500 last year are skipped);
+- admins only: a platform stops syncing, and revenue arrives that isn't
+  assigned to a business line.
+
+Digests show what was booked (net) per line against the same day last year
+(same weekdays for Events and Haunted Forest), the targets of seasons under
+way, Camp and School Year sign-ups, and whether data is up to date. Totals
+only. **Send me a test** sends yesterday's digest straight away.
+
+A Cloud Run job, `dashboard-digest`, runs at :05 past every hour (Cloud
+Scheduler). It runs the API's own code under the API's account, so its
+numbers match the dashboard. What alerts last saw is kept in Firestore
+(`notifications/state`) so each fires once per change; each person's choices
+are kept with their tab order in `users/{sign-in email}`. The deploy
+self-check builds both digests (without sending) on every deploy.
+
+### Slack app (once)
+
+1. <https://api.slack.com/apps> → **Create New App** → **From a manifest** →
+   choose the Calleva workspace → paste `infra/slack-app-manifest.yaml` →
+   **Create**. (Needs a Slack admin, or a member allowed to install apps.)
+2. **Install to Workspace** → **Allow**.
+3. **OAuth & Permissions** → copy the **Bot User OAuth Token** (`xoxb-…`) and
+   store it (the command waits for it; nothing is shown):
+
+   ```bash
+   read -rs V && printf '%s' "$V" | gcloud secrets create slack-bot-token --project=calleva-dashboard --replication-policy=automatic --data-file=- && unset V
+   ```
+4. Let the API's account read that one secret:
+
+   ```bash
+   gcloud secrets add-iam-policy-binding slack-bot-token --project=calleva-dashboard --member=serviceAccount:dashboard-api@calleva-dashboard.iam.gserviceaccount.com --role=roles/secretmanager.secretAccessor
+   ```
+
+Within 5 minutes My notifications stops saying Slack isn't set up. People
+are found in Slack by their sign-in email, so their Slack account must use
+the same address. To replace the token later, use `gcloud secrets versions
+add slack-bot-token` the same way.
+
 ## Reports
 
 The **Reports** tab is a report builder: pick a data set (enrollments,

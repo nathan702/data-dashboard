@@ -86,6 +86,8 @@ export interface Warehouse {
   hubspotPrograms(q: HubspotProgramsScope): Promise<{ programs: HubspotProgramRow[]; lineItems: HubspotLineItemRow[] }>;
   /** HubSpot deals for a line: open pipeline by stage, won by month. */
   hubspotDeals(businessLine: BusinessLine): Promise<HubspotDealsResponse>;
+  /** Campminder sign-ups (enrolled camper-sessions by application date) per business line, for the digests. */
+  signupCounts(start: IsoDate, end: IsoDate): Promise<Array<{ businessLine: string; enrollments: number; campers: number }>>;
   /** Targets: per measure, this season so far and last season at the same point and in full. */
   targetActuals(q: TargetActualsScope): Promise<TargetActuals>;
   /** Plain totals straight from the tables, for the deploy self-check. */

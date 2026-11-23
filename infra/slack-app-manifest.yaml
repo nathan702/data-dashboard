@@ -1,0 +1,27 @@
+# Slack app for the dashboard's digests and alerts (direct messages only).
+# Slack → api.slack.com/apps → Create New App → From a manifest → pick the
+# workspace → paste this → Create → Install to Workspace. See docs/SETUP.md → Notifications.
+display_information:
+  name: Calleva Dashboard
+  description: Your digests and alerts from data.calleva.org (totals only).
+  background_color: "#2a78d6"
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: true
+  bot_user:
+    display_name: Calleva Dashboard
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      # Send direct messages.
+      - chat:write
+      # Find each person's Slack account from their sign-in email.
+      - users:read
+      - users:read.email
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

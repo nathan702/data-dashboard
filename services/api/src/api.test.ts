@@ -8,9 +8,12 @@ import { MemoryPreferences } from "./preferences.js";
 import { NoopTrigger } from "./refresh.js";
 import { MemorySeasonSettings } from "./seasons.js";
 import { MemoryTargets } from "./targets.js";
+import { MemoryAlertState, MemoryNotifications } from "./notifications.js";
+import { runNotifications } from "./notify.js";
+import { MemoryMessenger, NoMessenger, type Messenger } from "./slack.js";
 import { MemoryProgramFamilies, MemoryReports, MemorySchools } from "./reports.js";
 import { DEMO_OFFICIAL_SCHOOLS } from "./warehouse/demoSchools.js";
-import { CALENDAR_YEAR, campminderCalendar, DEFAULT_SEASON_SETTINGS } from "@dash/shared";
+import { CALENDAR_YEAR, campminderCalendar, DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_SEASON_SETTINGS, SOURCES, type SourceFreshness } from "@dash/shared";
 import { DEMO_STREAMS, DemoFreshness, DemoWarehouse, demoRow } from "./warehouse/demo.js";
 import { periodBucket, summarizeRows } from "./warehouse/summarize.js";
 
@@ -55,7 +58,7 @@ describe("config", () => {
   });
 });
 
-function api(auth: AuthDeps | null = null, refresh = new NoopTrigger()) {
+function api(auth: AuthDeps | null = null, refresh = new NoopTrigger(), messenger: Messenger = new MemoryMessenger()) {
   return createApi({
     auth,
     warehouse: new DemoWarehouse(),
@@ -63,6 +66,9 @@ function api(auth: AuthDeps | null = null, refresh = new NoopTrigger()) {
     preferences: new MemoryPreferences(),
     seasons: new MemorySeasonSettings(),
     targets: new MemoryTargets(),
+    notifications: new MemoryNotifications(),
+    messenger,
+    appUrl: "https://data.calleva.org",
     reports: new MemoryReports(),
     programFamilies: new MemoryProgramFamilies(),
     schools: new MemorySchools(),
@@ -423,6 +429,7 @@ describe("deploy self-check", () => {
     const res = await request(api()).get("/healthz/deep").expect(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.checks.length).toBeGreaterThanOrEqual(5);
+    expect(res.body.checks).toContainEqual({ name: "digests build", ok: true });
     // Runs every check against the demo data: several seconds, more on a busy machine.
   }, 30_000);
 
@@ -1197,5 +1204,110 @@ describe("targets overview and report", () => {
 
     const values = (await request(app).post("/api/reports/values").send({ spec: { dataset: "targets", measure: "target" }, field: "status" }).expect(200)).body;
     expect(values.values.length).toBeGreaterThan(0);
+  });
+});
+
+describe("my notifications", () => {
+  const on = { ...DEFAULT_NOTIFICATION_SETTINGS, slack: true, daily: "every_day" as const, alerts: { ...DEFAULT_NOTIFICATION_SETTINGS.alerts, syncStale: true } };
+
+  it("saves each person's own choices; only admins keep admin alerts", async () => {
+    const app = api();
+    const first = (await request(app).get("/api/me/notifications").expect(200)).body;
+    expect(first).toEqual({ settings: DEFAULT_NOTIFICATION_SETTINGS, slackConfigured: true, emailConfigured: false });
+    await request(app).put("/api/me/notifications").send({ ...on, hour: 3 }).expect(400);
+    expect((await request(app).put("/api/me/notifications").send(on).expect(200)).body.alerts.syncStale).toBe(true);
+    expect((await request(app).get("/api/me/notifications")).body.settings).toEqual(on);
+
+    const auth: AuthDeps = {
+      allowedDomains: ["calleva.org"],
+      loadAccessList: async () => ({ allowedEmails: [], admins: ["boss@calleva.org"] }),
+      verifyIdToken: async () => org,
+    };
+    const saved = (await request(api(auth)).put("/api/me/notifications").set("Authorization", "Bearer t").send(on).expect(200)).body;
+    expect(saved.alerts.syncStale).toBe(false);
+  });
+
+  it("sends a test digest to the person asking, or says Slack isn't set up", async () => {
+    const messenger = new MemoryMessenger();
+    const app = api(null, new NoopTrigger(), messenger);
+    expect((await request(app).post("/api/me/notifications/test").expect(200)).body).toEqual({ result: "sent" });
+    expect(messenger.sent).toHaveLength(1);
+    expect(messenger.sent[0]!.text).toContain("Daily digest");
+    expect(messenger.sent[0]!.text).toContain("<https://data.calleva.org|Open the dashboard>");
+    const none = api(null, new NoopTrigger(), new NoMessenger());
+    expect((await request(none).get("/api/me/notifications")).body.slackConfigured).toBe(false);
+    expect((await request(none).post("/api/me/notifications/test").expect(409)).body).toEqual({ result: "not_configured" });
+  });
+});
+
+describe("hourly notifications", () => {
+  const thisYear = Number(new Date().toISOString().slice(0, 4));
+  const setup = async (at: string) => {
+    const notifications = new MemoryNotifications((email) => (email === "pat@calleva.org" ? ["farm_store", "camp"] : ["camp"]));
+    const messenger = new MemoryMessenger(["pat@calleva.org", "sam@calleva.org"]);
+    const alertState = new MemoryAlertState();
+    let fresh: SourceFreshness[] = SOURCES.map((source) => ({ source, status: "ok", lastDataAt: at, lastSuccessAt: at, lastError: null }));
+    const deps = {
+      warehouse: new DemoWarehouse(),
+      freshness: { freshness: async () => fresh },
+      seasons: new MemorySeasonSettings(),
+      targets: new MemoryTargets({ seasons: { [thisYear]: { farm_store: { revenue: 950_000 } } } }),
+      notifications,
+      alertState,
+      messenger,
+      appUrl: "https://data.calleva.org",
+      now: () => new Date(at),
+    };
+    return { deps, notifications, messenger, alertState, setFresh: (f: SourceFreshness[]) => (fresh = f) };
+  };
+  const on = { ...DEFAULT_NOTIFICATION_SETTINGS, slack: true };
+
+  it("sends digests at each person's hour, weekly on Mondays, only their lines", async () => {
+    // Monday Nov 23, 2026, 7:05am Eastern.
+    const { deps, notifications, messenger } = await setup("2026-11-23T12:05:00Z");
+    await notifications.set("pat@calleva.org", { ...on, daily: "weekdays", weekly: true, hour: 7 });
+    await notifications.set("sam@calleva.org", { ...on, daily: "weekdays", hour: 8 });
+    await notifications.set("off@calleva.org", { ...on, slack: false, daily: "every_day", hour: 7 });
+    const r = await runNotifications(deps);
+    expect(r).toMatchObject({ hour: 7, date: "2026-11-23", subscribers: 2 });
+    expect(messenger.sent.map((x) => x.email)).toEqual(["pat@calleva.org"]);
+    const text = messenger.sent[0]!.text;
+    expect(text).toContain("*Weekly digest · Mon, Nov 16 – Sun, Nov 22*");
+    expect(text).toContain("Farm Store:");
+    expect(text).not.toContain("River Store:");
+    expect(text).toContain("Farm Store");
+    // An hour later, Sam's daily digest (Camp only).
+    messenger.sent.length = 0;
+    await runNotifications({ ...deps, now: () => new Date("2026-11-23T13:05:00Z") });
+    expect(messenger.sent.map((x) => x.email)).toEqual(["sam@calleva.org"]);
+    expect(messenger.sent[0]!.text).toContain("*Daily digest · Sun, Nov 22*");
+    expect(messenger.sent[0]!.text).not.toContain("Farm Store");
+  });
+
+  it("alerts once per change, to the people who chose that alert", async () => {
+    const { deps, notifications, messenger, alertState, setFresh } = await setup("2026-11-23T15:05:00Z");
+    await notifications.set("pat@calleva.org", { ...on, alerts: { ...on.alerts, syncStale: true } });
+    await notifications.set("sam@calleva.org", { ...on });
+    await runNotifications(deps);
+    expect(messenger.sent).toEqual([]);
+    expect(alertState.state.targets[`farm_store:${thisYear}:revenue`]).toBeDefined();
+    setFresh(SOURCES.map((source) => ({ source, status: source === "square" ? "error" : "ok", lastDataAt: null, lastSuccessAt: "2026-11-23T15:00:00Z", lastError: null })));
+    await runNotifications(deps);
+    expect(messenger.sent).toEqual([{ email: "pat@calleva.org", text: expect.stringContaining("Square hasn't synced") }]);
+    await runNotifications(deps);
+    expect(messenger.sent).toHaveLength(1);
+  });
+
+  it("marks a target behind in its state and alerts when it moves", async () => {
+    const { deps, notifications, messenger, alertState } = await setup("2026-11-23T15:05:00Z");
+    await notifications.set("pat@calleva.org", { ...on, alerts: { ...on.alerts, targetBehind: true } });
+    const key = `farm_store:${thisYear}:revenue`;
+    await runNotifications(deps);
+    const status = alertState.state.targets[key];
+    // Pretend it was ahead last time: the current status is a change, so it's announced once.
+    alertState.state = { ...alertState.state, targets: { [key]: status === "behind" ? "ahead" : "behind" } };
+    await runNotifications(deps);
+    expect(messenger.sent).toHaveLength(1);
+    expect(messenger.sent[0]!.text).toMatch(/Farm Store \d{4} net revenue is (behind|back (ahead of|on) pace)/);
   });
 });
