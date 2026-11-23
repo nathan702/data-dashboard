@@ -90,6 +90,31 @@ Numbers are grouped by program or activity date. Campminder's own seasons
 listed there with a different first day. Stored in Firestore at
 `config/seasons`.
 
+## Targets
+
+Goals are set on **Advanced → Settings → Targets** (admins), one season at a
+time: per business line, net revenue and whatever its platforms count
+(campers and enrollments, FareHarbor guests, HubSpot participants). Empty
+boxes mean no target. Each line's page then shows a **Season targets** card:
+
+- **Now**: the season's programs (by program date, the line's season rule)
+  counted as soon as they're booked; stores count sales to date. Campers and
+  enrollments count by sign-up date, guests by booking date, participants by
+  deal close date.
+- **Expected by now**: the target times the share of last season's final
+  total it had by the same point. The same point is the same date last year,
+  the same weekday for Events and Haunted Forest, and for Camp the same
+  number of days since registration opened (needs both seasons' opening
+  dates on Settings → Seasons; otherwise the same date).
+- **Status**: within ±5% of expected is on track; above is ahead, below is
+  behind. A finished season shows reached or missed.
+
+The card opens on the season under way; once last season had everything in
+by this point (Camp in the fall), it moves on to next season's targets if
+they're set. Stored in Firestore at `config/targets`. Revenue comes from
+`marts.fct_revenue_pace` (revenue by program date and booking date), which
+the deploy self-check compares with the service-date revenue totals.
+
 ## Reports
 
 The **Reports** tab is a report builder: pick a data set (enrollments,

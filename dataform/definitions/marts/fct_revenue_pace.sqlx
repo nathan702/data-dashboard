@@ -1,0 +1,44 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Net revenue per business line by program (service) date and the day it was booked, for targets: a season's programs counted as soon as they were booked. Service-date totals equal fct_revenue_daily's service basis (net = gross - discounts - refunds). Campminder: charges and discounts on the service start date, booked on the post date; refunds on their post date. FareHarbor: activity date, booked on the booking date (refunds count with the booking). HubSpot: won deals on the program date, booked on the close date. Retail: sale date for both.",
+  bigquery: { clusterBy: ["business_line", "source"] },
+  assertions: { nonNull: ["business_line", "source", "service_date", "booked_date"] }
+}
+
+WITH unioned AS (
+  SELECT 'campminder' AS source, assign_key,
+         IF(type = 'refund', post_date, COALESCE(service_start, effective_date, post_date)) AS service_date,
+         COALESCE(post_date, service_start, effective_date) AS booked_date,
+         -- Credits (discounts, aid) are negative amounts; refunds are positive amounts taken off.
+         IF(type = 'refund', -amount, amount) AS net
+  FROM ${ref("stg_campminder_transactions")}
+  WHERE type IN ('debit', 'credit', 'refund')
+  UNION ALL
+  SELECT 'fareharbor', company, service_date, COALESCE(booked_date, service_date), gross - refunds
+  FROM ${ref("stg_fareharbor_bookings")}
+  WHERE status IS DISTINCT FROM 'rebooked' AND service_date IS NOT NULL
+  UNION ALL
+  SELECT 'hubspot', pipeline_id, service_date, COALESCE(close_date, service_date), amount
+  FROM ${ref("stg_hubspot_deals")}
+  WHERE is_won AND service_date IS NOT NULL
+  UNION ALL
+  SELECT source, assign_key, revenue_date, revenue_date, gross - discounts - refunds
+  FROM ${ref("stg_shopify_revenue_daily")}
+  WHERE date_basis = 'service'
+  UNION ALL
+  SELECT source, assign_key, revenue_date, revenue_date, gross - discounts - refunds
+  FROM ${ref("stg_square_revenue_daily")}
+  WHERE date_basis = 'service'
+)
+SELECT
+  COALESCE(a.business_line, 'unassigned') AS business_line,
+  u.source,
+  u.service_date,
+  u.booked_date,
+  SUM(CAST(u.net AS NUMERIC)) AS net
+FROM unioned AS u
+LEFT JOIN ${ref("business_line_assignments")} AS a
+  ON a.source = u.source AND a.assign_key = u.assign_key
+WHERE u.service_date IS NOT NULL
+GROUP BY 1, 2, 3, 4

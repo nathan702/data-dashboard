@@ -26,6 +26,7 @@ import type {
   EnrollmentSummaryResponse,
   InventoryResponse,
   IsoDate,
+  TargetActuals,
   RetailBreakdownQuery,
   RetailBreakdownResponse,
   RetailKpiQuery,
@@ -85,8 +86,23 @@ export interface Warehouse {
   hubspotPrograms(q: HubspotProgramsScope): Promise<{ programs: HubspotProgramRow[]; lineItems: HubspotLineItemRow[] }>;
   /** HubSpot deals for a line: open pipeline by stage, won by month. */
   hubspotDeals(businessLine: BusinessLine): Promise<HubspotDealsResponse>;
+  /** Targets: per measure, this season so far and last season at the same point and in full. */
+  targetActuals(q: TargetActualsScope): Promise<TargetActuals>;
   /** Plain totals straight from the tables, for the deploy self-check. */
   referenceTotals(start: string, end: string): Promise<ReferenceTotals>;
+}
+
+export interface TargetActualsScope {
+  businessLine: BusinessLine;
+  /** Campminder season number (campers and enrollments). */
+  season: number;
+  /** The line's season dates (revenue, guests, participants). */
+  current: { start: IsoDate; end: IsoDate };
+  previous: { start: IsoDate; end: IsoDate };
+  /** Last season counts what was booked on or before this day "at the same point". */
+  cutoff: IsoDate;
+  /** HubSpot deal properties that add up to participants. */
+  participantProps: string[];
 }
 
 export interface FareharborDaysScope {

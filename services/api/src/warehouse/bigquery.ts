@@ -47,6 +47,10 @@ import {
   type HubspotProgramRow,
   type HubspotProperty,
   type LeadBucket,
+  emptyTargetActuals,
+  TARGET_MEASURES,
+  type TargetActuals,
+  type TargetMeasure,
 } from "@dash/shared";
 import { campLineItemsSql, campminderExtrasSql } from "./campminderExtrasSql.js";
 import { fareharborDaysSql, fareharborExtentSql } from "./fareharborSql.js";
@@ -69,7 +73,8 @@ import { toReportResult } from "./reportResult.js";
 import { toKpis } from "./retail.js";
 import { assignmentsBuiltAtSql, assignmentsSql, breakdownSql, filteredKpiSql, inventorySql, kpiSql, retailDrillParams, saveAssignmentsSql } from "./retailSql.js";
 import { groupKeys } from "./summarize.js";
-import type { FareharborDaysScope, HubspotProgramsScope, Warehouse } from "./types.js";
+import type { FareharborDaysScope, HubspotProgramsScope, TargetActualsScope, Warehouse } from "./types.js";
+import { targetActualsSql } from "./targetsSql.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
 // comes from the request is passed as a query parameter.
@@ -666,11 +671,47 @@ export class BigQueryWarehouse implements Warehouse {
     return (rows as Array<{ entered: string; campers: number }>).map((r) => ({ entered: r.entered, campers: Number(r.campers) }));
   }
 
+  async targetActuals(q: TargetActualsScope): Promise<TargetActuals> {
+    const params = {
+      business_line: q.businessLine,
+      season: q.season,
+      cur_start: q.current.start,
+      cur_end: q.current.end,
+      prev_start: q.previous.start,
+      prev_end: q.previous.end,
+      cutoff: q.cutoff,
+      p_participants: q.participantProps,
+    };
+    const types = {
+      business_line: "STRING",
+      season: "INT64",
+      cur_start: "STRING",
+      cur_end: "STRING",
+      prev_start: "STRING",
+      prev_end: "STRING",
+      cutoff: "STRING",
+      p_participants: ["STRING"],
+    };
+    const [rows] = await this.bq.query({ query: targetActualsSql(this.martsDataset), params, types: types as never, location: this.location });
+    const out = emptyTargetActuals();
+    for (const r of rows as Array<{ measure: string; current: unknown; prev_sp: unknown; prev_final: unknown }>) {
+      if (!(TARGET_MEASURES as readonly string[]).includes(r.measure)) continue;
+      const n = (v: unknown) => (r.measure === "revenue" ? round2(Number(v ?? 0)) : Number(v ?? 0));
+      out[r.measure as TargetMeasure] = { current: n(r.current), previousAtSamePoint: n(r.prev_sp), previousFinal: n(r.prev_final) };
+    }
+    return out;
+  }
+
   async referenceTotals(start: string, end: string) {
     // Deliberately simple SQL with scalar parameters only.
-    const [[rev], [retail], [enrolled]] = await Promise.all([
+    const [[rev], [svc], [retail], [enrolled]] = await Promise.all([
       this.bq.query({
         query: `SELECT COALESCE(SUM(gross), 0) AS gross FROM ${this.table} WHERE date_basis = 'booked' AND revenue_date BETWEEN @start AND @end`,
+        params: { start, end },
+        location: this.location,
+      }),
+      this.bq.query({
+        query: `SELECT COALESCE(SUM(gross - discounts - refunds), 0) AS net FROM ${this.table} WHERE date_basis = 'service' AND business_line != 'unassigned' AND revenue_date BETWEEN @start AND @end`,
         params: { start, end },
         location: this.location,
       }),
@@ -688,6 +729,7 @@ export class BigQueryWarehouse implements Warehouse {
     const bySource = new Map((retail as Array<{ source: string; gross: unknown }>).map((r) => [r.source, Number(r.gross)]));
     return {
       revenueGross: Number((rev as Array<{ gross: unknown }>)[0]?.gross ?? 0),
+      serviceNet: Number((svc as Array<{ net: unknown }>)[0]?.net ?? 0),
       retailGross: { shopify: bySource.get("shopify") ?? 0, square: bySource.get("square") ?? 0 },
       enrollments: newest ? { season: Number(newest.season), count: Number(newest.n) } : null,
     };

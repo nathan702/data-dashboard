@@ -46,6 +46,8 @@ interface Props {
    * outer view has them); uses the same URL filters.
    */
   embedded?: boolean;
+  /** Shown first, above the headline numbers (a business line's targets). */
+  intro?: ReactNode;
   children?: ReactNode;
 }
 
@@ -63,6 +65,7 @@ export function RevenueView({
   showTable = false,
   hideEmptyGroups = [],
   embedded = false,
+  intro,
   children,
 }: Props) {
   const [filters, setFilters] = useFilters();
@@ -140,6 +143,7 @@ export function RevenueView({
     <>
       {error && <div className="error-banner">Couldn't load revenue: {error.message}</div>}
       <div className={`page-body${isFetching && isPlaceholderData ? " refetching" : ""}`}>
+        {intro}
         {data && (
           <>
             <section className="tiles" aria-label="Headline numbers">

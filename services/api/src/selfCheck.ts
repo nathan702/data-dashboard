@@ -1,5 +1,6 @@
 import {
   addDays,
+  BUSINESS_LINES,
   CALENDAR_YEAR,
   campminderCalendar,
   DEFAULT_SEASON_SETTINGS,
@@ -23,6 +24,8 @@ export interface ReferenceTotals {
   revenueGross: number;
   /** SUM(gross) of fct_retail_line_items per platform over the range. */
   retailGross: Record<RetailSource, number>;
+  /** SUM(gross - discounts - refunds) of fct_revenue_daily, service basis, assigned lines only, over the range. */
+  serviceNet: number;
   /** Enrolled camper-sessions in the newest Campminder season (null before any sync). */
   enrollments: { season: number; count: number } | null;
 }
@@ -132,6 +135,29 @@ export async function runSelfCheck(
       if (prev > 0 && s.comparison && s.comparison.enrollments === 0) return "last season's comparison is empty";
     }
     return null;
+  });
+
+  // Targets read their own table (revenue by program date and booking date): this season so far
+  // must equal the service-date revenue over the same dates. Also runs the guests, participants
+  // and Campminder parts of the query for every line.
+  await check("targets match tables", async () => {
+    if (!ref) return "no reference";
+    const r = ref as ReferenceTotals;
+    const before = addDays(start, -1);
+    let total = 0;
+    for (const businessLine of BUSINESS_LINES) {
+      const a = await warehouse.targetActuals({
+        businessLine,
+        season: Number(end.slice(0, 4)),
+        current: { start, end },
+        previous: { start: addDays(start, -365), end: before },
+        cutoff: addDays(end, -365),
+        participantProps: [],
+      });
+      total += a.revenue.current;
+      if (a.revenue.previousAtSamePoint > a.revenue.previousFinal + TOLERANCE) return "last season at the same point exceeds its total";
+    }
+    return close(total, r.serviceNet) ? null : "targets revenue differs from table total";
   });
 
   await check("report builder matches tables", async () => {

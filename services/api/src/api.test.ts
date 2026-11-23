@@ -7,6 +7,7 @@ import { loadConfig } from "./config.js";
 import { MemoryPreferences } from "./preferences.js";
 import { NoopTrigger } from "./refresh.js";
 import { MemorySeasonSettings } from "./seasons.js";
+import { MemoryTargets } from "./targets.js";
 import { MemoryProgramFamilies, MemoryReports, MemorySchools } from "./reports.js";
 import { DEMO_OFFICIAL_SCHOOLS } from "./warehouse/demoSchools.js";
 import { CALENDAR_YEAR, campminderCalendar, DEFAULT_SEASON_SETTINGS } from "@dash/shared";
@@ -61,6 +62,7 @@ function api(auth: AuthDeps | null = null, refresh = new NoopTrigger()) {
     freshness: new DemoFreshness(),
     preferences: new MemoryPreferences(),
     seasons: new MemorySeasonSettings(),
+    targets: new MemoryTargets(),
     reports: new MemoryReports(),
     programFamilies: new MemoryProgramFamilies(),
     schools: new MemorySchools(),
@@ -462,6 +464,18 @@ describe("deploy self-check", () => {
     const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
     // The School and Parent occupation breakdowns are checked against the same table count.
     expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["campminder enrollments match tables", "school grouping runs", "parent occupations run"]);
+  });
+
+  it("catches targets revenue that disagrees with the table", async () => {
+    const { runSelfCheck } = await import("./selfCheck.js");
+    const demo = new DemoWarehouse();
+    const broken = Object.create(demo) as DemoWarehouse;
+    broken.targetActuals = async (q) => {
+      const a = await demo.targetActuals(q);
+      return { ...a, revenue: { ...a.revenue, current: a.revenue.current / 2 } };
+    };
+    const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
+    expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["targets match tables"]);
   });
 });
 
@@ -1043,5 +1057,93 @@ describe("hubspot programs", () => {
     expect(res.body.lineItems.length).toBeGreaterThan(0);
     const props = await request(api()).get("/api/hubspot/properties").expect(200);
     expect(props.body.properties.length).toBeGreaterThan(3);
+  });
+});
+
+describe("targets", () => {
+  const thisYear = Number(new Date().toISOString().slice(0, 4));
+  it("saves targets (admins only) and keeps only measures a line can have", async () => {
+    const app = api();
+    expect((await request(app).get("/api/settings/targets").expect(200)).body).toEqual({ seasons: {} });
+    const body = { seasons: { [thisYear]: { camp: { revenue: 1000, guests: 5 }, farm_store: { revenue: 200 } } } };
+    await request(app).put("/api/settings/targets").send({ seasons: { [thisYear]: { camp: { revenue: -1 } } } }).expect(400);
+    const saved = (await request(app).put("/api/settings/targets").send(body).expect(200)).body;
+    expect(saved).toEqual({ seasons: { [thisYear]: { camp: { revenue: 1000 }, farm_store: { revenue: 200 } } } });
+    expect((await request(app).get("/api/settings/targets")).body).toEqual(saved);
+  });
+
+  it("refuses target changes from non-admins", async () => {
+    const auth: AuthDeps = {
+      allowedDomains: ["calleva.org"],
+      loadAccessList: async () => ({ allowedEmails: [], admins: ["boss@calleva.org"] }),
+      verifyIdToken: async () => org,
+    };
+    await request(api(auth)).put("/api/settings/targets").set("Authorization", "Bearer t").send({ seasons: {} }).expect(403);
+  });
+
+  it("reports progress against each target with last season's pace", async () => {
+    const app = api();
+    const none = (await request(app).get("/api/targets/progress?businessLine=camp").expect(200)).body;
+    expect(none).toMatchObject({ season: null, seasons: [], rows: [] });
+    await request(app)
+      .put("/api/settings/targets")
+      .send({ seasons: { [thisYear]: { farm_store: { revenue: 900_000 } }, [thisYear - 1]: { camp: { revenue: 1_000_000, campers: 500 } } } })
+      .expect(200);
+    const fs = (await request(app).get("/api/targets/progress?businessLine=farm_store").expect(200)).body;
+    expect(fs).toMatchObject({ season: thisYear, seasons: [thisYear], ended: false, alignedBy: "date", range: { start: `${thisYear}-01-01`, end: `${thisYear}-12-31` } });
+    const row = fs.rows[0];
+    expect(row).toMatchObject({ measure: "revenue", target: 900_000 });
+    expect(row.actual).toBeGreaterThan(0);
+    expect(row.expected).toBeGreaterThan(0);
+    expect(row.expected).toBeLessThanOrEqual(900_000);
+    expect(["ahead", "on_track", "behind"]).toContain(row.status);
+    // A finished season: expected is the whole target, and it was reached or missed.
+    const camp = (await request(app).get(`/api/targets/progress?businessLine=camp&season=${thisYear - 1}`).expect(200)).body;
+    expect(camp.ended).toBe(true);
+    expect(camp.rows.map((r: { measure: string }) => r.measure)).toEqual(["revenue", "campers"]);
+    for (const r of camp.rows) {
+      expect(r.expected).toBe(r.target);
+      expect(["reached", "missed"]).toContain(r.status);
+    }
+    await request(app).get("/api/targets/progress?businessLine=nowhere").expect(400);
+  });
+
+  it("moves on to next season's targets once last season's pace is complete", async () => {
+    const app = api();
+    await request(app)
+      .put("/api/settings/targets")
+      .send({ seasons: { [thisYear]: { farm_store: { revenue: 900_000 } }, [thisYear + 1]: { farm_store: { revenue: 950_000 } } } })
+      .expect(200);
+    const now = (await request(app).get(`/api/targets/progress?businessLine=farm_store&season=${thisYear}`).expect(200)).body;
+    const done = now.rows.every((r: { expected: number | null; target: number }) => r.expected !== null && r.expected >= r.target);
+    const auto = (await request(app).get("/api/targets/progress?businessLine=farm_store").expect(200)).body;
+    expect(auto.season).toBe(done ? thisYear + 1 : thisYear);
+    expect(auto.seasons).toEqual([thisYear + 1, thisYear]);
+    await request(app).get(`/api/targets/progress?businessLine=farm_store&season=1999`).expect(400);
+    expect((await request(app).get(`/api/targets/progress?businessLine=farm_store&season=2030`).expect(200)).body.season).toBeNull();
+  });
+
+  it("passes dates as text and the participant properties as a list", async () => {
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const calls: Array<{ query: string; types: Record<string, unknown> }> = [];
+    const fake = {
+      query: async (o: { query: string; types: Record<string, unknown> }) => (
+        calls.push(o), [[{ measure: "revenue", current: "10.005", prev_sp: 4, prev_final: 8 }, { measure: "campers", current: 3, prev_sp: 1, prev_final: 2 }]]
+      ),
+    };
+    const a = await new BigQueryWarehouse(fake as never, "marts").targetActuals({
+      businessLine: "camp",
+      season: 2027,
+      current: { start: "2027-01-01", end: "2027-12-31" },
+      previous: { start: "2026-01-01", end: "2026-12-31" },
+      cutoff: "2026-01-20",
+      participantProps: ["participants"],
+    });
+    expect(a.revenue).toEqual({ current: 10.01, previousAtSamePoint: 4, previousFinal: 8 });
+    expect(a.campers).toEqual({ current: 3, previousAtSamePoint: 1, previousFinal: 2 });
+    expect(a.guests).toEqual({ current: 0, previousAtSamePoint: 0, previousFinal: 0 });
+    expect(calls[0]!.query).toContain("CAST(@cutoff AS DATE)");
+    expect(calls[0]!.query).toContain("fct_revenue_pace");
+    expect(calls[0]!.types).toMatchObject({ cutoff: "STRING", cur_start: "STRING", season: "INT64", p_participants: ["STRING"] });
   });
 });
