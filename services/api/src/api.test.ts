@@ -1128,7 +1128,7 @@ describe("targets", () => {
     const calls: Array<{ query: string; types: Record<string, unknown> }> = [];
     const fake = {
       query: async (o: { query: string; types: Record<string, unknown> }) => (
-        calls.push(o), [[{ measure: "revenue", current: "10.005", prev_sp: 4, prev_final: 8 }, { measure: "campers", current: 3, prev_sp: 1, prev_final: 2 }]]
+        calls.push(o), [[{ measure: "revenue", cur_total: "10.005", prev_sp: 4, prev_final: 8 }, { measure: "campers", cur_total: 3, prev_sp: 1, prev_final: 2 }]]
       ),
     };
     const a = await new BigQueryWarehouse(fake as never, "marts").targetActuals({
@@ -1144,6 +1144,8 @@ describe("targets", () => {
     expect(a.guests).toEqual({ current: 0, previousAtSamePoint: 0, previousFinal: 0 });
     expect(calls[0]!.query).toContain("CAST(@cutoff AS DATE)");
     expect(calls[0]!.query).toContain("fct_revenue_pace");
+    // CURRENT is a reserved word in BigQuery: it can't be a column name.
+    expect(calls[0]!.query).not.toMatch(/\bAS current\b/i);
     expect(calls[0]!.types).toMatchObject({ cutoff: "STRING", cur_start: "STRING", season: "INT64", p_participants: ["STRING"] });
   });
 });

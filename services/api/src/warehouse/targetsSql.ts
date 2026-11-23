@@ -12,7 +12,7 @@ const IN_EITHER = (col: string) => `${col} BETWEEN LEAST(${D("prev_start")}, ${D
 const ranged = (measure: string, from: string, dateCol: string, bookedCol: string, value: string, where: string) => `
     SELECT
       '${measure}' AS measure,
-      SUM(IF(${IN_CUR(dateCol)}, ${value}, 0)) AS current,
+      SUM(IF(${IN_CUR(dateCol)}, ${value}, 0)) AS cur_total,
       SUM(IF(${IN_PREV(dateCol)} AND ${bookedCol} <= ${D("cutoff")}, ${value}, 0)) AS prev_sp,
       SUM(IF(${IN_PREV(dateCol)}, ${value}, 0)) AS prev_final
     FROM ${from}
@@ -27,7 +27,7 @@ export function targetActualsSql(dataset: string) {
   const prevSp = `${prevFinal} AND (application_date IS NULL OR application_date <= ${D("cutoff")})`;
   // Campers: distinct people; enrollments: camper-sessions (one row each), as on the Camp pages.
   const enrolled = (count: (cond: string) => string) => `
-      ${count(cur)} AS current, ${count(prevSp)} AS prev_sp, ${count(prevFinal)} AS prev_final`;
+      ${count(cur)} AS cur_total, ${count(prevSp)} AS prev_sp, ${count(prevFinal)} AS prev_final`;
   const campers = (c: string) => `COUNT(DISTINCT IF(${c}, camper_hash, NULL))`;
   const sessions = (c: string) => `COUNTIF(${c})`;
   return [
