@@ -62,11 +62,20 @@ import {
   type HubspotProgramsResponse,
   NIGHTLY_LINES,
   type FareharborDaysResponse,
+  defaultTargetSeason,
+  samePointLastSeason,
+  targetProgressQuerySchema,
+  targetProgressRows,
+  targetSeasons,
+  targetSettingsSchema,
+  cleanTargetSettings,
+  type TargetProgressResponse,
 } from "@dash/shared";
 import { requireAdmin, requireViewer, type AuthDeps } from "./auth.js";
 import { runSelfCheck } from "./selfCheck.js";
 import type { PreferencesStore } from "./preferences.js";
 import type { SeasonSettingsStore } from "./seasons.js";
+import type { TargetStore } from "./targets.js";
 import type { ProgramFamilyStore, ReportStore, SchoolStore } from "./reports.js";
 import type { RefreshTrigger } from "./refresh.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
@@ -78,6 +87,7 @@ export interface ApiOptions {
   freshness: FreshnessSource;
   preferences: PreferencesStore;
   seasons: SeasonSettingsStore;
+  targets: TargetStore;
   reports: ReportStore;
   programFamilies: ProgramFamilyStore;
   schools: SchoolStore;
@@ -587,6 +597,65 @@ export function createApi(opts: ApiOptions) {
     await opts.seasons.set(parsed.data as SeasonSettings, req.viewer!.email);
     cache.clear();
     res.json(parsed.data);
+  });
+
+  // ---- Targets (Settings → Targets; the targets card on each business line page) ----
+
+  api.get("/settings/targets", async (_req, res) => {
+    res.json(await opts.targets.get());
+  });
+
+  api.put("/settings/targets", requireAdmin, async (req, res) => {
+    const parsed = targetSettingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid targets", issues: parsed.error.issues });
+      return;
+    }
+    const clean = cleanTargetSettings(parsed.data);
+    await opts.targets.set(clean, req.viewer!.email);
+    cache.clear();
+    res.json(clean);
+  });
+
+  api.get("/targets/progress", async (req, res) => {
+    const parsed = targetProgressQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    const { businessLine } = parsed.data;
+    const [targets, settings] = await Promise.all([opts.targets.get(), opts.seasons.get()]);
+    const today = easternDate();
+    const cal = lineCalendar(businessLine, settings);
+    const seasons = targetSeasons(targets, businessLine);
+    const progress = (season: number) => {
+      const values = targets.seasons[String(season)]?.[businessLine] ?? {};
+      const current = cal.range(season);
+      const previous = cal.range(season - 1);
+      const ended = today > current.end;
+      // A finished season is compared with last season's full total; otherwise with last season by the same point.
+      const asOf = ended ? current.end : today;
+      const { cutoff, alignedBy } = samePointLastSeason(businessLine, season, asOf, settings.registration);
+      const key = `targets:${businessLine}:${season}:${today}:${JSON.stringify(values)}:${JSON.stringify(current)}:${cutoff}:${JSON.stringify(settings.hubspot)}`;
+      return cached(key, async (): Promise<TargetProgressResponse> => {
+        const participantProps = values.participants === undefined ? [] : resolveHubspotRoles(settings.hubspot, await opts.warehouse.hubspotProperties()).participants;
+        const actuals = await opts.warehouse.targetActuals({ businessLine, season, current, previous, cutoff, participantProps });
+        return { businessLine, season, seasons, range: current, asOf, ended, samePoint: cutoff, alignedBy, rows: targetProgressRows(businessLine, values, actuals, ended) };
+      });
+    };
+    const now = cal.seasonFor(today);
+    const season = parsed.data.season ?? defaultTargetSeason(seasons, now);
+    if (season === null || !seasons.includes(season)) {
+      const body: TargetProgressResponse = { businessLine, season: null, seasons, range: null, asOf: today, ended: false, samePoint: null, alignedBy: null, rows: [] };
+      res.json(body);
+      return;
+    }
+    let body = await progress(season);
+    // Once last season had everything in by this point (Camp in the fall), move on to next season's targets.
+    if (parsed.data.season === undefined && season === now && seasons.includes(now + 1) && body.rows.every((r) => r.expected !== null && r.expected >= r.target)) {
+      body = await progress(now + 1);
+    }
+    res.json(body);
   });
 
   api.get("/assignments", async (req, res) => {

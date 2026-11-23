@@ -4,6 +4,7 @@ import { SOURCE_INFO, SOURCES, UNASSIGNED, type Source } from "@dash/shared";
 import { ProgramFamiliesCard } from "../components/ProgramFamilies";
 import { SchoolsTab } from "../components/schools/SchoolsTab";
 import { SeasonSettingsCard } from "../components/SeasonSettings";
+import { TargetSettingsCard } from "../components/TargetSettings";
 import { AssignmentsTab, isActive } from "../components/settings/AssignmentsTab";
 import { useAssignments, useMe, useSchools } from "../lib/api";
 
@@ -18,6 +19,7 @@ const PLATFORM_TAB: Record<Source, string> = {
 
 const OTHER_TABS = [
   { id: "seasons", label: "Seasons" },
+  { id: "targets", label: "Targets" },
   { id: "program-families", label: "Program families" },
   { id: "schools", label: "Schools" },
 ] as const;
@@ -25,7 +27,7 @@ const OTHER_TABS = [
 /**
  * Settings, one tab per topic (each with its own address, so it can be
  * bookmarked): a tab per connected platform for business-line assignments,
- * then seasons, program families and schools.
+ * then seasons, targets, program families and schools.
  */
 export function SettingsPage() {
   const { tab } = useParams();
@@ -83,6 +85,7 @@ export function SettingsPage() {
       </nav>
       {(SOURCES as readonly string[]).includes(tab) && known && <AssignmentsTab source={tab as Source} />}
       {tab === "seasons" && <SeasonSettingsCard canEdit={isAdmin} />}
+      {tab === "targets" && <TargetSettingsCard canEdit={isAdmin} />}
       {tab === "program-families" && <ProgramFamiliesCard canEdit={isAdmin} />}
       {tab === "schools" && <SchoolsTab canEdit={isAdmin} />}
       {notYet.length > 0 && (SOURCES as readonly string[]).includes(tab) && (

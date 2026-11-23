@@ -23,6 +23,11 @@ import {
   type SeasonCalendar,
   type Source,
   type SourceFreshness,
+  easternDate,
+  emptyTargetActuals,
+  BUSINESS_LINE_INFO,
+  type TargetActuals,
+  type TargetSettings,
 } from "@dash/shared";
 import { demoRunReport } from "./demoReports.js";
 import { demoFareharborDays, demoFareharborExtent } from "./demoFareharbor.js";
@@ -30,7 +35,7 @@ import type { SchoolMap } from "./reportSql.js";
 import { DEMO_SESSION_GROUPS, demoCampLineItems, demoCampminderExtras, demoCampminderFinance, demoRegistrationPace, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
-import type { DailyRevenueRow, FareharborDaysScope, FreshnessSource, HubspotProgramsScope, Warehouse } from "./types.js";
+import type { DailyRevenueRow, FareharborDaysScope, FreshnessSource, HubspotProgramsScope, TargetActualsScope, Warehouse } from "./types.js";
 import { DEMO_HUBSPOT_PROPERTIES, demoHubspotPrograms } from "./demoHubspot.js";
 
 /**
@@ -115,6 +120,24 @@ export function demoRow(s: DemoStream, date: string, basis: RevenueBasis): Daily
     transactions: Math.round(gross / s.ticket),
   };
 }
+
+/** Sample targets for this year and next, roughly last year's totals plus a little. */
+const thisYear = Number(easternDate().slice(0, 4));
+export const DEMO_TARGETS: TargetSettings = {
+  seasons: {
+    [String(thisYear)]: {
+      camp: { revenue: 1_800_000, campers: 2_500, enrollments: 6_600 },
+      river_school: { revenue: 1_100_000, guests: 5_000 },
+      haunted_forest: { revenue: 320_000, guests: 52_000 },
+      education: { participants: 4_000 },
+      farm_store: { revenue: 950_000 },
+      river_store: { revenue: 1_000_000 },
+    },
+    [String(thisYear + 1)]: {
+      camp: { revenue: 1_950_000, campers: 2_650, enrollments: 6_900 },
+    },
+  },
+};
 
 /** Demo stand-ins for the assignable values (Square locations, the Shopify store). */
 const DEMO_CANDIDATES: Array<Omit<AssignmentRow, "businessLine" | "origin" | "lastActivity"> & { defaultLine: BusinessLineOrUnassigned | null }> = [
@@ -267,12 +290,69 @@ export class DemoWarehouse implements Warehouse {
     return [...counts].map(([program, enrollments]) => ({ program, enrollments })).sort((a, b) => b.enrollments - a.enrollments);
   }
 
+  async targetActuals(q: TargetActualsScope): Promise<TargetActuals> {
+    const today = easternDate();
+    const out = emptyTargetActuals();
+    const inCur = (d: string) => d >= q.current.start && d <= q.current.end;
+    const inPrev = (d: string) => d >= q.previous.start && d <= q.previous.end;
+    // Revenue: each service day's net, booked a made-up number of days ahead (more for camp and deals).
+    const leadDays: Record<string, number> = { camp: 270, school_year: 60, summer_bookings: 30, october: 25, deals: 120, retail: 0, weekend_retail: 0 };
+    for (const s of DEMO_STREAMS.filter((x) => x.businessLine === q.businessLine)) {
+      for (let d = q.previous.start; d <= q.current.end; d = addDays(d, 1)) {
+        if (!inCur(d) && !inPrev(d)) continue;
+        const r = demoRow(s, d, "service");
+        const net = r.gross - r.discounts - r.refunds;
+        const booked = addDays(d, -Math.round((leadDays[s.shape] ?? 0) * noise(`${d}${s.source}lead`)));
+        const m = out.revenue;
+        if (inCur(d) && booked <= today) m.current += net;
+        if (inPrev(d)) {
+          m.previousFinal += net;
+          if (booked <= q.cutoff) m.previousAtSamePoint += net;
+        }
+      }
+    }
+    for (const k of ["current", "previousAtSamePoint", "previousFinal"] as const) out.revenue[k] = Math.round(out.revenue[k] * 100) / 100;
+    // Guests: FareHarbor's demo nights, booked by today (this season) or the cutoff (last season).
+    if (BUSINESS_LINE_INFO[q.businessLine].sources.includes("fareharbor")) {
+      const scope = { businessLine: q.businessLine, from: q.previous.start, to: q.current.end, nightly: true };
+      for (const r of demoFareharborDays({ ...scope, cutoff: today })) if (inCur(r.day)) out.guests.current += r.guestsAtSamePoint;
+      for (const r of demoFareharborDays({ ...scope, cutoff: q.cutoff })) {
+        if (!inPrev(r.day)) continue;
+        out.guests.previousFinal += r.guests;
+        out.guests.previousAtSamePoint += r.guestsAtSamePoint;
+      }
+    }
+    // Participants: the demo HubSpot programs.
+    if (q.businessLine === "education" || q.businessLine === "chaps") {
+      const roles = { participants: q.participantProps, chaperones: [], programType: [], food: [], transportation: [] };
+      const { programs } = demoHubspotPrograms({ businessLine: q.businessLine, from: q.previous.start, to: q.current.end, currentStart: q.current.start, cutoff: q.cutoff, roles });
+      for (const p of programs) {
+        if (p.period === "current") out.participants.current += p.participants;
+        else {
+          out.participants.previousFinal += p.participants;
+          if (p.atSamePoint) out.participants.previousAtSamePoint += p.participants;
+        }
+      }
+    }
+    // Campers and enrollments: the demo Campminder rows.
+    const en = demoEnrollmentRows().filter((r) => r.businessLine === q.businessLine && r.statusCode === "EN");
+    const count = (rows: typeof en) => ({ campers: new Set(rows.map((r) => r.camper)).size, enrollments: rows.length });
+    const cur = count(en.filter((r) => r.season === q.season));
+    const prev = en.filter((r) => r.season === q.season - 1);
+    const prevFinal = count(prev);
+    const prevSp = count(prev.filter((r) => r.applicationDate <= q.cutoff));
+    for (const m of ["campers", "enrollments"] as const) out[m] = { current: cur[m], previousAtSamePoint: prevSp[m], previousFinal: prevFinal[m] };
+    return out;
+  }
+
   async referenceTotals(start: string, end: string) {
     // The demo's own summaries are its reference.
     const s = await this.revenueSummary({ start, end, basis: "booked", measure: "gross", granularity: "week", compare: "none", groupBy: "source" }, CALENDAR_YEAR);
     const k = async (src: RetailSource) => (await this.retailKpis(src, { start, end, compare: "none", filters: {} })).current.gross;
+    const svc = await this.revenueSummary({ start, end, basis: "service", measure: "net", granularity: "week", compare: "none", groupBy: "business_line" }, CALENDAR_YEAR);
     return {
       revenueGross: s.groups.reduce((t, g) => t + g.current.gross, 0),
+      serviceNet: svc.groups.filter((g) => g.key !== "unassigned").reduce((t, g) => t + g.current.net, 0),
       retailGross: { shopify: await k("shopify"), square: await k("square") },
       enrollments: (() => {
         const newest = demoEnrollmentSeasons(undefined)[0];

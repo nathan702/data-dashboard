@@ -8,12 +8,13 @@ import { loadConfig } from "./config.js";
 import { FirestoreFreshness } from "./freshness.js";
 import { FirestorePreferences, MemoryPreferences } from "./preferences.js";
 import { FirestoreSeasonSettings, MemorySeasonSettings } from "./seasons.js";
+import { FirestoreTargets, MemoryTargets } from "./targets.js";
 import { loadOfficialSchools } from "./officialSchools.js";
 import { DEMO_OFFICIAL_SCHOOLS } from "./warehouse/demoSchools.js";
 import { FirestoreProgramFamilies, FirestoreReports, FirestoreSchools, MemoryProgramFamilies, MemoryReports, MemorySchools } from "./reports.js";
 import { CloudRunJobTrigger, NoopTrigger } from "./refresh.js";
 import { BigQueryWarehouse } from "./warehouse/bigquery.js";
-import { DemoFreshness, DemoWarehouse } from "./warehouse/demo.js";
+import { DEMO_TARGETS, DemoFreshness, DemoWarehouse } from "./warehouse/demo.js";
 
 const config = loadConfig();
 const needsFirebase = !config.authDisabled || !config.demoData;
@@ -45,6 +46,7 @@ const app = createApi({
   freshness: config.demoData || !firebase ? new DemoFreshness() : new FirestoreFreshness(getFirestore(firebase)),
   preferences: config.demoData || !firebase ? new MemoryPreferences() : new FirestorePreferences(getFirestore(firebase)),
   seasons: config.demoData || !firebase ? new MemorySeasonSettings() : new FirestoreSeasonSettings(getFirestore(firebase)),
+  targets: config.demoData || !firebase ? new MemoryTargets(config.demoData ? DEMO_TARGETS : undefined) : new FirestoreTargets(getFirestore(firebase)),
   reports: config.demoData || !firebase ? new MemoryReports() : new FirestoreReports(getFirestore(firebase)),
   programFamilies: config.demoData || !firebase ? new MemoryProgramFamilies() : new FirestoreProgramFamilies(getFirestore(firebase)),
   schools: config.demoData || !firebase ? new MemorySchools() : new FirestoreSchools(getFirestore(firebase)),

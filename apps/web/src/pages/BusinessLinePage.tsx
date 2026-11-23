@@ -6,6 +6,7 @@ import { HubspotDetail } from "../components/HubspotDetail";
 import { FreshnessNote } from "../components/Freshness";
 import { RetailDetail } from "../components/RetailDetail";
 import { RevenueView } from "../components/RevenueView";
+import { TargetsCard } from "../components/TargetsCard";
 import { SOURCE_COLOR_VAR } from "../lib/colors";
 
 /** Platforms that have a connector today; others show when they arrive. */
@@ -78,6 +79,7 @@ export function BusinessLinePage() {
       groups={[{ key: id, label: info.label }]}
       freshnessSources={info.sources}
       showBasis={!retailOnly}
+      intro={<TargetsCard businessLine={id} />}
     >
       {multi && (
         <RevenueView

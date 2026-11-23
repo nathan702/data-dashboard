@@ -41,6 +41,8 @@ import type {
   SavedReportInput,
   SeasonSettings,
   SourceFreshness,
+  TargetProgressResponse,
+  TargetSettings,
 } from "@dash/shared";
 import { useAuth } from "./auth";
 
@@ -114,12 +116,26 @@ export function useSeasonSettings() {
 export function useSaveSeasonSettings() {
   return useApiMutation<SeasonSettings, SeasonSettings>("/api/settings/seasons", [
     ["season-settings"],
+    ["target-progress"],
     ["revenue"],
     ["enrollment-summary"],
     ["registration-pace"],
     ["fareharbor-days"],
     ["hubspot-programs"],
   ]);
+}
+
+export function useTargetSettings() {
+  return useApi<TargetSettings>(["target-settings"], "/api/settings/targets");
+}
+
+export function useSaveTargetSettings() {
+  return useApiMutation<TargetSettings, TargetSettings>("/api/settings/targets", [["target-settings"], ["target-progress"]]);
+}
+
+export function useTargetProgress(businessLine: BusinessLine, season: number | undefined) {
+  const qs = retailQs({ businessLine, season: season ? String(season) : undefined });
+  return useApi<TargetProgressResponse>(["target-progress", qs], `/api/targets/progress?${qs}`, { refetchInterval: 10 * 60_000 });
 }
 
 export function useMe() {

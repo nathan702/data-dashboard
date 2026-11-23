@@ -68,11 +68,12 @@ unmatched is "Unassigned" and flagged.
 - **Staging / marts**: latest state, typed, Eastern dates. Main marts:
   `fct_revenue_daily`, `fct_retail_orders`, `fct_retail_line_items`,
   `shopify_inventory_current`, `fct_campminder_enrollments`,
-  `business_line_assignments`.
+  `business_line_assignments`, `fct_revenue_pace` (revenue by program date
+  and booking date, for targets).
 - **Report builder data sets** (enrollments, campers by season, campers by
   program family, revenue, store sales) are computed at query time from the
   marts, so they need no extra tables.
-- **Firestore**: sync state and cursors, `config/access`, `config/seasons`,
+- **Firestore**: sync state and cursors, `config/access`, `config/seasons`, `config/targets`,
   `config/programFamilies`, `config/schools`, saved `reports`, per-person tab order, and the
   geocode cache (`campminder_geocodes`, not readable from the app).
 - **Deploys**: every push to the branch deploys automatically; a self-check
@@ -111,8 +112,12 @@ unmatched is "Unassigned" and flagged.
   households) sorted into one of 15 categories on import; only the category
   is kept. Parent occupation in reports; breakdown and filter on the Camp
   pages.
-- **Settings tabs**: one tab per platform's assignments, Seasons, Program
-  families, Schools.
+- **Settings tabs**: one tab per platform's assignments, Seasons, Targets,
+  Program families, Schools.
+- **Targets** (first part): goals per business line, season and measure on
+  Settings → Targets; a Season targets card on each line's page with where
+  it is now, where it should be by now at last season's pace, and ahead / on
+  track / behind.
 
 ## Roadmap (in order)
 
@@ -153,29 +158,47 @@ unmatched is "Unassigned" and flagged.
    returning when a camper was at a camp location last season. The Camp page's
    "Sign-ups since registration opened" chart lines seasons up by days since
    each family's wave opened (all waves or one; enrollments or campers).
-### Platform connections
+### Next (in order)
 
-8. **FareHarbor** ← *in progress* (River School, Events, Haunted Forest): one
-    FareHarbor company per line, read through FareHarbor's Public API (one key
-    per company). Built: bookings since 2019 (new ones hourly; recent and
-    upcoming re-read every 6 hours, all weekly), time-slot capacity, revenue by
-    business line, and a webhook endpoint. *Needs:* each company's Client ID and
-    Secret stored as secrets. Next: booking and guest counts, sell-through per
-    time slot (Haunted Forest nights).
-9. **Shopify** (River Store): built; needs the app credentials.
-10. **HubSpot** ← *in progress* (Education Programs, CHAPs group bookings): deals
-    and pipelines every 15 minutes, revenue by pipeline → business line, open
-    pipeline and won-by-month on each line's page. *Needs:* the private app
-    token, pipeline assignments, and (optional) the program-date property.
-11. **Digests and alerts**: email and Slack.
-12. **Targets**: goals to compare against.
+8. **Targets** ← *in progress*. Goals per business line, season and measure
+   (net revenue; campers and enrollments; FareHarbor guests; HubSpot
+   participants) on Settings → Targets. "Now" counts the season's programs
+   as soon as they're booked; "expected by now" is the target times the share
+   of last season's total in by the same point (same date last year; same
+   weekday for Events and Haunted Forest; Camp by days since registration
+   opened). Within ±5% is on track. Built: settings, the line-page card, the
+   deploy self-check. Next: a targets table on the Overview and a Targets data
+   set in the report builder.
+9. **Digests and alerts**: email and Slack, including behind-pace alerts from
+   the targets. *Needs:* a Slack incoming webhook (stored as a secret) and a
+   sending address.
+10. **FareHarbor** (River School, Events, Haunted Forest): one FareHarbor
+    company per line, read through FareHarbor's Public API (one key per
+    company). Built: bookings since 2019 (new ones hourly; recent and upcoming
+    re-read every 6 hours, all weekly), time-slot capacity, revenue by
+    business line, webhook endpoint, guest counts, season to date vs last
+    season, night by night, ticket types, when tickets are bought. *Needs:*
+    each company's Client ID and Secret stored as secrets. Next: sell-through
+    per time slot (Haunted Forest nights).
+11. **HubSpot** (Education Programs, CHAPs group bookings): deals and pipelines
+    every 15 minutes, revenue by pipeline → business line, open pipeline,
+    won-by-month and programs on each line's page. Next: move from a legacy
+    private app to a HubSpot developer-platform app built with the HubSpot CLI
+    (HubSpot stopped new legacy private apps on Oct 26, 2026 and retires them
+    by September 2027), and off the CRM v3/v4 APIs HubSpot is retiring.
+    *Needs:* the new app's key, pipeline assignments, and (optional) the
+    program-date property.
+12. **Shopify** (River Store): built; needs the app credentials (Shopify Dev
+    Dashboard access).
+
+Then, last in this group: **Camp page speed**, keeping one API server always
+running (about $5–10 a month; waiting on approval).
 
 ### Then
 
-13. **Decision-making features**: forecasts and behind-pace alerts, capacity and
-   waitlists, returning families not yet re-enrolled, campers per age group per
-   week (staffing), where new families come from, weekly email/Slack digest,
-   revenue per camper.
+13. **Decision-making features**: forecasts, capacity and waitlists,
+   returning families not yet re-enrolled, campers per age group per week
+   (staffing), where new families come from, revenue per camper.
 14. **Test and live separation**: a second website (`…-test`) in the same Google
    Cloud project, reading the same raw data into its own tables; changes deploy
    to test first and are promoted to live.
@@ -206,9 +229,13 @@ unmatched is "Unassigned" and flagged.
 - Assign the remaining Campminder session groups and Square locations (Settings).
 - Check program families against the real program list (Settings).
 - Add Haunted Forest's 2027 end date when known (Settings → Seasons).
+- Add 2027 registration opening dates (Settings → Seasons) so Camp targets
+  line up by days since registration opened; until then they use the same
+  date last year.
+- Enter targets (Settings → Targets).
 - Add admins to Firestore `config/access` (until then everyone is an admin).
 - Item 3: add a School column to the Campminder report (and the history tabs).
-- Item 12: FareHarbor documentation and samples (see above).
+- Item 10: FareHarbor documentation and samples (see above).
 
 ## Notes
 
