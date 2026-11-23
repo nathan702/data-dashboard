@@ -394,3 +394,11 @@ tbody tr:hover { background: var(--wash); }
 .target-bar-expected { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text-primary); border-radius: 1px; }
 .targets-table .target-progress { min-width: 160px; padding-left: 32px; }
 .targets-input { width: 9em; text-align: right; }
+
+/* My notifications */
+.notif-check { display: flex; margin: 6px 0; color: var(--text-primary); }
+.notif-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.notif-row .notif-check { margin-right: 0; }
+.notif-percent { width: 5em; text-align: right; }
+.notif-lines { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 16px; }
+.notif-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }

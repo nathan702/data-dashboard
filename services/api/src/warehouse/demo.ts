@@ -290,6 +290,18 @@ export class DemoWarehouse implements Warehouse {
     return [...counts].map(([program, enrollments]) => ({ program, enrollments })).sort((a, b) => b.enrollments - a.enrollments);
   }
 
+  async signupCounts(start: string, end: string) {
+    const by = new Map<string, { enrollments: number; campers: Set<string> }>();
+    for (const r of demoEnrollmentRows()) {
+      if (r.statusCode !== "EN" || r.applicationDate < start || r.applicationDate > end) continue;
+      const g = by.get(r.businessLine) ?? { enrollments: 0, campers: new Set<string>() };
+      g.enrollments++;
+      g.campers.add(r.camper);
+      by.set(r.businessLine, g);
+    }
+    return [...by].map(([businessLine, g]) => ({ businessLine, enrollments: g.enrollments, campers: g.campers.size }));
+  }
+
   async targetActuals(q: TargetActualsScope): Promise<TargetActuals> {
     const today = easternDate();
     const out = emptyTargetActuals();

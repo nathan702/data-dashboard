@@ -14,6 +14,8 @@ export interface ApiConfig {
   /** Origins allowed to call the API from a browser (the Firebase Hosting URLs). */
   corsOrigins: string[];
   cacheTtlSeconds: number;
+  /** The dashboard's address, linked from digests and alerts. */
+  appUrl: string;
 }
 
 const list = (v: string | undefined) =>
@@ -39,5 +41,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     projectId: env.GCP_PROJECT_ID,
     corsOrigins: list(env.CORS_ORIGINS),
     cacheTtlSeconds: Number(env.CACHE_TTL_SECONDS ?? 60),
+    appUrl: env.APP_URL ?? "https://data.calleva.org",
   };
 }

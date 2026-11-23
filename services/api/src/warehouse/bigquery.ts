@@ -671,6 +671,23 @@ export class BigQueryWarehouse implements Warehouse {
     return (rows as Array<{ entered: string; campers: number }>).map((r) => ({ entered: r.entered, campers: Number(r.campers) }));
   }
 
+  async signupCounts(start: string, end: string) {
+    const [rows] = await this.bq.query({
+      query: `SELECT business_line, COUNT(*) AS enrollments, COUNT(DISTINCT camper_hash) AS campers
+        FROM ${this.enrollments}
+        WHERE status_code = 'EN' AND application_date BETWEEN CAST(@start AS DATE) AND CAST(@end AS DATE)
+        GROUP BY 1`,
+      params: { start, end },
+      types: { start: "STRING", end: "STRING" },
+      location: this.location,
+    });
+    return (rows as Array<{ business_line: string; enrollments: unknown; campers: unknown }>).map((r) => ({
+      businessLine: r.business_line,
+      enrollments: Number(r.enrollments ?? 0),
+      campers: Number(r.campers ?? 0),
+    }));
+  }
+
   async targetActuals(q: TargetActualsScope): Promise<TargetActuals> {
     const params = {
       business_line: q.businessLine,

@@ -1,3 +1,4 @@
+import { MyNotifications } from "./pages/MyNotifications";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { ApiError, useMe } from "./lib/api";
@@ -41,6 +42,7 @@ function Gate() {
         <Route path="reports/new" element={<ReportBuilder />} />
         <Route path="reports/:id" element={<ReportBuilder />} />
         <Route path="advanced/settings/:tab?" element={<SettingsPage />} />
+        <Route path="me/notifications" element={<MyNotifications />} />
         <Route path="advanced/status" element={<AdminOnly><Status /></AdminOnly>} />
         <Route path="advanced/platform/:source" element={<AdminOnly><PlatformPage /></AdminOnly>} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -73,6 +73,9 @@ export function Layout() {
         </nav>
         <div className="user">
           <span className="muted user-email">{user?.email}</span>
+          <NavLink to="/me/notifications" className="nav-button" title="Your digests and alerts">
+            🔔 Notifications
+          </NavLink>
           <button type="button" className="button button-ghost" onClick={() => void signOut()}>
             Sign out
           </button>
