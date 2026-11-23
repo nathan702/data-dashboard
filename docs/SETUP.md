@@ -140,6 +140,10 @@ again.
 - The card opens on the season whose registration is next or under way
   (after Labor Day, next summer's) and has its own season, wave and
   segment filters; the page's filters don't apply to it.
+- A few Campminder enrollments have no application date. Those families
+  count as re-enrolled, but they aren't on the "since registration opened"
+  chart, and last season's ones count toward "the same point" only once the
+  season is over.
 
 **Reports → Returning families** has the same rows (one per household and
 season) with status, wave, last season's location, summers at camp, campers
