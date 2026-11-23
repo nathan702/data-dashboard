@@ -144,6 +144,9 @@ const CAMPER_MULTI = { parent_occupation: "parent_occupations" };
 
 function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean): DatasetSql {
   switch (dataset) {
+    case "targets":
+      // Targets are in Firestore; the API pivots them itself (targetsReport.ts).
+      throw new Error("The targets data set isn't run in BigQuery");
     case "enrollments":
       return {
         ctes: [ENR_BASE(marts)],

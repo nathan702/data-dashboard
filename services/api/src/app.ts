@@ -63,6 +63,8 @@ import {
   NIGHTLY_LINES,
   type FareharborDaysResponse,
   defaultTargetSeason,
+  BUSINESS_LINES,
+  type BusinessLine,
   samePointLastSeason,
   targetProgressQuerySchema,
   targetProgressRows,
@@ -70,12 +72,14 @@ import {
   targetSettingsSchema,
   cleanTargetSettings,
   type TargetProgressResponse,
+  type TargetsOverviewResponse,
 } from "@dash/shared";
 import { requireAdmin, requireViewer, type AuthDeps } from "./auth.js";
 import { runSelfCheck } from "./selfCheck.js";
 import type { PreferencesStore } from "./preferences.js";
 import type { SeasonSettingsStore } from "./seasons.js";
 import type { TargetStore } from "./targets.js";
+import { runTargetsReport } from "./targetsReport.js";
 import type { ProgramFamilyStore, ReportStore, SchoolStore } from "./reports.js";
 import type { RefreshTrigger } from "./refresh.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
@@ -324,6 +328,10 @@ export function createApi(opts: ApiOptions) {
       res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join("; "), issues: parsed.error.issues });
       return;
     }
+    if (parsed.data.dataset === "targets") {
+      res.json(runTargetsReport(parsed.data, await allTargetProgress(), easternDate()));
+      return;
+    }
     const [families, schools] = await Promise.all([opts.programFamilies.get(), schoolMap()]);
     res.json(
       await cached(`report:${JSON.stringify(parsed.data)}:${JSON.stringify(families)}:${schools.key}`, () =>
@@ -354,9 +362,12 @@ export function createApi(opts: ApiOptions) {
       change: "none" as const,
     };
     const [families, schools] = await Promise.all([opts.programFamilies.get(), schoolMap()]);
-    const result = await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}:${schools.key}`, () =>
-      opts.warehouse.runReport(valuesSpec, families, schools.map),
-    );
+    const result =
+      spec.dataset === "targets"
+        ? runTargetsReport(valuesSpec, await allTargetProgress(), easternDate())
+        : await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}:${schools.key}`, () =>
+            opts.warehouse.runReport(valuesSpec, families, schools.map),
+          );
     res.json({
       field,
       values: result.cells.filter((c) => c.kind === "cell").map((c) => ({ value: c.rows[0]!, count: c.value ?? 0 })),
@@ -617,13 +628,8 @@ export function createApi(opts: ApiOptions) {
     res.json(clean);
   });
 
-  api.get("/targets/progress", async (req, res) => {
-    const parsed = targetProgressQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
-      return;
-    }
-    const { businessLine } = parsed.data;
+  /** A line's progress for one season (default: the season under way, or next season once this one's pace is complete). */
+  const lineTargetProgress = async (businessLine: BusinessLine, requested?: number): Promise<TargetProgressResponse> => {
     const [targets, settings] = await Promise.all([opts.targets.get(), opts.seasons.get()]);
     const today = easternDate();
     const cal = lineCalendar(businessLine, settings);
@@ -644,19 +650,42 @@ export function createApi(opts: ApiOptions) {
       });
     };
     const now = cal.seasonFor(today);
-    const season = parsed.data.season ?? defaultTargetSeason(seasons, now);
+    const season = requested ?? defaultTargetSeason(seasons, now);
     if (season === null || !seasons.includes(season)) {
-      const body: TargetProgressResponse = { businessLine, season: null, seasons, range: null, asOf: today, ended: false, samePoint: null, alignedBy: null, rows: [] };
-      res.json(body);
+      return { businessLine, season: null, seasons, range: null, asOf: today, ended: false, samePoint: null, alignedBy: null, rows: [] };
+    }
+    const body = await progress(season);
+    // Once last season had everything in by this point (Camp in the fall), move on to next season's targets.
+    if (requested === undefined && season === now && seasons.includes(now + 1) && body.rows.every((r) => r.expected !== null && r.expected >= r.target)) {
+      return progress(now + 1);
+    }
+    return body;
+  };
+
+  api.get("/targets/progress", async (req, res) => {
+    const parsed = targetProgressQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
       return;
     }
-    let body = await progress(season);
-    // Once last season had everything in by this point (Camp in the fall), move on to next season's targets.
-    if (parsed.data.season === undefined && season === now && seasons.includes(now + 1) && body.rows.every((r) => r.expected !== null && r.expected >= r.target)) {
-      body = await progress(now + 1);
-    }
+    res.json(await lineTargetProgress(parsed.data.businessLine, parsed.data.season));
+  });
+
+  // Every line with targets, each on the season its own page opens on (the Overview's targets table).
+  api.get("/targets/overview", async (_req, res) => {
+    const targets = await opts.targets.get();
+    const lines = BUSINESS_LINES.filter((l) => targetSeasons(targets, l).length > 0);
+    const all = await Promise.all(lines.map((l) => lineTargetProgress(l)));
+    const body: TargetsOverviewResponse = { lines: all.filter((p) => p.rows.length > 0) };
     res.json(body);
   });
+
+  /** Every season's progress for every line with targets (the Targets report data set). */
+  const allTargetProgress = async () => {
+    const targets = await opts.targets.get();
+    const jobs = BUSINESS_LINES.flatMap((l) => targetSeasons(targets, l).map((season) => () => lineTargetProgress(l, season)));
+    return Promise.all(jobs.map((j) => j()));
+  };
 
   api.get("/assignments", async (req, res) => {
     const { rows, pendingRefresh } = await opts.warehouse.assignments();

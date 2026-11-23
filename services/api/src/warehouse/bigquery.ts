@@ -694,10 +694,10 @@ export class BigQueryWarehouse implements Warehouse {
     };
     const [rows] = await this.bq.query({ query: targetActualsSql(this.martsDataset), params, types: types as never, location: this.location });
     const out = emptyTargetActuals();
-    for (const r of rows as Array<{ measure: string; current: unknown; prev_sp: unknown; prev_final: unknown }>) {
+    for (const r of rows as Array<{ measure: string; cur_total: unknown; prev_sp: unknown; prev_final: unknown }>) {
       if (!(TARGET_MEASURES as readonly string[]).includes(r.measure)) continue;
       const n = (v: unknown) => (r.measure === "revenue" ? round2(Number(v ?? 0)) : Number(v ?? 0));
-      out[r.measure as TargetMeasure] = { current: n(r.current), previousAtSamePoint: n(r.prev_sp), previousFinal: n(r.prev_final) };
+      out[r.measure as TargetMeasure] = { current: n(r.cur_total), previousAtSamePoint: n(r.prev_sp), previousFinal: n(r.prev_final) };
     }
     return out;
   }

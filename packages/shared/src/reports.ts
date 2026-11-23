@@ -9,7 +9,7 @@ import { isIsoDate } from "./dates.js";
  * word always means the same thing.
  */
 
-export const REPORT_DATASETS = ["enrollments", "camper_seasons", "program_families", "families", "campminder_finance", "revenue", "store_sales"] as const;
+export const REPORT_DATASETS = ["enrollments", "camper_seasons", "program_families", "families", "campminder_finance", "revenue", "store_sales", "targets"] as const;
 export type ReportDataset = (typeof REPORT_DATASETS)[number];
 
 /** How a field's values sort: numbers, school grades, weekdays, or text. */
@@ -84,6 +84,29 @@ const CAMPER_FIELDS = [
 ];
 
 export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
+  targets: {
+    id: "targets",
+    label: "Targets",
+    description:
+      "One row per target (Settings → Targets): business line, season and measure, with where it is now and where it should be by now at last season's pace. Targets mix dollars and counts, so filter or group by Measure before adding them up.",
+    dated: false,
+    defaultMeasure: "of_target",
+    fields: [
+      f("season", "Season", "The season the target is for (the line's own season rule).", "numeric"),
+      f("business_line", "Business line", "Camp, River School, Farm Store…"),
+      f("measure", "Measure", "Net revenue ($), Campers, Enrollments, Guests or Participants."),
+      f("status", "Status", "Ahead, On track (within 5% of expected by now), Behind; Reached or Missed once the season is over; No pace yet when last season has nothing to compare with."),
+      f("season_state", "Season state", "Under way, Finished or Not started."),
+    ],
+    measures: [
+      m("target", "Target", "The target (dollars for Net revenue, otherwise a count).", "count", true),
+      m("now", "Now", "Where it is now: the season's programs counted as soon as they're booked.", "count", true),
+      m("expected", "Expected by now", "The target times last season's share of its total by the same point.", "count", true),
+      m("of_target", "% of target", "Now ÷ target.", "percent", false),
+      m("of_expected", "% of expected by now", "Now ÷ expected by now (100% = exactly on pace).", "percent", false),
+      m("targets", "Targets", "Number of targets.", "count", true),
+    ],
+  },
   enrollments: {
     id: "enrollments",
     label: "Enrollments",

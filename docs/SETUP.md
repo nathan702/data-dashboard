@@ -109,6 +109,10 @@ boxes mean no target. Each line's page then shows a **Season targets** card:
 - **Status**: within ±5% of expected is on track; above is ahead, below is
   behind. A finished season shows reached or missed.
 
+The **Overview** lists every line's targets in one table, and **Reports →
+Targets** is a report builder data set (target, now, expected by now, % of
+target, % of expected by season, line, measure and status).
+
 The card opens on the season under way; once last season had everything in
 by this point (Camp in the fall), it moves on to next season's targets if
 they're set. Stored in Firestore at `config/targets`. Revenue comes from

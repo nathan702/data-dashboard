@@ -1128,7 +1128,7 @@ describe("targets", () => {
     const calls: Array<{ query: string; types: Record<string, unknown> }> = [];
     const fake = {
       query: async (o: { query: string; types: Record<string, unknown> }) => (
-        calls.push(o), [[{ measure: "revenue", current: "10.005", prev_sp: 4, prev_final: 8 }, { measure: "campers", current: 3, prev_sp: 1, prev_final: 2 }]]
+        calls.push(o), [[{ measure: "revenue", cur_total: "10.005", prev_sp: 4, prev_final: 8 }, { measure: "campers", cur_total: 3, prev_sp: 1, prev_final: 2 }]]
       ),
     };
     const a = await new BigQueryWarehouse(fake as never, "marts").targetActuals({
@@ -1144,6 +1144,58 @@ describe("targets", () => {
     expect(a.guests).toEqual({ current: 0, previousAtSamePoint: 0, previousFinal: 0 });
     expect(calls[0]!.query).toContain("CAST(@cutoff AS DATE)");
     expect(calls[0]!.query).toContain("fct_revenue_pace");
+    // CURRENT is a reserved word in BigQuery: it can't be a column name.
+    expect(calls[0]!.query).not.toMatch(/\bAS current\b/i);
     expect(calls[0]!.types).toMatchObject({ cutoff: "STRING", cur_start: "STRING", season: "INT64", p_participants: ["STRING"] });
+  });
+});
+
+describe("targets overview and report", () => {
+  const thisYear = Number(new Date().toISOString().slice(0, 4));
+  const seed = async () => {
+    const app = api();
+    await request(app)
+      .put("/api/settings/targets")
+      .send({
+        seasons: {
+          [thisYear]: { farm_store: { revenue: 900_000 }, river_school: { revenue: 300_000, guests: 3_000 } },
+          [thisYear - 1]: { farm_store: { revenue: 800_000 } },
+        },
+      })
+      .expect(200);
+    return app;
+  };
+
+  it("lists every line with targets on the season its page opens on", async () => {
+    const app = await seed();
+    const o = (await request(app).get("/api/targets/overview").expect(200)).body;
+    expect(o.lines.map((l: { businessLine: string }) => l.businessLine)).toEqual(["river_school", "farm_store"]);
+    const fs = (await request(app).get("/api/targets/progress?businessLine=farm_store").expect(200)).body;
+    expect(o.lines[1]).toEqual(fs);
+    expect((await request(api()).get("/api/targets/overview").expect(200)).body).toEqual({ lines: [] });
+  });
+
+  it("pivots targets in the report builder, with totals and filters", async () => {
+    const app = await seed();
+    const run = async (spec: object) => (await request(app).post("/api/reports/run").send({ spec }).expect(200)).body;
+    const byLine = await run({ dataset: "targets", rows: ["business_line"], column: "season", measure: "target", filters: { measure: ["Net revenue ($)"] } });
+    const cell = (line: string, season: number) =>
+      byLine.cells.find((c: { kind: string; rows: string[]; column: string }) => c.kind === "cell" && c.rows[0] === line && c.column === String(season))?.value;
+    expect(cell("farm_store", thisYear)).toBe(900_000);
+    expect(cell("farm_store", thisYear - 1)).toBe(800_000);
+    expect(cell("river_school", thisYear)).toBe(300_000);
+    expect(byLine.cells.find((c: { kind: string }) => c.kind === "total").value).toBe(2_000_000);
+
+    const now = await run({ dataset: "targets", rows: ["business_line", "measure"], measure: "now", filters: { season: [String(thisYear)] } });
+    const progress = (await request(app).get(`/api/targets/progress?businessLine=river_school&season=${thisYear}`)).body;
+    const guests = now.cells.find((c: { rows: string[] }) => c.rows[0] === "river_school" && c.rows[1] === "Guests");
+    expect(guests.value).toBe(progress.rows.find((r: { measure: string }) => r.measure === "guests").actual);
+
+    const pct = await run({ dataset: "targets", rows: ["season"], measure: "of_target", filters: { business_line: ["farm_store"] } });
+    const last = pct.cells.find((c: { rows: string[] }) => c.rows[0] === String(thisYear - 1));
+    expect(last.value).toBeGreaterThan(0);
+
+    const values = (await request(app).post("/api/reports/values").send({ spec: { dataset: "targets", measure: "target" }, field: "status" }).expect(200)).body;
+    expect(values.values.length).toBeGreaterThan(0);
   });
 });

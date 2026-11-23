@@ -8,7 +8,7 @@ import {
   type ReportSpec,
 } from "@dash/shared";
 import { effectiveFilters, type SchoolMap } from "./reportSql.js";
-import { toReportResult } from "./reportResult.js";
+import { pivotRecords, type Measure, type Rec } from "./reportPivot.js";
 import { DEMO_STREAMS, demoRow } from "./demo.js";
 import { demoEnrollmentRows, demoFamilyCampers, demoTransactions, familyBucket } from "./demoCampminder.js";
 import { demoLineKey, demoLines } from "./demoRetail.js";
@@ -17,8 +17,6 @@ import { demoLineKey, demoLines } from "./demoRetail.js";
  * The report builder over demo data: the same data sets, fields and measures
  * as reportSql.ts, computed in memory (local development and tests).
  */
-type Rec = Record<string, unknown>;
-type Measure = (rs: Rec[]) => number | null;
 
 const distinct = (rs: Rec[], k: string, where: (r: Rec) => boolean = () => true) => new Set(rs.filter(where).map((r) => r[k])).size;
 const avg = (rs: Rec[], k: string) => {
@@ -291,6 +289,8 @@ function storeRecords(start: string, end: string): Rec[] {
 
 function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap, usesWeek: boolean): { recs: Rec[]; measures: Record<string, Measure> } {
   switch (spec.dataset) {
+    case "targets":
+      throw new Error("The targets data set is pivoted by the API (targetsReport.ts)");
     case "enrollments":
       return {
         recs: enrollmentRecords(pf, schools, usesWeek),
@@ -437,49 +437,10 @@ export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings, schoo
   const filters = effectiveFilters(spec);
   const exclude = Object.fromEntries(Object.entries(spec.exclude).filter(([, v]) => v.length > 0));
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters || "week" in exclude;
-  const { recs: all, measures } = dataset(spec, pf, schools, usesWeek);
-  // Same rules as the SQL: a multi-valued row or column splits each record by value; a multi-valued filter keeps it once.
-  const multi = MULTI[spec.dataset] ?? {};
-  const list = (r: Rec, id: string) => {
-    const vs = (r[multi[id]!] as string[] | undefined) ?? [];
-    return vs.length ? vs : [null];
-  };
-  const exploded = [...spec.rows, ...(spec.column ? [spec.column] : [])].filter((id) => id in multi);
-  const recs = exploded.reduce<Rec[]>((rs, id) => rs.flatMap((r) => list(r, id).map((v) => ({ ...r, [id]: v }))), all);
-  const val = (r: Rec, id: string) => str(r[id]) ?? NONE_VALUE;
-  const matches = (r: Rec, id: string, values: string[]) =>
-    id in multi && !exploded.includes(id) ? list(r, id).some((v) => values.includes(v ?? NONE_VALUE)) : values.includes(val(r, id));
-  const excluded = (r: Rec, id: string, values: string[]) =>
-    id in multi ? list(r, id).some((v) => values.includes(v ?? NONE_VALUE)) : values.includes(val(r, id));
-  const picked = recs
-    .filter((r) => Object.entries(filters).every(([id, values]) => matches(r, id, values)))
-    .filter((r) => Object.entries(exclude).every(([id, values]) => !excluded(r, id, values)))
-    .map((r) => (spec.dataset === "camper_seasons" ? { ...r, ...campersComputed(r, exploded, filters) } : r));
-  const measure = measures[spec.measure]!;
-  const rowIds = spec.rows;
-  const sets: Array<{ rows: boolean; col: boolean }> = [];
-  const hasRows = rowIds.length > 0;
-  const hasCol = !!spec.column;
-  sets.push({ rows: hasRows, col: hasCol });
-  if (hasRows && hasCol) sets.push({ rows: true, col: false }, { rows: false, col: true });
-  if (hasRows || hasCol) sets.push({ rows: false, col: false });
-  const out: Array<Record<string, unknown>> = [];
-  for (const set of sets) {
-    const groups = new Map<string, { key: Record<string, unknown>; rs: Rec[] }>();
-    for (const r of picked) {
-      const key: Record<string, unknown> = {};
-      if (set.rows) rowIds.forEach((id, i) => (key[`r${i}`] = val(r, id)));
-      if (set.col) key.c = val(r, spec.column!);
-      const k = JSON.stringify(key);
-      const g = groups.get(k) ?? { key, rs: [] };
-      g.rs.push(r);
-      groups.set(k, g);
-    }
-    if (groups.size === 0 && !set.rows && !set.col) groups.set("{}", { key: {}, rs: [] });
-    for (const g of groups.values()) {
-      out.push({ ...g.key, value: measure(g.rs), g_row: hasRows && !set.rows ? 1 : 0, g_col: hasCol && !set.col ? 1 : 0 });
-    }
-  }
-  out.sort((a, b) => Number(b.g_row) + Number(b.g_col) - (Number(a.g_row) + Number(a.g_col)) || Number(b.value ?? 0) - Number(a.value ?? 0));
-  return toReportResult(spec, out);
+  const { recs, measures } = dataset(spec, pf, schools, usesWeek);
+  return pivotRecords(spec, recs, measures, {
+    multi: MULTI[spec.dataset] ?? {},
+    filters,
+    computed: spec.dataset === "camper_seasons" ? (r, exploded) => campersComputed(r, exploded, filters) : undefined,
+  });
 }
