@@ -125,6 +125,9 @@ unmatched is "Unassigned" and flagged.
   the Overview with where each line is now, where it should be by now at last
   season's pace, and ahead / on track / behind; a Targets data set in the
   report builder.
+- **Returning families** (Camp): last season's camp-location families and
+  whether they've signed up again, against last season at the same point,
+  on the Camp page, in the report builder and in the digests.
 
 ## Roadmap (in order)
 
@@ -205,9 +208,29 @@ unmatched is "Unassigned" and flagged.
 
 ### Then
 
-13. **Decision-making features**: forecasts, capacity and waitlists,
-   returning families not yet re-enrolled, campers per age group per week
-   (staffing), where new families come from, revenue per camper.
+13. **Decision-making features**, in this order:
+    1. **Returning families not yet re-enrolled** ✅ A family is returning
+       for season S when a camper was enrolled at a camp location (Settings →
+       Seasons → Camp registration) in S − 1; re-enrolled when any of its
+       campers (a new sibling too) is enrolled in Camp in S. Families only
+       waitlisted or applied, and those who signed up then cancelled, are
+       their own statuses; families whose campers are all too old now have
+       aged out (oldest age on Settings → Seasons, else the oldest age 1% of
+       last season's campers were) and are left out of the percentages.
+       "Same point last year" is the same number of days since each family's
+       wave opened (else the same date a year earlier). Camp page card (tiles,
+       share re-enrolled by days since opening, segments with click-to-filter),
+       a Returning families report data set and starter report, a digest line
+       while registration is under way, and a deploy self-check. Counts and
+       scrambled IDs only: staff pull the families themselves from Campminder.
+    2. **Campers per age group per week (staffing)**, with a projection to
+       season end. *Needs from Calleva:* age groups and staff ratios.
+    3. **Revenue per camper.**
+    4. **Forecasts** for every line, from the Targets pace logic.
+    5. **Where new families come from.** *Ask:* does Campminder have a "how
+       did you hear about us" question that could be added to the report?
+    6. **Capacity and waitlists.** *Needs:* session capacity from Campminder
+       (a session report tab) or entered on Settings.
 14. **Test and live separation**: a second website (`…-test`) in the same Google
    Cloud project, reading the same raw data into its own tables; changes deploy
    to test first and are promoted to live.

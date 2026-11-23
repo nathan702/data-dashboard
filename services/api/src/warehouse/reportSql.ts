@@ -147,6 +147,9 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
     case "targets":
       // Targets are in Firestore; the API pivots them itself (targetsReport.ts).
       throw new Error("The targets data set isn't run in BigQuery");
+    case "returning_families":
+      // One row per family from returningFamiliesSql, with rules applied in TypeScript; the API pivots it (returningReport.ts).
+      throw new Error("The returning families data set isn't run here");
     case "enrollments":
       return {
         ctes: [ENR_BASE(marts)],

@@ -26,6 +26,7 @@ import {
   campminderExtrasQuerySchema,
   campminderFinanceQuerySchema,
   registrationPaceQuerySchema,
+  returningQuerySchema,
   type RegistrationPaceQuery,
   type CampminderFinanceQuery,
   isBusinessLine,
@@ -85,6 +86,8 @@ import type { PreferencesStore } from "./preferences.js";
 import type { SeasonSettingsStore } from "./seasons.js";
 import type { TargetStore } from "./targets.js";
 import { runTargetsReport } from "./targetsReport.js";
+import { runReturningReport } from "./returningReport.js";
+import { allReturningFamilies, returningResponse } from "./returning.js";
 import { createTargetProgress } from "./targetProgress.js";
 import type { NotificationStore } from "./notifications.js";
 import { buildDigest } from "./notify.js";
@@ -352,6 +355,15 @@ export function createApi(opts: ApiOptions) {
     const [s, schools] = await Promise.all([opts.seasons.get(), schoolMap()]);
     return opts.warehouse.registrationPace(d, s.registration, schools.map);
   });
+  // Returning families (Camp): last season's camp-location families and whether they're back. Depends on today and the settings.
+  api.get("/campminder/returning", async (req, res) => {
+    const parsed = returningQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    res.json(await returningResponse({ ...opts, cache: cached }, parsed.data.season, easternDate()));
+  });
   enrollmentRoute("/campminder/finance", (q) => campminderFinanceQuerySchema.safeParse(q), async (d: CampminderFinanceQuery) =>
     opts.warehouse.campminderFinance(d, (await schoolMap()).map),
   );
@@ -392,6 +404,10 @@ export function createApi(opts: ApiOptions) {
       res.json(runTargetsReport(parsed.data, await allTargetProgress(), easternDate()));
       return;
     }
+    if (parsed.data.dataset === "returning_families") {
+      res.json(runReturningReport(parsed.data, (await allReturningFamilies({ ...opts, cache: cached })).families));
+      return;
+    }
     const [families, schools] = await Promise.all([opts.programFamilies.get(), schoolMap()]);
     res.json(
       await cached(`report:${JSON.stringify(parsed.data)}:${JSON.stringify(families)}:${schools.key}`, () =>
@@ -425,7 +441,9 @@ export function createApi(opts: ApiOptions) {
     const result =
       spec.dataset === "targets"
         ? runTargetsReport(valuesSpec, await allTargetProgress(), easternDate())
-        : await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}:${schools.key}`, () =>
+        : spec.dataset === "returning_families"
+          ? runReturningReport(valuesSpec, (await allReturningFamilies({ ...opts, cache: cached })).families)
+          : await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}:${schools.key}`, () =>
             opts.warehouse.runReport(valuesSpec, families, schools.map),
           );
     res.json({

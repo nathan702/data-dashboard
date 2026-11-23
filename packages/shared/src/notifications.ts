@@ -4,6 +4,7 @@ import type { IsoDate } from "./dates.js";
 import { SOURCE_INFO, type Source } from "./sources.js";
 import { TARGET_MEASURE_INFO, TARGET_STATUS_LABEL, type TargetProgressResponse, type TargetStatus } from "./targets.js";
 import type { SourceFreshness } from "./types.js";
+import type { ReturningSummary } from "./returning.js";
 
 /**
  * Digests and alerts. Each person chooses on My notifications what reaches
@@ -126,6 +127,8 @@ export interface DigestContent {
   period: { start: IsoDate; end: IsoDate };
   rows: DigestLineRow[];
   targets: TargetProgressResponse[];
+  /** Camp's returning families while their registration is under way (shown with Camp). */
+  returning?: ReturningSummary | null;
   /** Platforms not synced lately. */
   stale: Source[];
   /** Link to the dashboard. */
@@ -157,6 +160,14 @@ export function digestSlackText(c: DigestContent, lines: BusinessLine[]): string
     if (r.revenue === 0 && !r.previous && !r.signups?.enrollments) continue;
     const signups = r.signups && r.signups.enrollments > 0 ? ` · ${int.format(r.signups.enrollments)} sign-ups (${int.format(r.signups.campers)} campers)` : "";
     out.push(`• ${BUSINESS_LINE_INFO[r.line].label}: ${usd.format(r.revenue)}${change(r.revenue, r.previous)}${signups}`);
+  }
+  const back = c.returning;
+  if (back && lines.includes("camp") && back.current.families > 0) {
+    const pct = (n: number, of: number) => `${Math.round((n / of) * 100)}%`;
+    const prev = back.previous ? ` · last year ${pct(back.previous.samePoint, back.previous.families)} at this point` : "";
+    out.push(
+      `• Camp returning families ${back.season}: ${int.format(back.current.enrolled)} of ${int.format(back.current.families)} re-enrolled (${pct(back.current.enrolled, back.current.families)})${prev}`,
+    );
   }
   // Finished seasons are settled; digests follow the ones under way.
   const targets = c.targets.filter((t) => lines.includes(t.businessLine) && t.rows.length > 0 && !t.ended);

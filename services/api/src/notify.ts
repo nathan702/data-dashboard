@@ -22,6 +22,7 @@ import type { AlertStateStore, NotificationStore } from "./notifications.js";
 import type { SeasonSettingsStore } from "./seasons.js";
 import type { Messenger, SendResult } from "./slack.js";
 import { createTargetProgress } from "./targetProgress.js";
+import { returningForDigest } from "./returning.js";
 import type { TargetStore } from "./targets.js";
 import type { FreshnessSource, Warehouse } from "./warehouse/types.js";
 
@@ -57,12 +58,13 @@ export async function buildDigest(deps: DigestDeps, kind: "daily" | "weekly", to
       CALENDAR_YEAR,
     );
   const progress = createTargetProgress(deps);
-  const [byDate, byWeekday, signups, targets, freshness] = await Promise.all([
+  const [byDate, byWeekday, signups, targets, freshness, returning] = await Promise.all([
     summary("previous_year"),
     summary("previous_year_weekday"),
     deps.warehouse.signupCounts(period.start, period.end),
     Promise.all(BUSINESS_LINES.map((l) => progress(l))),
     deps.freshness.freshness(),
+    returningForDigest(deps, today),
   ]);
   const group = (r: RevenueSummaryResponse, line: BusinessLine) => r.groups.find((g) => g.key === line);
   const rows = BUSINESS_LINES.map((line) => {
@@ -80,6 +82,7 @@ export async function buildDigest(deps: DigestDeps, kind: "daily" | "weekly", to
     period,
     rows,
     targets: targets.filter((t) => t.rows.length > 0),
+    returning,
     stale: staleSources(freshness, deps.now?.() ?? new Date()),
     url: deps.appUrl,
   };

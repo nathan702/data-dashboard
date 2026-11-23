@@ -11,6 +11,7 @@ import type {
   CampminderExtras,
   CampminderFinanceSummary,
   RegistrationPaceResponse,
+  ReturningResponse,
   AssignmentUpdate,
   BusinessLineOrUnassigned,
   ComparisonMode,
@@ -123,6 +124,7 @@ export function useSaveSeasonSettings() {
     ["revenue"],
     ["enrollment-summary"],
     ["registration-pace"],
+    ["returning-families"],
     ["fareharbor-days"],
     ["hubspot-programs"],
   ]);
@@ -282,6 +284,12 @@ export function useEnrollmentSummary(q: EnrollmentScope) {
 export function useRegistrationPace(q: Omit<EnrollmentScope, "season">) {
   const qs = enrollmentQs({ ...q, season: undefined });
   return useApi<RegistrationPaceResponse>(["registration-pace", qs], `/api/campminder/registration-pace?${qs}`);
+}
+
+/** Returning families (Camp): the season shown (default: the one whose registration is next or under way) and the two before. */
+export function useReturningFamilies(season: number | undefined) {
+  const qs = season ? `season=${season}` : "";
+  return useApi<ReturningResponse>(["returning-families", qs], `/api/campminder/returning?${qs}`, { refetchInterval: 10 * 60_000 });
 }
 
 export function useCampminderFinance(q: EnrollmentScope) {

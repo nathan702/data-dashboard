@@ -32,7 +32,7 @@ import {
 import { demoRunReport } from "./demoReports.js";
 import { demoFareharborDays, demoFareharborExtent } from "./demoFareharbor.js";
 import type { SchoolMap } from "./reportSql.js";
-import { DEMO_SESSION_GROUPS, demoCampLineItems, demoCampminderExtras, demoCampminderFinance, demoRegistrationPace, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
+import { DEMO_SESSION_GROUPS, demoCampLineItems, demoCampminderExtras, demoCampminderFinance, demoRegistrationPace, demoReturningFamilies, demoReturningFamilyCounts, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
 import type { DailyRevenueRow, FareharborDaysScope, FreshnessSource, HubspotProgramsScope, TargetActualsScope, Warehouse } from "./types.js";
@@ -259,6 +259,14 @@ export class DemoWarehouse implements Warehouse {
 
   async registrationPace(q: RegistrationPaceQuery, registration: RegistrationSettings, schools?: SchoolMap) {
     return demoRegistrationPace(q, registration, schools);
+  }
+
+  async returningFamilies(locations: RegistrationSettings["locations"], seasons: number[]) {
+    return demoReturningFamilies(locations, seasons);
+  }
+
+  async returningFamilyCounts(groups: string[]) {
+    return demoReturningFamilyCounts(groups);
   }
 
   async campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap) {

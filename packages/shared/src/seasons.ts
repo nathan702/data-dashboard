@@ -47,6 +47,12 @@ export interface RegistrationSettings {
   opens: Record<string, Partial<Record<RegistrationWave, IsoDate>>>;
   /** Camp session group → the state its location is in (other groups don't decide a wave). */
   locations: Record<string, CampLocation>;
+  /**
+   * Returning families: the oldest a camper can be on June 1 and still come
+   * back to Camp; older campers have aged out. Null: automatic (the oldest age
+   * at least 1% of last season's campers were).
+   */
+  ageOutAfter: number | null;
 }
 
 export const DEFAULT_REGISTRATION: RegistrationSettings = {
@@ -59,6 +65,7 @@ export const DEFAULT_REGISTRATION: RegistrationSettings = {
     "2026": { va: "2026-01-06", md: "2026-01-08", new: "2026-01-12" },
   },
   locations: { Farm: "md", "Riley's": "md", Madeira: "va", Fraser: "va" },
+  ageOutAfter: null,
 };
 
 export interface SeasonSettings {
@@ -107,6 +114,8 @@ export const seasonSettingsSchema = z.object({
   registration: z.object({
     opens: z.record(yearKey, z.partialRecord(z.enum(REGISTRATION_WAVES), isoDate)),
     locations: z.record(z.string().min(1).max(200), z.enum(["va", "md"])),
+    // Saved before this setting existed: automatic.
+    ageOutAfter: z.number().int().min(3).max(25).nullable().default(null),
   }),
   fareharbor: fareharborSettingsSchema,
   hubspot: hubspotSettingsSchema,

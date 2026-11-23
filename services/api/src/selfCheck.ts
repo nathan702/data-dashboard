@@ -6,10 +6,13 @@ import {
   DEFAULT_SEASON_SETTINGS,
   easternDate,
   RETAIL_SOURCES,
+  isIsoDate,
   reportSpecSchema,
+  resolveReturning,
   STARTER_REPORTS,
   type RetailSource,
 } from "@dash/shared";
+import { runReturningReport } from "./returningReport.js";
 import type { SchoolMap } from "./warehouse/reportSql.js";
 import type { Warehouse } from "./warehouse/types.js";
 
@@ -230,6 +233,25 @@ export async function runSelfCheck(
     return rows.length && flat.length === seasons.size ? `every season's sign-ups fall on one day (${flat.join(", ")})` : null;
   });
 
+  // Returning families: one row per household and season, the same number as a plain count of last season's households.
+  await check("returning families match tables", async () => {
+    const { registration } = DEFAULT_SEASON_SETTINGS;
+    const [rows, counts] = await Promise.all([
+      warehouse.returningFamilies(registration.locations, []),
+      warehouse.returningFamilyCounts(Object.keys(registration.locations)),
+    ]);
+    for (const c of counts) {
+      const n = rows.filter((r) => r.season === c.season).length;
+      if (n !== c.families) return `season ${c.season}: ${n} families, table count ${c.families}`;
+    }
+    if (rows.length !== sum(counts.map((c) => c.families))) return "families in seasons the table count doesn't have";
+    if (rows.some((r) => r.campers.length === 0)) return "a family without campers";
+    // Dates arrive as text: an empty or odd date would put every family on day 0.
+    if (rows.some((r) => r.enrolled && !(r.enrolledOn && isIsoDate(r.enrolledOn)))) return "a re-enrolled family without its sign-up date";
+    resolveReturning(rows, registration);
+    return null;
+  });
+
   await check("HubSpot deals run", async () => {
     await warehouse.hubspotDeals("education");
     await warehouse.hubspotProperties();
@@ -285,7 +307,9 @@ export async function runSelfCheck(
 
   for (const starter of STARTER_REPORTS) {
     await check(`starter report runs: ${starter.name}`, async () => {
-      await warehouse.runReport(starter.spec, { overrides: {} });
+      if (starter.spec.dataset === "returning_families") {
+        runReturningReport(starter.spec, resolveReturning(await warehouse.returningFamilies(DEFAULT_SEASON_SETTINGS.registration.locations, []), DEFAULT_SEASON_SETTINGS.registration));
+      } else await warehouse.runReport(starter.spec, { overrides: {} });
       return null;
     });
   }

@@ -9,7 +9,7 @@ import { isIsoDate } from "./dates.js";
  * word always means the same thing.
  */
 
-export const REPORT_DATASETS = ["enrollments", "camper_seasons", "program_families", "families", "campminder_finance", "revenue", "store_sales", "targets"] as const;
+export const REPORT_DATASETS = ["enrollments", "camper_seasons", "program_families", "families", "returning_families", "campminder_finance", "revenue", "store_sales", "targets"] as const;
 export type ReportDataset = (typeof REPORT_DATASETS)[number];
 
 /** How a field's values sort: numbers, school grades, weekdays, or text. */
@@ -244,6 +244,38 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
       m("weeks_together", "Sibling weeks together", "Weeks with two or more of a family's campers at camp at once, summed over families.", "count", true),
       m("pct_together", "% of sibling families together", "Of families with siblings, the share whose campers overlapped at least one week.", "percent", false),
       m("return_rate", "% of families who came back", "Share of households enrolled again the next season (seasons with a known next season only).", "percent", false),
+    ],
+  },
+  returning_families: {
+    id: "returning_families",
+    label: "Returning families",
+    description:
+      "One row per household per season it could come back for: households with a camper enrolled at a camp location (Settings → Seasons → Registration) the season before, and whether they've signed up for Camp again. Families whose campers have all aged out are kept, with status Aged out, and left out of the percentages.",
+    dated: false,
+    defaultMeasure: "pct_reenrolled",
+    fields: [
+      f("season", "Season", "The season the family could come back for (it was at camp the season before).", "numeric"),
+      f("status", "Status", "Re-enrolled, Waitlisted or applied, Signed up then cancelled, Not yet, or Aged out (every camper from last season too old for Camp now)."),
+      f("wave", "Wave", "The registration wave the family signs up in: Returning VA or Returning MD."),
+      f("session_group", "Last season's location", "The camp-location session group where the family's campers spent the most weeks the season before."),
+      f("summers", "Summers at camp", "Most summers at camp among the family's campers as of the season before (1 summer = that was their first)."),
+      f("campers_last_season", "Campers last season", "The family's campers at camp locations the season before: 1 camper, 2 campers, 3+ campers."),
+      f("weeks_last_season", "Weeks last season", "Camper-weeks at camp locations the season before, summed over the family's campers."),
+      f("weeks_after_opening", "Weeks after opening", "When the family re-enrolled: whole weeks after its wave opened (0 = the week it opened, −1 = before opening).", "numeric"),
+      f("state", "Home state", "Household's state the season before."),
+      f("zip", "Home ZIP", "Household's 5-digit ZIP code the season before."),
+      f("household", "Household", "One household (scrambled ID, the same across seasons and data sets)."),
+    ],
+    measures: [
+      m("pct_reenrolled", "% re-enrolled", "Share of families (aged-out ones left out) with a camper enrolled in Camp this season.", "percent", false),
+      m("families", "Families", "Returning families, including aged-out ones.", "count", true),
+      m("reenrolled", "Re-enrolled", "Families with a camper enrolled in Camp this season (a new sibling counts).", "count", true),
+      m("not_yet", "Not yet", "Families with no Camp sign-up this season (aged-out ones left out).", "count", true),
+      m("waitlisted", "Waitlisted or applied", "Families only waitlisted or applied, not yet enrolled.", "count", true),
+      m("aged_out", "Aged out", "Families whose campers from last season are all too old for Camp now.", "count", true),
+      m("eligible_campers", "Returning campers", "Last season's campers still young enough for Camp.", "count", true),
+      m("reenrolled_campers", "Returning campers re-enrolled", "Of those, campers enrolled in Camp this season.", "count", true),
+      m("pct_campers_reenrolled", "% of returning campers re-enrolled", "Returning campers re-enrolled ÷ returning campers.", "percent", false),
     ],
   },
   campminder_finance: {
@@ -511,6 +543,12 @@ export const STARTER_REPORTS: SavedReport[] = [
     "Families compared with last season",
     "Whether each season's families are new, or sent more, the same or fewer campers than the season before.",
     { dataset: "families", rows: ["change_vs_last"], column: "season", measure: "families", filters: { business_line: ["camp"] } },
+  ),
+  starter(
+    "returning-by-location",
+    "Returning families: re-enrolled by last season's location",
+    "Of the families at each camp location last season, the share signed up for Camp again, per season. Change the measure to Not yet for how many are still to come back.",
+    { dataset: "returning_families", rows: ["session_group"], column: "season", measure: "pct_reenrolled", change: "difference" },
   ),
   starter(
     "tuition-by-group",

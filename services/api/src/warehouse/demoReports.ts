@@ -291,6 +291,8 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
   switch (spec.dataset) {
     case "targets":
       throw new Error("The targets data set is pivoted by the API (targetsReport.ts)");
+    case "returning_families":
+      throw new Error("The returning families data set is pivoted by the API (returningReport.ts)");
     case "enrollments":
       return {
         recs: enrollmentRecords(pf, schools, usesWeek),
