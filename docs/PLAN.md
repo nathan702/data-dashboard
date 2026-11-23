@@ -185,7 +185,7 @@ unmatched is "Unassigned" and flagged.
     and retires them by September 2027) and the date-versioned `2026-09` APIs
     (supported until about March 2028). No CLI-built app is needed: the
     dashboard only reads, with no webhooks. Connected with a service key.
-11. **Digests and alerts** ← *in progress*. Each person chooses their own on
+11. **Digests and alerts** ✅ (Slack). Each person chooses their own on
     🔔 Notifications: Slack direct message and/or email, a daily digest
     (weekdays or every day) and/or a weekly one on Mondays, at an hour they
     pick (6–10am Eastern), for the lines they pick (default: their tabs); and
@@ -196,11 +196,12 @@ unmatched is "Unassigned" and flagged.
     with their tab order in `users/{sign-in email}` (staff sign-in addresses,
     agreed). Built: the page, the hourly job, Slack DMs through a Calleva Slack
     app (`infra/slack-app-manifest.yaml`; token in secret `slack-bot-token`).
-    Next: email, from `noreply@calleva.org` through the Gmail API (one-time
-    Workspace admin approval).
-
-12. **Camp page speed**: keep one API server always running (about $5–10 a
-    month; waiting on approval).
+    Email is on hold: `no-reply@calleva.org` is an alternate sending address
+    on a personal account today, so sending through it would put every
+    message in that person's Sent folder and tie it to their account. Resume
+    once there's a dedicated `no-reply@` Workspace account (then OAuth for
+    that one account, `gmail.send` only), or send through a personal account
+    knowingly. The email box on My notifications stays greyed out until then.
 
 ### Then
 
@@ -240,6 +241,9 @@ unmatched is "Unassigned" and flagged.
     is mostly 0. Needs each resource's capacity and which tickets use which
     resources (from FareHarbor's API if it exposes resources, else Settings),
     then sell-through per resource by night and time slot.
+19. **Camp page speed** (moved here): keep one API server always running so
+    pages don't wait for one to start (about $5–10 a month; would be offset
+    by item 17). Waiting on approval.
 
 ## Open items for Calleva
 
@@ -250,7 +254,6 @@ unmatched is "Unassigned" and flagged.
   line up by days since registration opened; until then they use the same
   date last year.
 - Enter targets (Settings → Targets).
-- Install the Slack app and store its token (SETUP.md → Notifications).
 - Add admins to Firestore `config/access` (until then everyone is an admin).
 - Item 3: add a School column to the Campminder report (and the history tabs).
 
