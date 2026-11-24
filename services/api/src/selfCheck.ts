@@ -269,13 +269,20 @@ export async function runSelfCheck(
     const c = per.current;
     if (!close(c.tuition + c.extras + c.notPerCamper, fin.netTuition)) return `season ${season}: per camper and not counted don't add up to net tuition`;
     if (c.campers > 0 && c.tuition === 0) return `season ${season}: campers but no tuition given to them`;
-    const report = await warehouse.runReport(
-      reportSpecSchema.parse({ dataset: "camper_seasons", rows: [], measure: "net_tuition", filters: { season: [String(season)] } }),
-      { overrides: {} },
-      new Map(),
-      [],
-    );
-    if (!close(report.cells[0]?.value ?? 0, c.tuition)) return `season ${season}: report builder's net tuition differs from the card's`;
+    // The report rounds each camper to the cent: allow that much.
+    const near = (a: number, b: number, campers: number) => Math.abs(a - b) <= TOLERANCE + 0.005 * campers;
+    const reportTotal = async (line?: string) =>
+      (
+        await warehouse.runReport(
+          reportSpecSchema.parse({ dataset: "camper_seasons", rows: [], measure: "net_tuition", filters: { season: [String(season)], ...(line ? { business_line: [line] } : {}) } }),
+          { overrides: {} },
+          new Map(),
+          [],
+        )
+      ).cells[0]?.value ?? 0;
+    const camp = (await warehouse.camperTuition({ season, businessLine: "camp", filters: {} }, { prevCutoff: "9999-12-31", extras: [] })).current;
+    if (!near(await reportTotal("camp"), camp.tuition, camp.campers)) return `season ${season}: Camp's report builder net tuition differs from the card's`;
+    if (!near(await reportTotal(), c.tuition, c.campers)) return `season ${season}: all lines' report builder net tuition differs from the card's (Camp alone matches)`;
     // With filters, lines are matched to camper-sessions; last season as of a date.
     await warehouse.camperTuition({ season, businessLine: "camp", filters: { week: ["1"] } }, { prevCutoff: `${season - 1}-12-31`, extras: ["Lunch"] }, new Map());
     return null;

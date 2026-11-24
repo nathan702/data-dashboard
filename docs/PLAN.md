@@ -230,8 +230,8 @@ unmatched is "Unassigned" and flagged.
        given to a camper: a line under a camper is theirs; one under a parent
        is split across the household's campers enrolled in its session (no
        session: in its business line) in proportion to their charges. A
-       session's lines count per camper only when the camper is enrolled in
-       that session (cancelled sessions' charges, and lines with no camper,
+       line counts per camper only when the camper is enrolled in its
+       business line and, if it names one, its session (cancelled sessions' charges, and lines with no camper,
        are shown as "not counted per camper"). Extras are kept apart. The
        Tuition card (Camp, CHAPs, School Year) shows net tuition per camper,
        per camper-week (weekly sessions) and extras per camper against last
