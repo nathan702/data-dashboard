@@ -20,6 +20,8 @@ import {
   type CampminderExtrasRow,
   type CampminderFinanceQuery,
   type CampminderFinanceSummary,
+  type CamperTuition,
+  type CamperTuitionResponse,
   type OccupationCategory,
   type RegistrationPaceQuery,
   type RegistrationPaceResponse,
@@ -361,6 +363,8 @@ export interface DemoTransaction {
   season: number;
   businessLine: BusinessLineOrUnassigned;
   family: string;
+  /** Who the line is under: the camper, or null for a parent (sibling discounts, like Campminder). */
+  person: string | null;
   type: "debit" | "credit" | "payment" | "refund";
   category: string;
   sessionGroup: string;
@@ -394,6 +398,7 @@ export function demoTransactions(): DemoTransaction[] {
       season: r.season,
       businessLine: r.businessLine,
       family: r.camper,
+      person: r.camper as string | null,
       category: category(r.businessLine),
       sessionGroup: r.sessionGroup,
       session: r.sessionName,
@@ -405,7 +410,7 @@ export function demoTransactions(): DemoTransaction[] {
     out.push({ ...base, ...noItem, transactionId: id, type: "debit", amount: price, method: null, item: r.sessionName, itemGroup: r.sessionName });
     const n = noise(`${id}fin`);
     const discount = n < 0.12 ? Math.round(price * 0.15) : 0;
-    if (discount) out.push({ ...base, ...noItem, transactionId: `${id}c`, type: "credit", amount: -discount, method: null, item: "Sibling discount", itemGroup: "Sibling discount" });
+    if (discount) out.push({ ...base, ...noItem, transactionId: `${id}c`, type: "credit", amount: -discount, method: null, item: "Sibling discount", itemGroup: "Sibling discount", person: null });
     // Camp extras: lunch for some weeks (on the session's own line), a gear bag or backpack now and then.
     let extras = 0;
     if (r.businessLine === "camp" && r.statusCode === "EN") {
@@ -587,4 +592,116 @@ export function demoReturningFamilyCounts(groups: string[]): Array<{ season: num
     sets.set(r.season + 1, (sets.get(r.season + 1) ?? new Set()).add(r.family));
   }
   return [...sets].map(([season, s]) => ({ season, families: s.size }));
+}
+
+/**
+ * Same rules as camperTuitionCtes: each charge and discount line given to
+ * campers (under a camper: theirs; else split across the household's enrolled
+ * campers in its session, or its business line without one, by their charges).
+ */
+export interface DemoTuitionAlloc {
+  season: number;
+  businessLine: BusinessLineOrUnassigned;
+  camper: string | null;
+  session: string | null;
+  enrolled: boolean;
+  tuition: number;
+  extras: number;
+}
+
+export function demoTuitionAlloc(
+  extras: string[],
+  keepTx: (t: DemoTransaction) => boolean = () => true,
+  keepEnr: (r: Row) => boolean = () => true,
+): DemoTuitionAlloc[] {
+  const enr = rows().filter(keepEnr);
+  const campers = new Set(enr.map((r) => `${r.season}|${r.camper}`));
+  const enrolledIn = new Set(enr.filter((r) => r.statusCode === "EN").map((r) => `${r.season}|${r.businessLine}|${r.camper}`));
+  const enrolledInSession = new Set(enr.filter((r) => r.statusCode === "EN").map((r) => `${r.season}|${r.camper}|${r.sessionName}`));
+  const txs = demoTransactions().filter((t) => (t.type === "debit" || t.type === "credit") && keepTx(t));
+  const isExtra = (t: DemoTransaction) => t.category === CAMP_EXTRAS_CATEGORY && !!t.itemGroup && extras.includes(t.itemGroup);
+  const isDirect = (t: DemoTransaction) => t.person !== null && campers.has(`${t.season}|${t.person}`);
+  const direct = txs.filter(isDirect);
+  const other = txs.filter((t) => !isDirect(t));
+  const wSession = new Map<string, number>();
+  const wLine = new Map<string, number>();
+  for (const t of direct) {
+    if (t.type !== "debit") continue;
+    if (t.session) wSession.set(`${t.season}|${t.person}|${t.session}`, (wSession.get(`${t.season}|${t.person}|${t.session}`) ?? 0) + t.amount);
+    wLine.set(`${t.season}|${t.person}|${t.businessLine}`, (wLine.get(`${t.season}|${t.person}|${t.businessLine}`) ?? 0) + t.amount);
+  }
+  // The household's enrolled campers by session and by business line.
+  const bySession = new Map<string, Set<string>>();
+  const byLine = new Map<string, Set<string>>();
+  for (const r of enr) {
+    if (r.statusCode !== "EN") continue;
+    const ks = `${r.season}|${r.family}|${r.sessionName}`;
+    const kl = `${r.season}|${r.family}|${r.businessLine}`;
+    bySession.set(ks, (bySession.get(ks) ?? new Set()).add(r.camper));
+    byLine.set(kl, (byLine.get(kl) ?? new Set()).add(r.camper));
+  }
+  const given: Array<{ t: DemoTransaction; camper: string | null; amount: number }> = direct.map((t) => ({ t, camper: t.person, amount: t.amount }));
+  for (const t of other) {
+    const household = t.row.family;
+    const cands = [...((t.session ? bySession.get(`${t.season}|${household}|${t.session}`) : byLine.get(`${t.season}|${household}|${t.businessLine}`)) ?? [])];
+    if (!cands.length) {
+      given.push({ t, camper: null, amount: t.amount });
+      continue;
+    }
+    const w = cands.map((c) => Math.max(0, (t.session ? wSession.get(`${t.season}|${c}|${t.session}`) : wLine.get(`${t.season}|${c}|${t.businessLine}`)) ?? 0));
+    const total = w.reduce((a, b) => a + b, 0);
+    cands.forEach((c, i) => given.push({ t, camper: c, amount: t.amount * (total > 0 ? w[i]! / total : 1 / cands.length) }));
+  }
+  const out = new Map<string, DemoTuitionAlloc>();
+  for (const g of given) {
+    const k = `${g.t.season}|${g.t.businessLine}|${g.camper}|${g.t.session}`;
+    const a = out.get(k) ?? {
+      season: g.t.season,
+      businessLine: g.t.businessLine,
+      camper: g.camper,
+      session: g.t.session,
+      enrolled:
+        g.camper !== null &&
+        (g.t.session ? enrolledInSession.has(`${g.t.season}|${g.camper}|${g.t.session}`) : enrolledIn.has(`${g.t.season}|${g.t.businessLine}|${g.camper}`)),
+      tuition: 0,
+      extras: 0,
+    };
+    if (isExtra(g.t)) a.extras += g.amount;
+    else a.tuition += g.amount;
+    out.set(k, a);
+  }
+  return [...out.values()];
+}
+
+/** Same as camperTuitionCardSql. */
+export function demoCamperTuition(q: CampminderFinanceQuery, ctx: { prevCutoff: string; extras: string[] }, schools: SchoolMap = new Map()): CamperTuitionResponse {
+  const filtered = Object.values(q.filters ?? {}).some((v) => v && v.length > 0);
+  const inPair = (season: number, date: string | null) => season === q.season || (season === q.season - 1 && (date === null || date <= ctx.prevCutoff));
+  const alloc = demoTuitionAlloc(ctx.extras, (t) => inPair(t.season, t.postDate), (r) => inPair(r.season, r.applicationDate));
+  const line = (bl: BusinessLineOrUnassigned) => !q.businessLine || bl === q.businessLine;
+  const kept = rows().filter((r) => r.statusCode === "EN" && line(r.businessLine) && inPair(r.season, r.applicationDate) && (!filtered || matches(r, q.filters, schools)));
+  const keptSessions = new Set(kept.map((r) => `${r.season}|${r.camper}|${r.sessionName}`));
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const of = (season: number): CamperTuition => {
+    const mine = alloc.filter((a) => a.season === season && line(a.businessLine));
+    const counted = filtered ? mine.filter((a) => a.camper !== null && keptSessions.has(`${season}|${a.camper}|${a.session}`)) : mine.filter((a) => a.enrolled);
+    const k = kept.filter((r) => r.season === season);
+    return {
+      campers: new Set(k.map((r) => r.camper)).size,
+      weeks: k.reduce((t, r) => t + (r.weekStart !== null ? r.weekEnd! - r.weekStart + 1 : 0), 0),
+      tuition: r2(counted.reduce((t, a) => t + a.tuition, 0)),
+      extras: r2(counted.reduce((t, a) => t + a.extras, 0)),
+      notPerCamper: filtered ? 0 : r2(mine.filter((a) => !a.enrolled).reduce((t, a) => t + a.tuition + a.extras, 0)),
+      lines: demoTransactions().filter((t) => (t.type === "debit" || t.type === "credit") && t.season === season && line(t.businessLine) && inPair(t.season, t.postDate)).length,
+    };
+  };
+  const previous = of(q.season - 1);
+  return {
+    season: q.season,
+    businessLine: q.businessLine ?? null,
+    filtered,
+    current: of(q.season),
+    previous: previous.lines > 0 ? previous : null,
+    previousCutoff: ctx.prevCutoff >= "9999" ? null : ctx.prevCutoff,
+  };
 }

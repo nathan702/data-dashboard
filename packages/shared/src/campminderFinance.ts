@@ -142,3 +142,41 @@ export function yearBefore(today: string): string {
   const day = m === 2 && d === 29 ? 28 : d;
   return `${y - 1}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
+
+/**
+ * Net tuition per camper (Campminder lines). Every charge and discount is
+ * given to a camper: a line under a camper is theirs; a line under a parent
+ * is split across the household's campers in its session (a line with no
+ * session: in its business line), in proportion to each one's charges.
+ * Extras (Settings → Seasons → Camp extras) are kept apart from tuition.
+ */
+export interface CamperTuition {
+  /** Enrolled campers (matching the filters), and their camper-weeks in weekly sessions. */
+  campers: number;
+  weeks: number;
+  /** Net tuition given to those campers, extras left out; and their extras. */
+  tuition: number;
+  extras: number;
+  /** Net tuition and extras not counted per camper (cancelled sessions, lines with no camper to give them to). Unfiltered only. */
+  notPerCamper: number;
+  /** Charge and discount lines in scope; 0 means no financials for that season. */
+  lines: number;
+}
+
+export interface CamperTuitionResponse {
+  season: number;
+  businessLine: BusinessLineOrUnassigned | null;
+  filtered: boolean;
+  current: CamperTuition;
+  /** Last season: lines posted and campers applied by the same date a year ago (the whole season once this one is over). Null without its financials. */
+  previous: CamperTuition | null;
+  /** The date last season is counted to; null when compared whole. */
+  previousCutoff: string | null;
+}
+
+/** Net tuition per camper, or null with no campers. */
+export const tuitionPerCamper = (t: CamperTuition) => (t.campers > 0 ? t.tuition / t.campers : null);
+/** Net tuition per camper-week (weekly sessions), or null with no weeks. */
+export const tuitionPerWeek = (t: CamperTuition) => (t.weeks > 0 ? t.tuition / t.weeks : null);
+/** Extras per camper, or null with no campers. */
+export const extrasPerCamper = (t: CamperTuition) => (t.campers > 0 ? t.extras / t.campers : null);

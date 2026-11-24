@@ -186,6 +186,15 @@ export const REPORT_DATASET_INFO: Record<ReportDataset, ReportDatasetInfo> = {
       m("sessions_matching", "Sessions in the chosen groups", "Total sessions in the session group, session, program, family or week shown or filtered to.", "count", true),
       m("cancel_rate", "% who cancelled or withdrew", "Share of campers who cancelled or withdrew from at least one session that season.", "percent", false),
       m("cancelled_sessions", "Cancelled or withdrawn sessions", "Sessions the campers cancelled or withdrew from.", "count", true),
+      m(
+        "tuition_per_camper",
+        "Net tuition per camper",
+        "Each camper's net tuition that season and business line (charges less discounts and credits, extras left out), averaged. A discount under a parent is split across the household's campers in that session by their charges. Seasons without Campminder financials are left out.",
+        "money",
+        false,
+      ),
+      m("net_tuition", "Net tuition", "Net tuition given to the campers (extras left out), summed; each camper once however the report splits them.", "money", true),
+      m("extras_per_camper", "Extras per camper", "Camp extras (lunches, gear…, Settings → Seasons → Camp extras) per camper.", "money", false),
       m("sessions_total", "Sessions", "Total enrolled sessions.", "count", true),
       m("families", "Families", "Distinct households.", "count", true),
     ],
@@ -549,6 +558,12 @@ export const STARTER_REPORTS: SavedReport[] = [
     "Returning families: re-enrolled by last season's location",
     "Of the families at each camp location last season, the share signed up for Camp again, per season. Change the measure to Not yet for how many are still to come back.",
     { dataset: "returning_families", rows: ["session_group"], column: "season", measure: "pct_reenrolled", change: "difference" },
+  ),
+  starter(
+    "tuition-per-camper-by-years",
+    "Net tuition per camper by years at camp",
+    "Average net tuition per camper (discounts and aid taken off, extras left out), by years at camp, per season. Change the rows to Campers in family to see sibling discounts, or to School, ZIP or Program.",
+    { dataset: "camper_seasons", rows: ["years_at_camp"], column: "season", measure: "tuition_per_camper", filters: { business_line: ["camp"] }, change: "percent" },
   ),
   starter(
     "tuition-by-group",

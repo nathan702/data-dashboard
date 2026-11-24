@@ -32,7 +32,7 @@ import {
 import { demoRunReport } from "./demoReports.js";
 import { demoFareharborDays, demoFareharborExtent } from "./demoFareharbor.js";
 import type { SchoolMap } from "./reportSql.js";
-import { DEMO_SESSION_GROUPS, demoCampLineItems, demoCampminderExtras, demoCampminderFinance, demoRegistrationPace, demoReturningFamilies, demoReturningFamilyCounts, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
+import { DEMO_SESSION_GROUPS, demoCampLineItems, demoCampminderExtras, demoCampminderFinance, demoCamperTuition, demoRegistrationPace, demoReturningFamilies, demoReturningFamilyCounts, demoEnrollmentRows, demoEnrollmentBreakdown, demoEnrollmentMap, demoEnrollmentSeasons, demoEnrollmentSummary } from "./demoCampminder.js";
 import { demoRetailBreakdown, demoRetailKpis, demoShopifyInventory } from "./demoRetail.js";
 import { summarizeRows } from "./summarize.js";
 import type { DailyRevenueRow, FareharborDaysScope, FreshnessSource, HubspotProgramsScope, TargetActualsScope, Warehouse } from "./types.js";
@@ -216,8 +216,8 @@ export class DemoWarehouse implements Warehouse {
     return demoEnrollmentBreakdown(q, schools);
   }
 
-  async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap) {
-    return demoRunReport(spec, families, schools);
+  async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap, extras?: string[]) {
+    return demoRunReport(spec, families, schools, extras);
   }
 
   async hubspotProperties() {
@@ -271,6 +271,10 @@ export class DemoWarehouse implements Warehouse {
 
   async campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap) {
     return demoCampminderFinance(q, schools);
+  }
+
+  async camperTuition(q: CampminderFinanceQuery, ctx: { prevCutoff: string; extras: string[] }, schools?: SchoolMap) {
+    return demoCamperTuition(q, ctx, schools);
   }
 
   async campminderExtras(q: CampminderExtrasQuery, cutoff: string, items: string[]) {

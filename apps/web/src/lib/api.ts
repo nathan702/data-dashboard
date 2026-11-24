@@ -10,6 +10,7 @@ import type {
   CampLineItem,
   CampminderExtras,
   CampminderFinanceSummary,
+  CamperTuitionResponse,
   RegistrationPaceResponse,
   ReturningResponse,
   AssignmentUpdate,
@@ -125,6 +126,7 @@ export function useSaveSeasonSettings() {
     ["enrollment-summary"],
     ["registration-pace"],
     ["returning-families"],
+    ["camper-tuition"],
     ["fareharbor-days"],
     ["hubspot-programs"],
   ]);
@@ -290,6 +292,12 @@ export function useRegistrationPace(q: Omit<EnrollmentScope, "season">) {
 export function useReturningFamilies(season: number | undefined) {
   const qs = season ? `season=${season}` : "";
   return useApi<ReturningResponse>(["returning-families", qs], `/api/campminder/returning?${qs}`, { refetchInterval: 10 * 60_000 });
+}
+
+/** Net tuition per camper (and per camper-week), against last season at the same point. */
+export function useCamperTuition(q: EnrollmentScope) {
+  const qs = enrollmentQs(q);
+  return useApiWhen<CamperTuitionResponse>(!!q.season, ["camper-tuition", qs], `/api/campminder/per-camper?${qs}`);
 }
 
 export function useCampminderFinance(q: EnrollmentScope) {

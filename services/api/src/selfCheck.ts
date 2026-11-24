@@ -255,6 +255,32 @@ export async function runSelfCheck(
     return null;
   });
 
+  // Net tuition per camper: what's given to campers plus what isn't counted per camper adds back up to the
+  // season's net tuition, and the report builder's total matches the card's.
+  await check("revenue per camper adds up", async () => {
+    const e = (ref as ReferenceTotals | null)?.enrollments;
+    if (!e) return null;
+    // The newest season with financials (the daily Financial tab can be just starting).
+    let season = e.season;
+    let fin = await warehouse.campminderFinance({ season, filters: {} });
+    if (fin.charges === 0) fin = await warehouse.campminderFinance({ season: --season, filters: {} });
+    if (fin.charges === 0) return null;
+    const per = await warehouse.camperTuition({ season, filters: {} }, { prevCutoff: "9999-12-31", extras: [] });
+    const c = per.current;
+    if (!close(c.tuition + c.extras + c.notPerCamper, fin.netTuition)) return `season ${season}: per camper and not counted don't add up to net tuition`;
+    if (c.campers > 0 && c.tuition === 0) return `season ${season}: campers but no tuition given to them`;
+    const report = await warehouse.runReport(
+      reportSpecSchema.parse({ dataset: "camper_seasons", rows: [], measure: "net_tuition", filters: { season: [String(season)] } }),
+      { overrides: {} },
+      new Map(),
+      [],
+    );
+    if (!close(report.cells[0]?.value ?? 0, c.tuition)) return `season ${season}: report builder's net tuition differs from the card's`;
+    // With filters, lines are matched to camper-sessions; last season as of a date.
+    await warehouse.camperTuition({ season, businessLine: "camp", filters: { week: ["1"] } }, { prevCutoff: `${season - 1}-12-31`, extras: ["Lunch"] }, new Map());
+    return null;
+  });
+
   await check("HubSpot deals run", async () => {
     await warehouse.hubspotDeals("education");
     await warehouse.hubspotProperties();

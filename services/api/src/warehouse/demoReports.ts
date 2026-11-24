@@ -10,7 +10,7 @@ import {
 import { effectiveFilters, type SchoolMap } from "./reportSql.js";
 import { pivotRecords, type Measure, type Rec } from "./reportPivot.js";
 import { DEMO_STREAMS, demoRow } from "./demo.js";
-import { demoEnrollmentRows, demoFamilyCampers, demoTransactions, familyBucket } from "./demoCampminder.js";
+import { demoEnrollmentRows, demoFamilyCampers, demoTransactions, demoTuitionAlloc, familyBucket } from "./demoCampminder.js";
 import { demoLineKey, demoLines } from "./demoRetail.js";
 
 /**
@@ -189,6 +189,41 @@ function camperSeasonRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec
   });
 }
 
+/** Same as the SQL's camper_money: each enrolled camper's net tuition and extras (null without financials for the season and line). */
+function withTuition(recs: Rec[], extras: string[]): Rec[] {
+  const money = new Map<string, { tuition: number; extras: number }>();
+  const withLines = new Set<string>();
+  for (const a of demoTuitionAlloc(extras)) {
+    withLines.add(`${a.season}|${a.businessLine}`);
+    if (!a.enrolled) continue;
+    const k = `${a.season}|${a.businessLine}|${a.camper}`;
+    const m = money.get(k) ?? { tuition: 0, extras: 0 };
+    m.tuition += a.tuition;
+    m.extras += a.extras;
+    money.set(k, m);
+  }
+  return recs.map((r) => {
+    const has = withLines.has(`${r.season}|${r.business_line}`);
+    const m = money.get(`${r.season}|${r.business_line}|${r.camper_id}`);
+    return { ...r, tuition: has ? Math.round((m?.tuition ?? 0) * 100) / 100 : null, extras: has ? Math.round((m?.extras ?? 0) * 100) / 100 : null };
+  });
+}
+
+/** Like the SQL's distinctSum: each camper-season once, however records are split. */
+const once = (rs: Rec[], k: string) => {
+  const seen = new Map<string, number>();
+  for (const r of rs) if (typeof r[k] === "number") seen.set(`${r.season}|${r.business_line}|${r.camper_id}`, r[k] as number);
+  return seen;
+};
+const sumOnce = (rs: Rec[], k: string) => {
+  const v = [...once(rs, k).values()];
+  return v.length ? v.reduce((a, b) => a + b, 0) : null;
+};
+const perCamperOnce = (rs: Rec[], k: string) => {
+  const v = [...once(rs, k).values()];
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+};
+
 /** Same as the SQL's families: one record per household, season and business line, from enrolled camper-sessions. */
 function householdRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec[] {
   const groups = new Map<string, Rec[]>();
@@ -287,7 +322,7 @@ function storeRecords(start: string, end: string): Rec[] {
   }));
 }
 
-function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap, usesWeek: boolean): { recs: Rec[]; measures: Record<string, Measure> } {
+function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap, usesWeek: boolean, extras: string[] = []): { recs: Rec[]; measures: Record<string, Measure> } {
   switch (spec.dataset) {
     case "targets":
       throw new Error("The targets data set is pivoted by the API (targetsReport.ts)");
@@ -308,8 +343,11 @@ function dataset(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap
       };
     case "camper_seasons":
       return {
-        recs: camperSeasonRecords(pf, schools),
+        recs: ["tuition_per_camper", "net_tuition", "extras_per_camper"].includes(spec.measure) ? withTuition(camperSeasonRecords(pf, schools), extras) : camperSeasonRecords(pf, schools),
         measures: {
+          tuition_per_camper: (rs) => perCamperOnce(rs, "tuition"),
+          net_tuition: (rs) => sumOnce(rs, "tuition"),
+          extras_per_camper: (rs) => perCamperOnce(rs, "extras"),
           campers: (rs) => distinct(rs, "camper_id"),
           avg_sessions: (rs) => avg(rs, "sessions_n"),
           avg_weeks: (rs) => avg(rs, "weeks_n"),
@@ -435,11 +473,11 @@ function campersComputed(r: Rec, exploded: string[], filters: Record<string, str
   return { matching_sessions: sessions.length, returned_same_group: same };
 }
 
-export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap = new Map()): ReportResult {
+export function demoRunReport(spec: ReportSpec, pf: ProgramFamilySettings, schools: SchoolMap = new Map(), extras: string[] = []): ReportResult {
   const filters = effectiveFilters(spec);
   const exclude = Object.fromEntries(Object.entries(spec.exclude).filter(([, v]) => v.length > 0));
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters || "week" in exclude;
-  const { recs, measures } = dataset(spec, pf, schools, usesWeek);
+  const { recs, measures } = dataset(spec, pf, schools, usesWeek, extras);
   return pivotRecords(spec, recs, measures, {
     multi: MULTI[spec.dataset] ?? {},
     filters,

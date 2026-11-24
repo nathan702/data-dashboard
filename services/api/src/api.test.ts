@@ -448,7 +448,8 @@ describe("deploy self-check", () => {
       "revenue summary by source matches tables",
       "dates reach the queries",
     ]);
-  });
+    // Runs every check against the demo data, like the test above.
+  }, 30_000);
 
   it("fails when a date doesn't reach the pace query (a flat sign-up pace line)", async () => {
     const { runSelfCheck } = await import("./selfCheck.js");
@@ -461,7 +462,8 @@ describe("deploy self-check", () => {
     };
     const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
     expect(result.checks.find((c) => c.name === "dates reach the queries")).toMatchObject({ ok: false, detail: expect.stringContaining("flat") });
-  });
+    // Runs every check against the demo data, like the test above.
+  }, 30_000);
 
   it("catches enrollment totals that disagree with the table", async () => {
     const { runSelfCheck } = await import("./selfCheck.js");
@@ -471,7 +473,8 @@ describe("deploy self-check", () => {
     const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
     // The School and Parent occupation breakdowns are checked against the same table count.
     expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["campminder enrollments match tables", "school grouping runs", "parent occupations run"]);
-  });
+    // Runs every check against the demo data, like the test above.
+  }, 30_000);
 
   it("catches targets revenue that disagrees with the table", async () => {
     const { runSelfCheck } = await import("./selfCheck.js");
@@ -483,7 +486,8 @@ describe("deploy self-check", () => {
     };
     const result = await runSelfCheck(broken, (s, e) => demo.referenceTotals(s, e));
     expect(result.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual(["targets match tables"]);
-  });
+    // Runs every check against the demo data, like the test above.
+  }, 30_000);
 });
 
 describe("campminder endpoints", () => {
@@ -1424,5 +1428,97 @@ describe("returning families", () => {
     expect(digestSlackText(during, ["farm_store"])).not.toContain("returning families");
     // Before 2027's opening dates are set and before anyone has re-enrolled: nothing.
     expect((await buildDigest(deps, "daily", "2026-11-23")).returning).toBeNull();
+  });
+});
+
+describe("revenue per camper", () => {
+  it("gives every charge and discount to campers, and adds back up to net tuition", async () => {
+    const app = api();
+    const per = (await request(app).get("/api/campminder/per-camper?season=2026&businessLine=camp").expect(200)).body;
+    const fin = (await request(app).get("/api/campminder/finance?season=2026&businessLine=camp").expect(200)).body;
+    const summary = (await request(app).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200)).body;
+    expect(per.current.campers).toBe(summary.current.campers);
+    expect(per.current.tuition).toBeGreaterThan(0);
+    expect(per.current.weeks).toBeGreaterThanOrEqual(per.current.campers);
+    // Default extras (lunches, gear, cancellation fees) are kept apart from tuition.
+    expect(per.current.extras).toBeGreaterThan(0);
+    expect(per.current.tuition + per.current.extras + per.current.notPerCamper).toBeCloseTo(fin.netTuition, 0);
+    // Cancelled campers' charges aren't counted per camper.
+    expect(per.current.notPerCamper).toBeGreaterThan(0);
+    expect(per.previous).not.toBeNull();
+    // With the page's filters: the matching camper-sessions and what was given to them.
+    const f = encodeURIComponent(JSON.stringify({ session_group: ["Farm"] }));
+    const farm = (await request(app).get(`/api/campminder/per-camper?season=2026&businessLine=camp&filters=${f}`).expect(200)).body;
+    const farmSummary = (await request(app).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${f}`).expect(200)).body;
+    expect(farm.filtered).toBe(true);
+    expect(farm.current.campers).toBe(farmSummary.current.campers);
+    expect(farm.current.tuition).toBeLessThan(per.current.tuition);
+    expect(farm.current.notPerCamper).toBe(0);
+    await request(app).get("/api/campminder/per-camper?season=x").expect(400);
+  });
+
+  it("splits a discount under a parent across the household's campers by their charges", async () => {
+    const { demoTuitionAlloc, demoTransactions } = await import("./warehouse/demoCampminder.js");
+    const lines = demoTransactions().filter((t) => t.type === "debit" || t.type === "credit");
+    const alloc = demoTuitionAlloc([]);
+    // Nothing is lost or made up: every season's lines add up to what was given out.
+    for (const season of [2025, 2026]) {
+      const total = lines.filter((t) => t.season === season).reduce((a, t) => a + t.amount, 0);
+      expect(alloc.filter((a) => a.season === season).reduce((a, x) => a + x.tuition + x.extras, 0)).toBeCloseTo(total, 2);
+    }
+    // Parents' discounts reach campers.
+    expect(lines.some((t) => t.person === null)).toBe(true);
+    const parentDiscounts = lines.filter((t) => t.person === null).reduce((a, t) => a + t.amount, 0);
+    const unassigned = alloc.filter((a) => a.camper === null).reduce((a, x) => a + x.tuition + x.extras, 0);
+    expect(Math.abs(unassigned)).toBeLessThan(Math.abs(parentDiscounts));
+  });
+
+  it("queries per-camper tuition with typed parameters and the proportional split", async () => {
+    const { BigQueryWarehouse } = await import("./warehouse/bigquery.js");
+    const calls: Array<{ query: string; params: Record<string, unknown>; types: Record<string, unknown> }> = [];
+    const row = { season: 2026, campers: 10, weeks: 30, tuition: 19500.004, extras: 450, not_per_camper: 650, lines: 40 };
+    const fake = { query: async (o: (typeof calls)[number]) => (calls.push(o), [[row]]) };
+    const out = await new BigQueryWarehouse(fake as never, "marts").camperTuition({ season: 2026, businessLine: "camp", filters: {} }, { prevCutoff: "2025-11-24", extras: ["Lunch"] });
+    const c = calls[0]!;
+    expect(c.params).toMatchObject({ season: 2026, prev_cutoff: "2025-11-24", extras: ["Lunch"], category: "Summer Camp", business_line: "camp" });
+    expect(c.types).toMatchObject({ season: "INT64", prev_cutoff: "STRING", extras: ["STRING"], category: "STRING" });
+    expect(c.query).toContain("w / SUM(w) OVER (PARTITION BY line_id)");
+    expect(c.query).toContain("post_date <= CAST(@prev_cutoff AS DATE)");
+    expect(c.query).not.toContain("JOIN (SELECT DISTINCT season, camper_hash, session_name FROM kept)");
+    expect(out.current).toEqual({ campers: 10, weeks: 30, tuition: 19500, extras: 450, notPerCamper: 650, lines: 40 });
+    expect(out.previous).toBeNull(); // no 2025 row: no financials
+    expect(out.previousCutoff).toBe("2025-11-24");
+    await new BigQueryWarehouse(fake as never, "marts").camperTuition({ season: 2026, filters: { week: ["1"] } }, { prevCutoff: "9999-12-31", extras: [] });
+    expect(calls[1]!.query).toContain("JOIN (SELECT DISTINCT season, camper_hash, session_name FROM kept)");
+  });
+
+  it("reports net tuition per camper, each camper once however records are split", async () => {
+    const app = api();
+    const run = async (spec: object) => (await request(app).post("/api/reports/run").send({ spec }).expect(200)).body;
+    const per = (await request(app).get("/api/campminder/per-camper?season=2026&businessLine=camp").expect(200)).body;
+    const base = { dataset: "camper_seasons", filters: { season: ["2026"], business_line: ["camp"] } };
+    const total = await run({ ...base, rows: [], measure: "net_tuition" });
+    expect(total.cells[0].value).toBeCloseTo(per.current.tuition, 0);
+    const avg = await run({ ...base, rows: [], measure: "tuition_per_camper" });
+    expect(avg.cells[0].value).toBeCloseTo(per.current.tuition / per.current.campers, 0);
+    // Split by session group (a camper in two groups is a record in each): the total still counts each camper once.
+    const byGroup = await run({ ...base, rows: ["session_group"], measure: "net_tuition" });
+    expect(byGroup.cells.find((c: { kind: string }) => c.kind === "total").value).toBeCloseTo(per.current.tuition, 0);
+    const cells = byGroup.cells.filter((c: { kind: string }) => c.kind === "cell");
+    expect(cells.reduce((t: number, c: { value: number }) => t + c.value, 0)).toBeGreaterThan(per.current.tuition);
+    const extras = await run({ ...base, rows: [], measure: "extras_per_camper" });
+    expect(extras.cells[0].value).toBeCloseTo(per.current.extras / per.current.campers, 0);
+  });
+
+  it("only joins the financials when a tuition measure is asked for", async () => {
+    const { compileReport } = await import("./warehouse/reportSql.js");
+    const spec = (measure: string) => reportSpecSchema.parse({ dataset: "camper_seasons", rows: ["session_group"], measure });
+    const plain = compileReport(spec("campers"), "marts", { overrides: {} });
+    expect(plain.sql).not.toContain("tuition_alloc");
+    expect(plain.params.extras).toBeUndefined();
+    const money = compileReport(spec("tuition_per_camper"), "marts", { overrides: {} }, new Map(), ["Lunch"]);
+    expect(money.sql).toContain("tuition_alloc");
+    expect(money.sql).toContain("ARRAY_AGG(DISTINCT IF(tuition IS NULL");
+    expect(money.params).toMatchObject({ extras: ["Lunch"], category: "Summer Camp" });
   });
 });

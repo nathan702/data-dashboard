@@ -4,6 +4,9 @@ import {
   type RegistrationPaceResponse,
   type RegistrationPaceRow,
   type RegistrationSettings,
+  type CamperTuition,
+  type CamperTuitionResponse,
+  type IsoDate,
   type ReturningFamilyFacts,
   type CampLocation,
   CAMP_EXTRAS_CATEGORY,
@@ -78,6 +81,7 @@ import { groupKeys } from "./summarize.js";
 import type { FareharborDaysScope, HubspotProgramsScope, TargetActualsScope, Warehouse } from "./types.js";
 import { targetActualsSql } from "./targetsSql.js";
 import { returningFamiliesCountSql, returningFamiliesSql } from "./returningSql.js";
+import { camperTuitionCardSql } from "./camperTuitionSql.js";
 
 // Only these fixed fragments are ever interpolated into SQL. Everything that
 // comes from the request is passed as a query parameter.
@@ -315,6 +319,10 @@ export class BigQueryWarehouse implements Warehouse {
     return { rows: out, pendingRefresh };
   }
 
+  private get transactions() {
+    return "`" + this.martsDataset + ".fct_campminder_transactions`";
+  }
+
   private get enrollments() {
     return `\`${this.martsDataset}.fct_campminder_enrollments\``;
   }
@@ -416,6 +424,38 @@ export class BigQueryWarehouse implements Warehouse {
       creditHeld: n("credit_held"),
       households: Number(r.households ?? 0),
       filtered,
+    };
+  }
+
+  async camperTuition(q: CampminderFinanceQuery, ctx: { prevCutoff: IsoDate; extras: string[] }, schools?: SchoolMap): Promise<CamperTuitionResponse> {
+    const filtered = hasFilters(q.filters);
+    const rows = await this.enrollmentQuery<Record<string, unknown>>(
+      camperTuitionCardSql(this.transactions, this.enrollments, this.enrollmentsView, drillWhere(), filtered),
+      { season: q.season, prev_cutoff: ctx.prevCutoff, extras: ctx.extras, category: CAMP_EXTRAS_CATEGORY },
+      q.businessLine,
+      q.filters,
+      schools,
+      { season: "INT64", extras: ["STRING"], category: "STRING" },
+    );
+    const of = (season: number): CamperTuition => {
+      const r = rows.find((x) => Number(x.season) === season) ?? {};
+      return {
+        campers: Number(r.campers ?? 0),
+        weeks: Number(r.weeks ?? 0),
+        tuition: round2(Number(r.tuition ?? 0)),
+        extras: round2(Number(r.extras ?? 0)),
+        notPerCamper: round2(Number(r.not_per_camper ?? 0)),
+        lines: Number(r.lines ?? 0),
+      };
+    };
+    const previous = of(q.season - 1);
+    return {
+      season: q.season,
+      businessLine: q.businessLine ?? null,
+      filtered,
+      current: of(q.season),
+      previous: previous.lines > 0 ? previous : null,
+      previousCutoff: ctx.prevCutoff >= "9999" ? null : ctx.prevCutoff,
     };
   }
 
@@ -687,8 +727,8 @@ export class BigQueryWarehouse implements Warehouse {
     };
   }
 
-  async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap): Promise<ReportResult> {
-    const { sql, params, types } = compileReport(spec, this.martsDataset, families, schools);
+  async runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap, extras?: string[]): Promise<ReportResult> {
+    const { sql, params, types } = compileReport(spec, this.martsDataset, families, schools, extras);
     const [rows] = await this.bq.query({ query: sql, params, types: types as never, location: this.location });
     return toReportResult(spec, rows as Array<Record<string, unknown>>);
   }
