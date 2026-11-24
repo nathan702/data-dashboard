@@ -1,5 +1,7 @@
 import { NONE_VALUE, REPORT_CELL_LIMIT, type ProgramFamilySettings, type ReportDataset, type ReportSpec, type SchoolForReports } from "@dash/shared";
 import { DIMENSION_SQL } from "./retailSql.js";
+import { camperTuitionCtes } from "./camperTuitionSql.js";
+import { CAMP_EXTRAS_CATEGORY } from "@dash/shared";
 
 /** School as entered → its school for reports (null: no school); see resolveSchoolSpellings. */
 export type SchoolMap = Map<string, SchoolForReports | null>;
@@ -142,7 +144,20 @@ const CAMPER_ROLLUP = `
 /** Multi-valued fields of every Campminder data set. */
 const CAMPER_MULTI = { parent_occupation: "parent_occupations" };
 
-function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean): DatasetSql {
+/** Campers by season measures that need each camper's net tuition (camperTuitionSql.ts); the tuition query runs only for them. */
+export const TUITION_MEASURES = ["tuition_per_camper", "net_tuition", "extras_per_camper"];
+
+/**
+ * A sum that counts each camper-season once however the report splits records
+ * (a camper in two session groups is a record in each): the distinct
+ * "camper|amount" pairs, added up.
+ */
+const CAMPER_KEY = "CONCAT(CAST(season AS STRING), '|', business_line, '|', camper_hash)";
+const distinctSum = (col: string) =>
+  `(SELECT SUM(CAST(SPLIT(x, '#')[OFFSET(1)] AS FLOAT64)) FROM UNNEST(ARRAY_AGG(DISTINCT IF(${col} IS NULL, NULL, CONCAT(${CAMPER_KEY}, '#', CAST(ROUND(${col}, 2) AS STRING))) IGNORE NULLS)) AS x)`;
+const perCamper = (col: string) => `SAFE_DIVIDE(${distinctSum(col)}, COUNT(DISTINCT IF(${col} IS NULL, NULL, ${CAMPER_KEY})))`;
+
+function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean, withTuition = false): DatasetSql {
   switch (dataset) {
     case "targets":
       // Targets are in Firestore; the API pivots them itself (targetsReport.ts).
@@ -183,6 +198,16 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
       return {
         ctes: [
           ENR_BASE(marts),
+          ...(withTuition
+            ? [
+                ...camperTuitionCtes(`\`${marts}.fct_campminder_transactions\``, ENROLLMENTS(marts), "all"),
+                `camper_money AS (
+    SELECT season, business_line, camper_hash, SUM(tuition) AS tuition, SUM(extras) AS extras
+    FROM tuition_alloc WHERE enrolled GROUP BY 1, 2, 3
+  )`,
+                `fin_lines AS (SELECT DISTINCT season, business_line FROM tuition_tx)`,
+              ]
+            : []),
           `cs0 AS (
     SELECT
       season, business_line, camper_hash,${CAMPER_ROLLUP},
@@ -218,6 +243,9 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
       ARRAY(SELECT DISTINCT w FROM UNNEST(a.attended_week_list) AS w) AS attended_weeks,
       ARRAY(SELECT l FROM UNNEST(cl.lines) AS l WHERE l != a.business_line) AS other_business_lines,
       COALESCE(cc.cancelled_sessions, 0) AS cancelled_sessions,
+      -- Net tuition and extras (no Campminder financials for the season and line: unknown).
+      ${withTuition ? "IF(fl.season IS NULL, NULL, COALESCE(cm.tuition, 0))" : "CAST(NULL AS FLOAT64)"} AS tuition,
+      ${withTuition ? "IF(fl.season IS NULL, NULL, COALESCE(cm.extras, 0))" : "CAST(NULL AS FLOAT64)"} AS extras,
       -- Unknown for the newest season: its next season hasn't happened.
       CASE WHEN a.season >= (SELECT MAX(season) FROM cs0) THEN NULL ELSE b.camper_hash IS NOT NULL END AS returned,
       -- This season's session groups the camper was in again next season.
@@ -228,7 +256,13 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
     FROM cs0 AS a
     LEFT JOIN cs0 AS b ON b.camper_hash = a.camper_hash AND b.business_line = a.business_line AND b.season = a.season + 1
     LEFT JOIN cs_lines AS cl ON cl.season = a.season AND cl.camper_hash = a.camper_hash
-    LEFT JOIN cs_cancels AS cc ON cc.season = a.season AND cc.business_line = a.business_line AND cc.camper_hash = a.camper_hash
+    LEFT JOIN cs_cancels AS cc ON cc.season = a.season AND cc.business_line = a.business_line AND cc.camper_hash = a.camper_hash${
+      withTuition
+        ? `
+    LEFT JOIN camper_money AS cm ON cm.season = a.season AND cm.business_line = a.business_line AND cm.camper_hash = a.camper_hash
+    LEFT JOIN fin_lines AS fl ON fl.season = a.season AND fl.business_line = a.business_line`
+        : ""
+    }
   )`,
         ],
         from: "camper_seasons",
@@ -264,6 +298,9 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           sessions_matching: "SUM(matching_sessions)",
           cancel_rate: "AVG(IF(cancelled_sessions > 0, 1, 0))",
           cancelled_sessions: "SUM(cancelled_sessions)",
+          tuition_per_camper: perCamper("tuition"),
+          net_tuition: distinctSum("tuition"),
+          extras_per_camper: perCamper("extras"),
         },
       };
     case "program_families":
@@ -518,11 +555,13 @@ export function effectiveFilters(spec: ReportSpec): Record<string, string[]> {
   return filters;
 }
 
-export function compileReport(spec: ReportSpec, marts: string, families: ProgramFamilySettings, schools: SchoolMap = new Map()) {
+/** `extras`: Summer Camp line items counted as camp extras (kept apart from tuition in the tuition measures). */
+export function compileReport(spec: ReportSpec, marts: string, families: ProgramFamilySettings, schools: SchoolMap = new Map(), extras: string[] = []) {
   const filters = effectiveFilters(spec);
   const exclude = Object.fromEntries(Object.entries(spec.exclude).filter(([, v]) => v.length > 0));
   const usesWeek = spec.rows.includes("week") || spec.column === "week" || "week" in filters || "week" in exclude;
-  const ds = datasetSql(spec.dataset, marts, usesWeek);
+  const withTuition = spec.dataset === "camper_seasons" && TUITION_MEASURES.includes(spec.measure);
+  const ds = datasetSql(spec.dataset, marts, usesWeek, withTuition);
   // Multi-valued fields shown as rows or columns: one record per value (mv_<field>); a record with none counts under (none).
   const multi = ds.multi ?? {};
   const valuesOf = (array: string) => `UNNEST(IF(ARRAY_LENGTH(${array}) > 0, ${array}, [CAST(NULL AS STRING)]))`;
@@ -574,6 +613,12 @@ export function compileReport(spec: ReportSpec, marts: string, families: Program
   if (CAMPMINDER.includes(spec.dataset) || spec.dataset === "campminder_finance") {
     params.pf = Object.entries(families.overrides).map(([program, v]) => ({ program, family: v.family, branch: v.branch }));
     types.pf = [{ program: "STRING", family: "STRING", branch: "STRING" }];
+  }
+  if (withTuition) {
+    params.extras = extras;
+    params.category = CAMP_EXTRAS_CATEGORY;
+    types.extras = ["STRING"];
+    types.category = "STRING";
   }
   if (CAMPMINDER.includes(spec.dataset)) {
     const sp = schoolParams(schools);

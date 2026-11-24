@@ -321,6 +321,25 @@ descriptions. A different tab name can be set with
 the report splits across what it paid for (camp and CHAPs) is several rows
 with the same transaction id; each is kept as its own line.
 
+**Revenue per camper.** The Tuition card (Camp, CHAPs and School Year
+pages) also shows net tuition per camper, per camper-week (weekly sessions)
+and extras per camper, against last season at the same point (lines posted
+and campers applied by the same date a year ago; the whole season once this
+one is over). Every charge and discount line is given to campers: a line under
+a camper is theirs; a line under a parent (sibling discounts, aid) is split
+across the household's campers enrolled in its session (a line with no
+session: in its business line) in proportion to each one's charges. A
+session's lines count per camper only when the camper is enrolled in that
+session; what's left (cancelled sessions' charges, lines with no camper to
+give them to) is shown as "not counted per camper", so the per-camper amounts,
+extras and that add back up to net tuition (a deploy self-check). Extras
+(below) are kept apart from tuition. With the page's filters, only the
+matching camper-sessions and what was charged to them count. **Reports →
+Campers by season** has *Net tuition*, *Net tuition per camper* and *Extras
+per camper* (each camper's whole season in that business line, counted once
+however a report splits campers), for breaking it down by years at camp,
+siblings, age, school, ZIP or program.
+
 **Camp extras.** Only the Summer Camp financial category counts. Settings →
 Seasons → Camp extras lists every Summer Camp line item (weeks dropped, so
 every "Week 3 Lunch" is Lunch) to tick the ones that are extras rather than

@@ -128,6 +128,9 @@ unmatched is "Unassigned" and flagged.
 - **Returning families** (Camp): last season's camp-location families and
   whether they've signed up again, against last season at the same point,
   on the Camp page, in the report builder and in the digests.
+- **Revenue per camper** (Campminder lines): net tuition per camper and per
+  camper-week, and extras per camper, on the Tuition card against last season
+  at the same point; per-camper measures in the report builder.
 
 ## Roadmap (in order)
 
@@ -223,14 +226,26 @@ unmatched is "Unassigned" and flagged.
        a Returning families report data set and starter report, a digest line
        while registration is under way, and a deploy self-check. Counts and
        scrambled IDs only: staff pull the families themselves from Campminder.
-    2. **Campers per age group per week (staffing)**, with a projection to
-       season end. *Needs from Calleva:* age groups and staff ratios.
-    3. **Revenue per camper.**
-    4. **Forecasts** for every line, from the Targets pace logic.
-    5. **Where new families come from.** *Ask:* does Campminder have a "how
+    2. **Revenue per camper** ✅ Every Financial charge and discount is
+       given to a camper: a line under a camper is theirs; one under a parent
+       is split across the household's campers enrolled in its session (no
+       session: in its business line) in proportion to their charges. A
+       session's lines count per camper only when the camper is enrolled in
+       that session (cancelled sessions' charges, and lines with no camper,
+       are shown as "not counted per camper"). Extras are kept apart. The
+       Tuition card (Camp, CHAPs, School Year) shows net tuition per camper,
+       per camper-week (weekly sessions) and extras per camper against last
+       season at the same point, with the page's filters; Campers by season in
+       the report builder has Net tuition, Net tuition per camper and Extras
+       per camper (each camper once however a report splits them), plus a
+       starter report; a deploy self-check adds them back up to net tuition.
+    3. **Forecasts** for every line, from the Targets pace logic.
+    4. **Where new families come from.** *Ask:* does Campminder have a "how
        did you hear about us" question that could be added to the report?
-    6. **Capacity and waitlists.** *Needs:* session capacity from Campminder
+    5. **Capacity and waitlists.** *Needs:* session capacity from Campminder
        (a session report tab) or entered on Settings.
+    6. **Campers per age group per week (staffing)**, with a projection to
+       season end (postponed). *Needs from Calleva:* age groups and staff ratios.
 14. **Test and live separation**: a second website (`…-test`) in the same Google
    Cloud project, reading the same raw data into its own tables; changes deploy
    to test first and are promoted to live.

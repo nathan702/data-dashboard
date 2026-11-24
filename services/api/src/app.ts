@@ -53,6 +53,7 @@ import {
   addDays,
   easternDate,
   resolveCampExtras,
+  addYears,
   summarizeCampminderExtras,
   yearBefore,
   fareharborDaysQuerySchema,
@@ -367,6 +368,24 @@ export function createApi(opts: ApiOptions) {
   enrollmentRoute("/campminder/finance", (q) => campminderFinanceQuerySchema.safeParse(q), async (d: CampminderFinanceQuery) =>
     opts.warehouse.campminderFinance(d, (await schoolMap()).map),
   );
+  // Net tuition per camper, against last season as of the same date a year ago (whole once this season is over).
+  api.get("/campminder/per-camper", async (req, res) => {
+    const parsed = campminderFinanceQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query", issues: parsed.error.issues });
+      return;
+    }
+    const [s, schools, items] = await Promise.all([opts.seasons.get(), schoolMap(), campLineItems()]);
+    const { end } = campminderCalendar(s.campminderStarts).range(parsed.data.season);
+    const today = easternDate();
+    const prevCutoff = today < end ? addYears(today, -1) : "9999-12-31";
+    const extras = resolveCampExtras(s.campExtras, items.map((i) => i.item));
+    res.json(
+      await cached(`/campminder/per-camper:${JSON.stringify(parsed.data)}:${prevCutoff}:${JSON.stringify(extras)}:${schools.key}`, () =>
+        opts.warehouse.camperTuition(parsed.data, { prevCutoff, extras }, schools.map),
+      ),
+    );
+  });
   // Camp extras compare with last season as of the same date a year ago (the date is in the cache key).
   api.get("/campminder/extras", async (req, res) => {
     const parsed = campminderExtrasQuerySchema.safeParse(req.query);
@@ -394,6 +413,10 @@ export function createApi(opts: ApiOptions) {
 
   // ---- Report builder ----
 
+  /** Camp extras (kept apart from tuition in Campers by season's tuition measures); other data sets don't need them. */
+  const reportExtras = async (dataset: string) =>
+    dataset === "camper_seasons" ? resolveCampExtras((await opts.seasons.get()).campExtras, (await campLineItems()).map((i) => i.item)) : [];
+
   api.post("/reports/run", async (req, res) => {
     const parsed = reportSpecSchema.safeParse(req.body?.spec);
     if (!parsed.success) {
@@ -408,10 +431,10 @@ export function createApi(opts: ApiOptions) {
       res.json(runReturningReport(parsed.data, (await allReturningFamilies({ ...opts, cache: cached })).families));
       return;
     }
-    const [families, schools] = await Promise.all([opts.programFamilies.get(), schoolMap()]);
+    const [families, schools, extras] = await Promise.all([opts.programFamilies.get(), schoolMap(), reportExtras(parsed.data.dataset)]);
     res.json(
-      await cached(`report:${JSON.stringify(parsed.data)}:${JSON.stringify(families)}:${schools.key}`, () =>
-        opts.warehouse.runReport(parsed.data, families, schools.map),
+      await cached(`report:${JSON.stringify(parsed.data)}:${JSON.stringify(families)}:${schools.key}:${JSON.stringify(extras)}`, () =>
+        opts.warehouse.runReport(parsed.data, families, schools.map, extras),
       ),
     );
   });
@@ -437,14 +460,14 @@ export function createApi(opts: ApiOptions) {
       percent: "none" as const,
       change: "none" as const,
     };
-    const [families, schools] = await Promise.all([opts.programFamilies.get(), schoolMap()]);
+    const [families, schools, extras] = await Promise.all([opts.programFamilies.get(), schoolMap(), reportExtras(spec.dataset)]);
     const result =
       spec.dataset === "targets"
         ? runTargetsReport(valuesSpec, await allTargetProgress(), easternDate())
         : spec.dataset === "returning_families"
           ? runReturningReport(valuesSpec, (await allReturningFamilies({ ...opts, cache: cached })).families)
-          : await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}:${schools.key}`, () =>
-            opts.warehouse.runReport(valuesSpec, families, schools.map),
+          : await cached(`values:${JSON.stringify(valuesSpec)}:${JSON.stringify(families)}:${schools.key}:${JSON.stringify(extras)}`, () =>
+            opts.warehouse.runReport(valuesSpec, families, schools.map, extras),
           );
     res.json({
       field,

@@ -5,6 +5,7 @@ import type {
   CampminderExtrasRow,
   CampminderFinanceQuery,
   CampminderFinanceSummary,
+  CamperTuitionResponse,
   RegistrationPaceQuery,
   RegistrationPaceResponse,
   RegistrationSettings,
@@ -62,9 +63,14 @@ export interface Warehouse {
   enrollmentMap(q: EnrollmentMapQuery, schools?: SchoolMap): Promise<EnrollmentMapResponse>;
   enrollmentBreakdown(q: EnrollmentBreakdownQuery, schools?: SchoolMap): Promise<EnrollmentBreakdownResponse>;
   /** Report builder: run one report (program families decide the family fields). */
-  runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap): Promise<ReportResult>;
+  runReport(spec: ReportSpec, families: ProgramFamilySettings, schools?: SchoolMap, extras?: string[]): Promise<ReportResult>;
   /** A season's Campminder tuition, payments and balances (marts.fct_campminder_transactions). */
   campminderFinance(q: CampminderFinanceQuery, schools?: SchoolMap): Promise<CampminderFinanceSummary>;
+  /**
+   * Net tuition per camper for a season and the one before it (lines posted and campers applied by `prevCutoff`);
+   * `extras`: the Summer Camp line items counted as extras, kept apart from tuition.
+   */
+  camperTuition(q: CampminderFinanceQuery, ctx: { prevCutoff: IsoDate; extras: string[] }, schools?: SchoolMap): Promise<CamperTuitionResponse>;
   /** Camp extras (the chosen Summer Camp line items) by item, week and session group: this season, and last season posted by `cutoff`. */
   campminderExtras(q: CampminderExtrasQuery, cutoff: string, items: string[]): Promise<CampminderExtrasRow[]>;
   /** Every Summer Camp line item, for choosing camp extras on Settings. */
