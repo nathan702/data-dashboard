@@ -1518,7 +1518,9 @@ describe("revenue per camper", () => {
     expect(plain.params.extras).toBeUndefined();
     const money = compileReport(spec("tuition_per_camper"), "marts", { overrides: {} }, new Map(), ["Lunch"]);
     expect(money.sql).toContain("tuition_alloc");
-    expect(money.sql).toContain("ARRAY_AGG(DISTINCT IF(tuition IS NULL");
+    // Each camper once, with plain SUM(DISTINCT): BigQuery refuses aggregates inside UNNEST.
+    expect(money.sql).toContain("SUM(DISTINCT IF(tuition IS NULL, NULL, CAST(FARM_FINGERPRINT(");
+    expect(money.sql).not.toMatch(/UNNEST\(ARRAY_AGG/);
     expect(money.params).toMatchObject({ extras: ["Lunch"], category: "Summer Camp" });
   });
 });

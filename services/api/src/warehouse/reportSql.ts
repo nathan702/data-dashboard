@@ -149,12 +149,17 @@ export const TUITION_MEASURES = ["tuition_per_camper", "net_tuition", "extras_pe
 
 /**
  * A sum that counts each camper-season once however the report splits records
- * (a camper in two session groups is a record in each): the distinct
- * "camper|amount" pairs, added up.
+ * (a camper in two session groups is a record in each). BigQuery won't run an
+ * aggregate inside UNNEST, so it's plain SUM(DISTINCT): each camper's amount in
+ * cents is tagged with a 64-bit fingerprint of the camper (× 10^12, far above
+ * any amount), which makes every camper's value distinct even when two campers
+ * paid the same; the fingerprints are then summed (distinct) and taken off.
+ * Exact, in BIGNUMERIC.
  */
 const CAMPER_KEY = "CONCAT(CAST(season AS STRING), '|', business_line, '|', camper_hash)";
+const TAG = `CAST(FARM_FINGERPRINT(${CAMPER_KEY}) AS BIGNUMERIC)`;
 const distinctSum = (col: string) =>
-  `(SELECT SUM(CAST(SPLIT(x, '#')[OFFSET(1)] AS FLOAT64)) FROM UNNEST(ARRAY_AGG(DISTINCT IF(${col} IS NULL, NULL, CONCAT(${CAMPER_KEY}, '#', CAST(ROUND(${col}, 2) AS STRING))) IGNORE NULLS)) AS x)`;
+  `CAST((SUM(DISTINCT IF(${col} IS NULL, NULL, ${TAG} * 1000000000000 + CAST(ROUND(${col} * 100) AS BIGNUMERIC))) - SUM(DISTINCT IF(${col} IS NULL, NULL, ${TAG})) * 1000000000000) / 100 AS FLOAT64)`;
 const perCamper = (col: string) => `SAFE_DIVIDE(${distinctSum(col)}, COUNT(DISTINCT IF(${col} IS NULL, NULL, ${CAMPER_KEY})))`;
 
 function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean, withTuition = false): DatasetSql {
