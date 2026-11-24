@@ -28,6 +28,10 @@ import {
   type RegistrationPaceRow,
   type RegistrationSettings,
   type ReturningFamilyFacts,
+  type HeardAbout,
+  BUSINESS_LINE_INFO,
+  NEW_FAMILY,
+  RETURNING_FAMILY,
   type CampLocation,
 } from "@dash/shared";
 import { buildPace, enrollmentAsOf, sortBreakdown, toEnrollmentKpis, toMapResponse } from "./campminder.js";
@@ -61,6 +65,8 @@ export interface Row {
   family: string;
   /** Parents' occupation categories (none for some families, two for others). */
   parentOccupations: OccupationCategory[];
+  /** How the family heard about camp (the dropdown choice), or null when not answered. */
+  heardAbout: HeardAbout | null;
 }
 
 /** Made-up home areas around DC, weighted roughly like a real camp's families. */
@@ -185,6 +191,7 @@ function rows(): Row[] {
             ...demoHome(String(camperNo)),
             school: demoSchool(String(camperNo)),
             parentOccupations: demoOccupations(String(camperNo)),
+            heardAbout: demoHeardAbout(`F${camperNo < 1000 ? Math.floor(camperNo / 2) : camperNo}`),
           });
         }
       }
@@ -192,6 +199,49 @@ function rows(): Row[] {
   }
   cache = out;
   return out;
+}
+
+/** Made-up answers to "How did you hear about us?", one per household. */
+function demoHeardAbout(family: string): HeardAbout | null {
+  const n = noise(`${family}heard`);
+  const mix: Array<[number, HeardAbout]> = [[0.3, "Current Camper Family"], [0.2, "Web Search"], [0.12, "Instagram"], [0.1, "Facebook"], [0.08, "Current Staff Member"], [0.05, "Other"]];
+  let acc = 0;
+  return mix.find(([w]) => (acc += w) >= n)?.[1] ?? null; // the rest didn't answer
+}
+
+/** Same rules as familyStatusSql: new to the business line (first season enrolled), and the other line it came through first. */
+let familyStatus: Map<string, { newFamily: string; cameThrough: string | null }> | null = null;
+export function demoFamilyStatus(r: Pick<Row, "season" | "businessLine" | "family">): { newFamily: string; cameThrough: string | null } | null {
+  if (!familyStatus) {
+    type FL = { season: number; line: BusinessLineOrUnassigned; fam: string; maxYears: number; firstApp: string };
+    const fl = new Map<string, FL>();
+    for (const x of rows()) {
+      if (x.statusCode !== "EN") continue;
+      const k = `${x.season}|${x.businessLine}|${x.family}`;
+      const f = fl.get(k) ?? { season: x.season, line: x.businessLine, fam: x.family, maxYears: 0, firstApp: x.applicationDate };
+      f.maxYears = Math.max(f.maxYears, x.years);
+      if (x.applicationDate < f.firstApp) f.firstApp = x.applicationDate;
+      fl.set(k, f);
+    }
+    const all = [...fl.values()];
+    const minSeason = Math.min(...all.map((f) => f.season));
+    const first = new Map<string, number>();
+    for (const f of all) first.set(`${f.line}|${f.fam}`, Math.min(first.get(`${f.line}|${f.fam}`) ?? Infinity, f.season));
+    const byFam = new Map<string, FL[]>();
+    for (const f of all) byFam.set(f.fam, [...(byFam.get(f.fam) ?? []), f]);
+    familyStatus = new Map();
+    for (const f of all) {
+      const returning = f.season > first.get(`${f.line}|${f.fam}`)! || (f.season === minSeason && f.maxYears > 1);
+      const before = (byFam.get(f.fam) ?? [])
+        .filter((o) => o.line !== f.line && (o.season < f.season || (o.season === f.season && o.firstApp < f.firstApp)))
+        .sort((a, b) => a.season - b.season || (a.firstApp < b.firstApp ? -1 : 1))[0];
+      familyStatus.set(`${f.season}|${f.line}|${f.fam}`, {
+        newFamily: returning ? RETURNING_FAMILY : NEW_FAMILY,
+        cameThrough: returning ? null : before ? `${before.line === "unassigned" ? "unassigned" : BUSINESS_LINE_INFO[before.line].label} first` : "Directly",
+      });
+    }
+  }
+  return familyStatus.get(`${r.season}|${r.businessLine}|${r.family}`) ?? null;
 }
 
 /** Enrolled campers per household, season and business line (as the SQL's family_campers). */
@@ -223,6 +273,9 @@ function keyOf(r: Row, d: Exclude<EnrollmentDimension, "week" | "occupation">, s
     family: familyBucket(demoFamilyCampers(r)) ?? UNKNOWN_KEY,
     session_group: r.sessionGroup, session: r.sessionName, program: r.program ?? UNKNOWN_KEY, age: String(r.age),
     grade: r.grade, gender: r.gender, years: String(r.years), state: r.state, status: r.status,
+    new_family: demoFamilyStatus(r)?.newFamily ?? UNKNOWN_KEY,
+    came_through: demoFamilyStatus(r)?.cameThrough ?? UNKNOWN_KEY,
+    heard: r.heardAbout ?? UNKNOWN_KEY,
   }[d];
 }
 
@@ -271,6 +324,7 @@ function familyCounts(en: Row[]) {
   }
   return {
     families: campers.size,
+    new_families: [...new Set(en.filter((r) => demoFamilyStatus(r)?.newFamily === NEW_FAMILY).map((r) => r.family))].length,
     sibling_families: [...campers.values()].filter((s) => s.size >= 2).length,
     sibling_weeks_together: [...weeks.values()].filter((s) => s.size >= 2).length,
   };

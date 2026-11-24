@@ -41,6 +41,7 @@ const TILES: Array<{ key: keyof EnrollmentKpis; label: string; upIsGood?: boolea
   { key: "cancelled", label: "Cancelled", upIsGood: false },
   { key: "withdrawn", label: "Withdrawn", upIsGood: false },
   { key: "families", label: "Families" },
+  { key: "newFamilies", label: "New families" },
   { key: "siblingFamilies", label: "Families with siblings" },
   { key: "siblingWeeksTogether", label: "Sibling weeks together" },
 ];
@@ -70,7 +71,7 @@ function CountTile({ label, value, previous, upIsGood = true, cmpLabel }: {
 }
 
 /** Where a click on a value goes next when drilling down. */
-const DRILL_ORDER: EnrollmentDimension[] = ["session_group", "session", "program", "week", "age", "grade", "gender", "years", "state", "status"];
+const DRILL_ORDER: EnrollmentDimension[] = ["session_group", "session", "program", "week", "age", "grade", "gender", "years", "state", "heard", "status"];
 
 const valueLabel = (d: EnrollmentDimension, v: string) => (d === "week" ? `Week ${v}` : v);
 
@@ -201,7 +202,7 @@ export function EnrollmentDetail({ businessLine, title = "Enrollment · Campmind
         <>
           <p className="card-subtitle">
             {active.length > 0 ? "Only camper-sessions matching every filter. " : ""}
-            Counts enrolled camper-sessions; each camper counts once in Campers. A family is a household; siblings are two or more of its campers that season.
+            Counts enrolled camper-sessions; each camper counts once in Campers. A family is a household; siblings are two or more of its campers that season; a new family is in its first season on this page's line (filter by New or returning family to see only them, map included).
             {s.comparison && ` Compared with season ${s.season - 1} ${seasonOver(s) ? "overall" : "at the same point in its season"}.`}
             {!seasonOver(s) && ` As of ${formatDate(s.asOf)}.`}
           </p>

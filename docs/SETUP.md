@@ -379,6 +379,23 @@ discounts by service start date (or post date for "booked"), payments by post
 date for "collected", and refunds on their post date; transfers between
 accounts or seasons aren't revenue.
 
+**How families heard about camp.** Add Campminder's "How did you hear
+about us?" question to the report the automation runs (and to the past-season
+tabs, if they can be re-exported). Any column whose header contains "how did
+you hear", "hear about" or "referral" is picked up on the next hourly sync. Only
+the dropdown choice is kept (Facebook, Instagram, Current Camper Family,
+Current Staff Member, Web Search; any other answer is "Other"); the text a
+family can add after the choice is never stored. Seasons without the column
+show "(unknown)".
+
+**New families.** A family (household) is new in its first season with a
+camper enrolled in that business line; in the first season of data (2022),
+when all its campers are in their first year at camp. "Came through" is, for a
+new family, the other Campminder program it was in first (an earlier season,
+or earlier the same season), e.g. "CHAPs first"; else "Directly". The Camp
+page has a New families tile and New or returning family, Came through and How
+they heard breakdowns and filters; the report builder has the same fields.
+
 **Parent occupations.** The report's `F1P1 Occupation`, `F1P2 Occupation`,
 `F2P1 Occupation` and `F2P2 Occupation` columns (up to two parents in each of
 two households) are read on import and sorted into a category: Legal,

@@ -1,6 +1,7 @@
 import { NONE_VALUE, REPORT_CELL_LIMIT, type ProgramFamilySettings, type ReportDataset, type ReportSpec, type SchoolForReports } from "@dash/shared";
 import { DIMENSION_SQL } from "./retailSql.js";
 import { camperTuitionCtes } from "./camperTuitionSql.js";
+import { familyStatusSql } from "./familyStatusSql.js";
 import { CAMP_EXTRAS_CATEGORY } from "@dash/shared";
 
 /** School as entered → its school for reports (null: no school); see resolveSchoolSpellings. */
@@ -92,6 +93,8 @@ const ENR_BASE = (marts: string) => `
       sm.school_state,
       sm.school_county,
       fc.family_campers,
+      fs.new_family,
+      fs.came_through,
       ${programFamilySql("e.program", "pf")} AS program_family,
       IF(pf.program IS NULL, IF(STRPOS(e.program, ' - ') > 0, NULLIF(TRIM(SUBSTR(e.program, STRPOS(e.program, ' - ') + 3)), ''), NULL), pf.branch) AS program_branch,
       IF(e.is_weekly, ARRAY(SELECT CAST(w AS STRING) FROM UNNEST(GENERATE_ARRAY(e.week_start, e.week_end)) AS w), CAST([] AS ARRAY<STRING>)) AS week_list
@@ -100,6 +103,8 @@ const ENR_BASE = (marts: string) => `
     LEFT JOIN schoolmap AS sm ON sm.entered = e.school
     LEFT JOIN ${familyCampersSql(ENROLLMENTS(marts))} AS fc
       ON fc.season = e.season AND fc.business_line = e.business_line AND fc.family_hash = e.family_hash
+    LEFT JOIN ${familyStatusSql(ENROLLMENTS(marts))} AS fs
+      ON fs.season = e.season AND fs.business_line = e.business_line AND fs.fam = COALESCE(e.family_hash, e.camper_hash)
   )`;
 
 /** Per camper (and season, business line …) attributes; the same names in every Campminder data set. */
@@ -117,6 +122,9 @@ const CAMPER_FIELDS = {
   school_state: "school_state",
   school_county: "school_county",
   campers_in_family: FAMILY_BUCKET("family_campers"),
+  new_family: "new_family",
+  came_through: "came_through",
+  heard_about: "heard_about",
   signup_month: "FORMAT_DATE('%Y-%m', application_date)",
   signup_week: "CAST(DATE_TRUNC(application_date, WEEK(MONDAY)) AS STRING)",
   gender: "gender",
@@ -139,7 +147,10 @@ const CAMPER_ROLLUP = `
       ANY_VALUE(home_state) AS home_state,
       ANY_VALUE(home_zip) AS home_zip,
       MIN(application_date) AS application_date,
-      MAX(family_campers) AS family_campers`;
+      MAX(family_campers) AS family_campers,
+      ANY_VALUE(new_family) AS new_family,
+      ANY_VALUE(came_through) AS came_through,
+      ANY_VALUE(heard_about) AS heard_about`;
 
 /** Multi-valued fields of every Campminder data set. */
 const CAMPER_MULTI = { parent_occupation: "parent_occupations" };
@@ -346,6 +357,10 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
       ANY_VALUE(home_state) AS home_state,
       ANY_VALUE(home_zip) AS home_zip,
       ANY_VALUE(parent_occupations) AS parent_occupations,
+      ANY_VALUE(new_family) AS new_family,
+      ANY_VALUE(came_through) AS came_through,
+      -- The household's answer (siblings share one; blanks ignored).
+      MIN(heard_about) AS heard_about,
       ARRAY_AGG(DISTINCT session_group IGNORE NULLS) AS attended_session_groups,
       ARRAY_CONCAT_AGG(week_list) AS attended_week_list
     FROM enr_base
@@ -393,6 +408,9 @@ function datasetSql(dataset: ReportDataset, marts: string, explodeWeeks: boolean
           returned: "CASE returned WHEN TRUE THEN 'Returned' WHEN FALSE THEN 'Didn''t return' ELSE 'Not known yet' END",
           state: "home_state",
           zip: "home_zip",
+          new_family: "new_family",
+          came_through: "came_through",
+          heard_about: "heard_about",
         },
         multi: {
           parent_occupation: "parent_occupations",

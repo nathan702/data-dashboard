@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { campminderCalendar, cleanSchool, occupationCategories, type OccupationCategory } from "@dash/shared";
+import { campminderCalendar, cleanSchool, heardAboutChoice, heardAboutColumn, occupationCategories, type HeardAbout, type OccupationCategory } from "@dash/shared";
 import { pseudonymize } from "../core/privacy.js";
 import { addressKey, homeAddress, zip5, type GeoResult } from "./geocode.js";
 
@@ -17,7 +17,7 @@ import { addressKey, homeAddress, zip5, type GeoResult } from "./geocode.js";
  * every row is rewritten (the version is part of each row's hash), so no row
  * keeps a value an older parser stored.
  */
-export const PARSER_VERSION = "7";
+export const PARSER_VERSION = "8";
 
 export const STATUS_LABEL: Record<string, string> = {
   EN: "Enrolled",
@@ -52,6 +52,8 @@ export interface CampminderSession {
   school: string | null;
   /** Each parent's occupation as a category ("Legal", "Education"…), once per category; the answers themselves aren't kept. */
   parentOccupations: OccupationCategory[];
+  /** "How did you hear about us?": the dropdown choice only (any text added to it isn't kept), else null. */
+  heardAbout: HeardAbout | null;
   yearsAsCamper: number | null;
   applicationDate: string | null;
   statusPostDate: string | null;
@@ -212,6 +214,7 @@ export function toSessions(
 
   const schoolCol = schoolColumn(Object.keys(rows[0] ?? {}));
   const occupationCols = occupationColumns(Object.keys(rows[0] ?? {}));
+  const heardCol = heardAboutColumn(Object.keys(rows[0] ?? {}));
   const out = new Map<string, CampminderSession>();
   for (const r of rows) {
     const personId = clean(r["PersonID"]);
@@ -230,6 +233,7 @@ export function toSessions(
       schoolGrade: clean(r["School Grade"]),
       school: keepSchool(schoolCol ? cleanSchool(r[schoolCol]) : null, notSchools),
       parentOccupations: occupationCategories(occupationCols.map((c) => r[c])),
+      heardAbout: heardCol ? heardAboutChoice(r[heardCol]) : null,
       yearsAsCamper: Number.isFinite(years) && years > 0 ? years : null,
       applicationDate: usDate(r["Child Application Date"]),
       statusPostDate: usDate(r["Child Status Post Date"]),

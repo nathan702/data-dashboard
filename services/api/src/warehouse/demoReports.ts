@@ -10,7 +10,7 @@ import {
 import { effectiveFilters, type SchoolMap } from "./reportSql.js";
 import { pivotRecords, type Measure, type Rec } from "./reportPivot.js";
 import { DEMO_STREAMS, demoRow } from "./demo.js";
-import { demoEnrollmentRows, demoFamilyCampers, demoTransactions, demoTuitionAlloc, familyBucket } from "./demoCampminder.js";
+import { demoEnrollmentRows, demoFamilyCampers, demoFamilyStatus, demoTransactions, demoTuitionAlloc, familyBucket } from "./demoCampminder.js";
 import { demoLineKey, demoLines } from "./demoRetail.js";
 
 /**
@@ -72,6 +72,9 @@ function enrollmentRecords(pf: ProgramFamilySettings, schools: SchoolMap, explod
       parent_occupations: r.parentOccupations,
       family: r.family,
       campers_in_family: familyBucket(demoFamilyCampers(r)),
+      new_family: demoFamilyStatus(r)?.newFamily ?? null,
+      came_through: demoFamilyStatus(r)?.cameThrough ?? null,
+      heard_about: r.heardAbout,
       gender: r.gender,
       state: r.state,
       zip: r.zip,
@@ -225,6 +228,11 @@ const perCamperOnce = (rs: Rec[], k: string) => {
 };
 
 /** Same as the SQL's families: one record per household, season and business line, from enrolled camper-sessions. */
+/** Same as the SQL's MIN(): the smallest non-empty value. */
+function firstNonEmpty(vs: Array<string | null>): string | null {
+  return vs.filter((v): v is string => !!v).sort()[0] ?? null;
+}
+
 function householdRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec[] {
   const groups = new Map<string, Rec[]>();
   for (const r of enrollmentRecords(pf, schools, false)) {
@@ -264,6 +272,9 @@ function householdRecords(pf: ProgramFamilySettings, schools: SchoolMap): Rec[] 
       state: a.state,
       zip: a.zip,
       parent_occupations: a.parent_occupations,
+      new_family: a.new_family,
+      came_through: a.came_through,
+      heard_about: firstNonEmpty(rs.map((r) => r.heard_about as string | null)),
       attended_session_groups: [...new Set(rs.map((r) => r.session_group as string))],
       attended_weeks: [...byWeek.keys()],
     };

@@ -1,4 +1,5 @@
-import { ENROLLMENT_DIMENSIONS, UNKNOWN_KEY, type EnrollmentDimension, type EnrollmentFilters } from "@dash/shared";
+import { ENROLLMENT_DIMENSIONS, NEW_FAMILY, UNKNOWN_KEY, type EnrollmentDimension, type EnrollmentFilters } from "@dash/shared";
+import { familyStatusSql } from "./familyStatusSql.js";
 import { FAMILY_BUCKET, familyCampersSql, schoolParams, type SchoolMap } from "./reportSql.js";
 
 /**
@@ -15,6 +16,9 @@ const KEY_SQL: Record<Exclude<EnrollmentDimension, "week" | "occupation">, strin
   grade: "school_grade",
   school: "school_group",
   family: FAMILY_BUCKET("family_campers"),
+  new_family: "new_family",
+  came_through: "came_through",
+  heard: "heard_about",
   gender: "gender",
   years: "CAST(years_as_camper AS STRING)",
   state: "home_state",
@@ -43,15 +47,18 @@ export const drillWhere = () => DRILL;
  * The enrollments table with each camper's school grouped as on Settings →
  * Schools (@schools: spelling → school, see schoolParams); a spelling newer
  * than that list shows as entered. Also each camper's family_campers (enrolled
- * campers in the household that season and business line).
+ * campers in the household that season and business line), and the
+ * household's new_family and came_through (familyStatusSql).
  */
 export function enrollmentsWithSchools(table: string) {
   return `(
-      SELECT e.*, IF(sm.entered IS NULL, e.school, sm.school) AS school_group, fc.family_campers
+      SELECT e.*, IF(sm.entered IS NULL, e.school, sm.school) AS school_group, fc.family_campers, fs.new_family, fs.came_through
       FROM ${table} AS e
       LEFT JOIN UNNEST(@schools) AS sm ON sm.entered = e.school
       LEFT JOIN ${familyCampersSql(table)} AS fc
         ON fc.season = e.season AND fc.business_line = e.business_line AND fc.family_hash = e.family_hash
+      LEFT JOIN ${familyStatusSql(table)} AS fs
+        ON fs.season = e.season AND fs.business_line = e.business_line AND fs.fam = COALESCE(e.family_hash, e.camper_hash)
     )`;
 }
 
@@ -96,7 +103,7 @@ export function kpiSql(t: string) {
     ),
     -- Families among the matching camper-sessions: campers each, and weeks with two or more at camp together.
     fam AS (
-      SELECT period, family_hash, COUNT(DISTINCT camper_hash) AS n
+      SELECT period, family_hash, COUNT(DISTINCT camper_hash) AS n, LOGICAL_OR(new_family = '${NEW_FAMILY}') AS is_new
       FROM scoped
       WHERE status_code = 'EN' AND family_hash IS NOT NULL
       GROUP BY 1, 2
@@ -124,10 +131,11 @@ export function kpiSql(t: string) {
     SELECT
       m.*,
       COALESCE(f.families, 0) AS families,
+      COALESCE(f.new_families, 0) AS new_families,
       COALESCE(f.sibling_families, 0) AS sibling_families,
       COALESCE(t.weeks, 0) AS sibling_weeks_together
     FROM main AS m
-    LEFT JOIN (SELECT period, COUNT(*) AS families, COUNTIF(n >= 2) AS sibling_families FROM fam GROUP BY 1) AS f USING (period)
+    LEFT JOIN (SELECT period, COUNT(*) AS families, COUNTIF(n >= 2) AS sibling_families, COUNTIF(is_new) AS new_families FROM fam GROUP BY 1) AS f USING (period)
     LEFT JOIN together AS t USING (period)`;
 }
 

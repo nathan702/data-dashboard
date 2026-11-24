@@ -239,13 +239,30 @@ unmatched is "Unassigned" and flagged.
        the report builder has Net tuition, Net tuition per camper and Extras
        per camper (each camper once however a report splits them), plus a
        starter report; a deploy self-check adds them back up to net tuition.
-    3. **Forecasts** for every line, from the Targets pace logic.
-    4. **Where new families come from.** *Ask:* does Campminder have a "how
-       did you hear about us" question that could be added to the report?
-    5. **Capacity and waitlists.** *Needs:* session capacity from Campminder
-       (a session report tab) or entered on Settings.
-    6. **Campers per age group per week (staffing)**, with a projection to
-       season end (postponed). *Needs from Calleva:* age groups and staff ratios.
+    3. **Where new families come from** ✅ A family is new in its first
+       season with a camper enrolled in a business line (in the first season
+       of data, 2022, when all its campers are in their first year at camp).
+       *Came through*: the other Campminder program a new family was in first
+       ("CHAPs first"), else Directly. *How they heard*: Campminder's "How did
+       you hear about us?" dropdown (Facebook, Instagram, Current Camper Family,
+       Current Staff Member, Web Search; anything else is Other), the choice
+       only: the text a family can add is never stored. Camp page: a New
+       families tile and New or returning family / Came through / How they
+       heard breakdowns and filters (filtering to new families turns the whole
+       page, map included, into a new-families view); the same three fields in
+       the report builder, a starter report, and a deploy self-check. *Needs:*
+       the question added as a column to the daily Campminder report (and the
+       history tabs if they can be re-exported).
+    4. **Capacity and waitlists.** *Needs:* a Campminder session report
+       (capacity, enrolled, waitlist per session) written as a new sheet tab;
+       Campminder can export it.
+
+    Dropped: forecasts (no outside factors; could mislead) and campers per
+    age group per week (staffing).
+
+    **Order from here:** 14 test and live separation, 13.4 capacity and
+    waitlists, 15 customer database, 16 intranet, 18 FareHarbor sell-through,
+    then 17 the Cloud bill (moved to the end).
 14. **Test and live separation**: a second website (`…-test`) in the same Google
    Cloud project, reading the same raw data into its own tables; changes deploy
    to test first and are promoted to live.

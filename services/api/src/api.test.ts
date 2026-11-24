@@ -1524,3 +1524,60 @@ describe("revenue per camper", () => {
     expect(money.params).toMatchObject({ extras: ["Lunch"], category: "Summer Camp" });
   });
 });
+
+describe("where new families come from", () => {
+  const q = (f: object) => encodeURIComponent(JSON.stringify(f));
+
+  it("tells new families from returning ones, and filters the whole page to them", async () => {
+    const app = api();
+    const all = (await request(app).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200)).body.current;
+    expect(all.newFamilies).toBeGreaterThan(0);
+    expect(all.newFamilies).toBeLessThan(all.families);
+    const onlyNew = (await request(app).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${q({ new_family: ["New family"] })}`).expect(200)).body.current;
+    const onlyBack = (await request(app).get(`/api/campminder/summary?season=2026&businessLine=camp&filters=${q({ new_family: ["Returning family"] })}`).expect(200)).body.current;
+    expect(onlyNew.families).toBe(all.newFamilies);
+    expect(onlyNew.newFamilies).toBe(onlyNew.families);
+    expect(onlyNew.families + onlyBack.families).toBe(all.families);
+    // The map follows the filter.
+    const map = (await request(app).get(`/api/campminder/map?season=2026&businessLine=camp&filters=${q({ new_family: ["New family"] })}`).expect(200)).body;
+    expect(map.points.length).toBeGreaterThan(0);
+  });
+
+  it("breaks new families down by how they heard and what they came through", async () => {
+    const app = api();
+    const f = q({ new_family: ["New family"] });
+    const heard = (await request(app).get(`/api/campminder/breakdown?season=2026&businessLine=camp&dimension=heard&filters=${f}`).expect(200)).body.rows;
+    const keys = heard.map((r: { key: string }) => r.key);
+    expect(keys).toContain("Current Camper Family");
+    expect(keys).toContain("(unknown)"); // didn't answer
+    expect(keys.every((k: string) => ["Facebook", "Instagram", "Current Camper Family", "Current Staff Member", "Web Search", "Other", "(unknown)"].includes(k))).toBe(true);
+    const through = (await request(app).get(`/api/campminder/breakdown?season=2026&businessLine=camp&dimension=came_through&filters=${f}`).expect(200)).body.rows;
+    expect(through.map((r: { key: string }) => r.key)).toContain("Directly");
+    expect(through.every((r: { key: string }) => r.key === "Directly" || r.key.endsWith(" first"))).toBe(true);
+    // Returning families came through nothing.
+    const back = (await request(app).get(`/api/campminder/breakdown?season=2026&businessLine=camp&dimension=came_through&filters=${q({ new_family: ["Returning family"] })}`).expect(200)).body.rows;
+    expect(back.map((r: { key: string }) => r.key)).toEqual(["(unknown)"]);
+  });
+
+  it("reports new families by how they heard, with new and returning adding up", async () => {
+    const app = api();
+    const run = async (spec: object) => (await request(app).post("/api/reports/run").send({ spec }).expect(200)).body;
+    const fams = await run({ dataset: "families", rows: ["new_family"], measure: "families", filters: { business_line: ["camp"], season: ["2026"] } });
+    const cell = (k: string) => fams.cells.find((c: { kind: string; rows: string[] }) => c.kind === "cell" && c.rows[0] === k)?.value;
+    const total = fams.cells.find((c: { kind: string }) => c.kind === "total").value;
+    expect(cell("New family") + cell("Returning family")).toBe(total);
+    const summary = (await request(app).get("/api/campminder/summary?season=2026&businessLine=camp").expect(200)).body.current;
+    expect(cell("New family")).toBe(summary.newFamilies);
+    const starter = await run({ dataset: "families", rows: ["heard_about"], column: "season", measure: "families", filters: { business_line: ["camp"], new_family: ["New family"] } });
+    expect(starter.cells.some((c: { rows: string[] }) => c.rows[0] === "Web Search")).toBe(true);
+    await run({ dataset: "camper_seasons", rows: ["came_through", "heard_about"], measure: "campers", filters: { new_family: ["New family"] } });
+  });
+
+  it("labels families in SQL from fixed fragments only", async () => {
+    const { familyStatusSql } = await import("./warehouse/familyStatusSql.js");
+    const sql = familyStatusSql("`marts.fct_campminder_enrollments`");
+    expect(sql).toContain("WHEN 'chaps' THEN 'CHAPs'");
+    expect(sql).toContain("'New family'");
+    expect(sql).toContain("o.season < a.season OR (o.season = a.season AND o.first_app < a.first_app)");
+  });
+});
