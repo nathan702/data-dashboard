@@ -1510,6 +1510,18 @@ describe("revenue per camper", () => {
     expect(extras.cells[0].value).toBeCloseTo(per.current.extras / per.current.campers, 0);
   });
 
+  it("agrees with the report across all lines, a Miscellaneous line in a camper's session included", async () => {
+    const app = api();
+    const { demoTransactions } = await import("./warehouse/demoCampminder.js");
+    // A Miscellaneous line names the camper's session but is its own business line, where the camper isn't enrolled.
+    expect(demoTransactions().some((t) => t.category === "Miscellaneous" && t.businessLine === "unassigned" && t.season === 2026)).toBe(true);
+    const all = (await request(app).get("/api/campminder/per-camper?season=2026").expect(200)).body.current;
+    const fin = (await request(app).get("/api/campminder/finance?season=2026").expect(200)).body;
+    expect(all.tuition + all.extras + all.notPerCamper).toBeCloseTo(fin.netTuition, 0);
+    const report = (await request(app).post("/api/reports/run").send({ spec: { dataset: "camper_seasons", rows: [], measure: "net_tuition", filters: { season: ["2026"] } } }).expect(200)).body;
+    expect(report.cells[0].value).toBeCloseTo(all.tuition, 0);
+  });
+
   it("only joins the financials when a tuition measure is asked for", async () => {
     const { compileReport } = await import("./warehouse/reportSql.js");
     const spec = (measure: string) => reportSpecSchema.parse({ dataset: "camper_seasons", rows: ["session_group"], measure });

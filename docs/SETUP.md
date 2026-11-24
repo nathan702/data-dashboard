@@ -329,7 +329,8 @@ one is over). Every charge and discount line is given to campers: a line under
 a camper is theirs; a line under a parent (sibling discounts, aid) is split
 across the household's campers enrolled in its session (a line with no
 session: in its business line) in proportion to each one's charges. A
-session's lines count per camper only when the camper is enrolled in that
+line counts per camper only when the camper is enrolled in the line's business
+line (a Miscellaneous line has its own) and, if it names a session, in that
 session; what's left (cancelled sessions' charges, lines with no camper to
 give them to) is shown as "not counted per camper", so the per-camper amounts,
 extras and that add back up to net tuition (a deploy self-check). Extras

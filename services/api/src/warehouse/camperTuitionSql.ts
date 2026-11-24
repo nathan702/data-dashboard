@@ -13,8 +13,8 @@
  *
  * Result (CTE tuition_alloc): season, business_line, camper_hash (NULL:
  * unassigned), session_name, enrolled (counted per camper: the camper is
- * enrolled in the line's session, or, for a line with no session, in its
- * business line), tuition, extras.
+ * enrolled in the line's business line, and in its session when it has one),
+ * tuition, extras.
  *
  * `scope` "pair" keeps @season, and @season − 1 as of @prev_cutoff (lines
  * posted and campers applied by then); "all" keeps every season.
@@ -93,9 +93,9 @@ export function camperTuitionCtes(lines: string, enrollments: string, scope: "pa
   )`,
     `tuition_alloc AS (
     SELECT g.season, g.business_line, g.camper_hash, g.session_name,
-      -- Counted per camper: a session's lines when the camper is enrolled in that session (a cancelled
-      -- session's charge isn't), a line with no session when the camper is enrolled in its business line.
-      IF(g.session_name IS NULL, el.camper_hash IS NOT NULL, es.camper_hash IS NOT NULL) AS enrolled,
+      -- Counted per camper: the camper is enrolled in the line's business line (a Miscellaneous line has its
+      -- own), and in its session when it has one (a cancelled session's charge isn't counted).
+      el.camper_hash IS NOT NULL AND (g.session_name IS NULL OR es.camper_hash IS NOT NULL) AS enrolled,
       SUM(IF(g.is_extra, 0, g.amount)) AS tuition,
       SUM(IF(g.is_extra, g.amount, 0)) AS extras
     FROM tuition_given AS g

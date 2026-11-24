@@ -471,7 +471,9 @@ export function demoTransactions(): DemoTransaction[] {
       const extra = (suffix: string, item: string, amount: number, week: number | null, category = base.category) => {
         extras += amount;
         const itemGroup = week === null ? item : item.replace(/\bweek\s*\d{1,2}\b/i, "").replace(/\s+/g, " ").trim();
-        out.push({ ...base, transactionId: `${id}${suffix}`, type: "debit", amount, method: null, category, item, itemGroup, itemWeek: week });
+        // Like Campminder: a Miscellaneous line is its own (unassigned) business line, whatever session it names.
+        const businessLine = category === "Miscellaneous" ? ("unassigned" as const) : base.businessLine;
+        out.push({ ...base, businessLine, transactionId: `${id}${suffix}`, type: "debit", amount, method: null, category, item, itemGroup, itemWeek: week });
       };
       if (r.weekStart !== null && noise(`${id}lunch`) < 0.35) extra("L", `Week ${r.weekStart} Lunch`, 45, r.weekStart);
       const g = noise(`${id}gear`);
@@ -716,7 +718,8 @@ export function demoTuitionAlloc(
       session: g.t.session,
       enrolled:
         g.camper !== null &&
-        (g.t.session ? enrolledInSession.has(`${g.t.season}|${g.camper}|${g.t.session}`) : enrolledIn.has(`${g.t.season}|${g.t.businessLine}|${g.camper}`)),
+        enrolledIn.has(`${g.t.season}|${g.t.businessLine}|${g.camper}`) &&
+        (!g.t.session || enrolledInSession.has(`${g.t.season}|${g.camper}|${g.t.session}`)),
       tuition: 0,
       extras: 0,
     };
