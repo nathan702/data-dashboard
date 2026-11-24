@@ -281,6 +281,20 @@ export async function runSelfCheck(
     return null;
   });
 
+  // New families: the tile, the filter and the report agree, and new + returning = all families.
+  await check("new families add up", async () => {
+    const e = (ref as ReferenceTotals | null)?.enrollments;
+    if (!e) return null;
+    const cal = campminderCalendar();
+    const sum = async (f: Record<string, string[]>) => (await warehouse.enrollmentSummary({ season: e.season, businessLine: "camp", filters: f }, cal, new Map())).current;
+    const [all, fresh, back] = await Promise.all([sum({}), sum({ new_family: ["New family"] }), sum({ new_family: ["Returning family"] })]);
+    if (fresh.families !== all.newFamilies) return "the New families tile differs from filtering to new families";
+    if (fresh.families + back.families !== all.families) return "new and returning families don't add up to all families";
+    await warehouse.enrollmentBreakdown({ season: e.season, businessLine: "camp", dimension: "heard", filters: { new_family: ["New family"] } }, new Map());
+    await warehouse.enrollmentBreakdown({ season: e.season, businessLine: "camp", dimension: "came_through", filters: {} }, new Map());
+    return null;
+  });
+
   await check("HubSpot deals run", async () => {
     await warehouse.hubspotDeals("education");
     await warehouse.hubspotProperties();

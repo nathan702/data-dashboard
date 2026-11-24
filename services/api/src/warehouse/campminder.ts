@@ -31,6 +31,7 @@ export function toEnrollmentKpis(r: Partial<Record<string, unknown>> | undefined
     withdrawn: n("withdrawn"),
     waitlisted: n("waitlisted"),
     families: n("families"),
+    newFamilies: n("new_families"),
     siblingFamilies: n("sibling_families"),
     siblingWeeksTogether: n("sibling_weeks_together"),
   };

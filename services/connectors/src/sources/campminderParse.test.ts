@@ -142,4 +142,18 @@ describe("campminder parsing", () => {
     for (const answer of ["Smith", "LLP", "Pediatrician", "attorney"]) expect(text).not.toContain(answer);
     expect(toSessions([row({ "F1P1 Occupation": "N/A" })], KEY, 2026)[0]!.parentOccupations).toEqual([]);
   });
+
+  it("keeps how a family heard about us as the dropdown choice only, never the text added to it", () => {
+    const col = "How did you hear about us?";
+    const heard = (v: string) => toSessions([row({ [col]: v })], KEY, 2026)[0]!.heardAbout;
+    expect(heard("Current Camper Family: the Smiths told us")).toBe("Current Camper Family");
+    expect(heard("Web Search - google")).toBe("Web Search");
+    expect(heard("instagram")).toBe("Instagram");
+    expect(heard("Saw a flyer at the library")).toBe("Other");
+    expect(heard("")).toBeNull();
+    expect(heard("N/A")).toBeNull();
+    expect(JSON.stringify(toSessions([row({ [col]: "Current Camper Family: the Smiths told us" })], KEY, 2026))).not.toContain("Smiths");
+    // No column: unknown, not "Other".
+    expect(toSessions([row({})], KEY, 2026)[0]!.heardAbout).toBeNull();
+  });
 });
